@@ -5,8 +5,8 @@ from supabase import create_client
 
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
-SUPABASE_URL = st.secrets["https://mamryfkyhlmxrcuhezta.supabase.co"]
-SUPABASE_ANON_KEY = st.secrets["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hbXJ5Zmt5aGxteHJjdWhlenRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5OTAyMzYsImV4cCI6MjA4NTU2NjIzNn0.m9A6xvOGmbJTEsLtrU77zYF27wg9rc0h5z5jY_nGW78"]
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 
 sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
