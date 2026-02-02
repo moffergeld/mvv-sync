@@ -1,6 +1,6 @@
 # pages/Forms.py
 # MVV – Forms (Wellness + RPE) with Staff Team/Individual views + Timeline controls
-# Uses st.date_input for date ranges (more stable on Streamlit Cloud)
+# Uses st.date_input for date ranges (stable on Streamlit Cloud)
 
 from __future__ import annotations
 
@@ -40,7 +40,12 @@ def rest_get(table: str, query: str, show_error: bool = True) -> pd.DataFrame:
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {ACCESS_TOKEN}",
     }
-    r = requests.get(url, headers=headers, timeout=60)
+    try:
+        r = requests.get(url, headers=headers, timeout=60)
+    except Exception as e:
+        if show_error:
+            st.error(f"Request failed for '{table}': {e}")
+        return pd.DataFrame()
 
     if not r.ok:
         if show_error:
@@ -56,7 +61,6 @@ def rest_get(table: str, query: str, show_error: bool = True) -> pd.DataFrame:
 # -------------------------
 @st.cache_data(ttl=60)
 def get_profile() -> dict:
-    # profiles is RLS self-only; returns exactly one row for logged-in user
     df = rest_get("profiles", "select=role,team,player_id", show_error=False)
     if df.empty:
         return {}
@@ -77,12 +81,10 @@ def load_rpe() -> pd.DataFrame:
     if not df.empty and "form_date" in df.columns:
         df["form_date"] = pd.to_datetime(df["form_date"], errors="coerce").dt.date
 
-    # Convert known numeric fields if present
     for c in ["ex1_duration_min", "ex1_exertion", "ex2_duration_min", "ex2_exertion"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Compute sRPE if possible
     if not df.empty:
         df["srpe_ex1"] = df.get("ex1_duration_min") * df.get("ex1_exertion")
         df["srpe_ex2"] = df.get("ex2_duration_min") * df.get("ex2_exertion")
@@ -93,21 +95,15 @@ def load_rpe() -> pd.DataFrame:
 
 @st.cache_data(ttl=60)
 def load_players_map() -> pd.DataFrame:
-    """
-    We don't show a Players tab, but staff needs a dropdown.
-    Robustly detect a display-name column.
-    """
     df = rest_get("players", "select=*&limit=5000", show_error=False)
     if df.empty:
         return df
 
-    # Find ID column
     id_col_candidates = ["player_id", "id"]
     id_col = next((c for c in id_col_candidates if c in df.columns), None)
     if id_col is None:
         return pd.DataFrame()
 
-    # Find name column
     name_col_candidates = ["full_name", "name", "player_name", "Naam", "Speler"]
     name_col = next((c for c in name_col_candidates if c in df.columns), None)
 
@@ -133,7 +129,9 @@ def date_bounds(*dfs: pd.DataFrame) -> tuple[date, date] | None:
     all_dates: list[date] = []
     for df in dfs:
         if df is not None and not df.empty and "form_date" in df.columns:
-            all_dates.extend([d for d in df["form_date"].dropna().tolist() if isinstance(d, date)])
+            for d in df["form_date"].dropna().tolist():
+                if isinstance(d, date):
+                    all_dates.append(d)
     if not all_dates:
         return None
     return min(all_dates), max(all_dates)
@@ -143,6 +141,27 @@ def filter_range(df: pd.DataFrame, start_d: date, end_d: date) -> pd.DataFrame:
     if df is None or df.empty or "form_date" not in df.columns:
         return df
     return df[(df["form_date"] >= start_d) & (df["form_date"] <= end_d)].copy()
+
+
+def normalize_date_range(val, min_d: date, max_d: date) -> tuple[date, date]:
+    """
+    date_input can return:
+    - a single date
+    - a tuple/list with 2 dates
+    Normalize to (start, end).
+    """
+    if isinstance(val, (tuple, list)) and len(val) == 2:
+        start_d, end_d = val[0], val[1]
+    else:
+        start_d, end_d = min_d, max_d
+
+    if start_d is None or end_d is None:
+        start_d, end_d = min_d, max_d
+
+    if start_d > end_d:
+        start_d, end_d = end_d, start_d
+
+    return start_d, end_d
 
 
 # -------------------------
@@ -176,7 +195,7 @@ if bounds is None:
 min_d, max_d = bounds
 
 # -------------------------
-# Controls (staff: team/individual + timeline)
+# Controls
 # -------------------------
 if role in ("staff", "admin"):
     top = st.columns([1.4, 2.2, 2.2])
@@ -185,21 +204,13 @@ if role in ("staff", "admin"):
         view_mode = st.radio("Weergave", ["Team", "Individueel"], horizontal=True)
 
     with top[1]:
-        date_range = st.date_input(
+        date_range_val = st.date_input(
             "Timeline (range)",
             value=(min_d, max_d),
             min_value=min_d,
             max_value=max_d,
         )
-
-        # date_input can return a single date; normalize to range
-        if isinstance(date_range, tuple) and len(date_range) == 2:
-            start_d, end_d = date_range
-        else:
-            start_d, end_d = min_d, max_d
-
-        if start_d > end_d:
-            start_d, end_d = end_d, start_d
+        start_d, end_d = normalize_date_range(date_range_val, min_d, max_d)
 
     with top[2]:
         day_focus = st.date_input(
@@ -208,7 +219,6 @@ if role in ("staff", "admin"):
             min_value=min_d,
             max_value=max_d,
         )
-
 else:
     view_mode = "Individueel"
     start_d, end_d = min_d, max_d
@@ -230,36 +240,27 @@ with tab_w:
         st.info("Geen wellness data in deze periode.")
     else:
         wellness_metrics = [
-            c
-            for c in ["muscle_soreness", "fatigue", "sleep_quality", "stress", "mood"]
-            if c in dfw_f.columns
+            c for c in ["muscle_soreness", "fatigue", "sleep_quality", "stress", "mood"] if c in dfw_f.columns
         ]
 
         if view_mode == "Team":
-            # Team average per day (multi-line chart)
             if wellness_metrics:
                 daily = dfw_f.groupby("form_date")[wellness_metrics].mean().sort_index()
                 st.caption("Team gemiddelde per dag")
                 st.line_chart(daily)
 
-            # Day focus: distribution across players
             st.caption(f"1 dag focus: {day_focus}")
             day_df = dfw_f[dfw_f["form_date"] == day_focus].copy()
             if day_df.empty:
                 st.info("Geen wellness entries op deze dag.")
             else:
-                metric = st.selectbox(
-                    "Metric (dagoverzicht)",
-                    wellness_metrics if wellness_metrics else [c for c in day_df.columns if c not in ["created_by"]],
-                    index=0,
-                )
+                metric = st.selectbox("Metric (dagoverzicht)", wellness_metrics, index=0) if wellness_metrics else None
 
-                if "player_id" in day_df.columns and metric in day_df.columns:
+                if metric and "player_id" in day_df.columns and metric in day_df.columns:
                     show = day_df[["player_id", metric]].copy()
                 else:
                     show = day_df.copy()
 
-                # Add names if possible
                 if not players_map.empty and "player_id" in show.columns:
                     show = show.merge(players_map, on="player_id", how="left")
                     if "__display_name" in show.columns:
@@ -267,18 +268,17 @@ with tab_w:
 
                 st.dataframe(show, use_container_width=True)
 
-                if "player" in show.columns and metric in show.columns:
+                if metric and "player" in show.columns and metric in show.columns:
                     chart = show[["player", metric]].dropna().set_index("player")
                     st.bar_chart(chart)
 
         else:
-            # Individual
             if role in ("staff", "admin"):
                 if players_map.empty:
                     st.warning("Kan spelerslijst niet ophalen (players). Check kolomnamen/RLS voor players.")
                     sub = dfw_f.copy()
                 else:
-                    choice = st.selectbox("Selecteer speler", players_map["__display_name"].tolist())
+                    choice = st.selectbox("Selecteer speler", players_map["__display_name"].tolist(), key="well_player")
                     pid = players_map.loc[players_map["__display_name"] == choice, "player_id"].iloc[0]
                     sub = dfw_f[dfw_f["player_id"] == pid].copy() if "player_id" in dfw_f.columns else dfw_f.copy()
             else:
@@ -287,7 +287,6 @@ with tab_w:
             if sub is None or sub.empty:
                 st.info("Geen wellness data voor deze speler/periode.")
             else:
-                # One chart per category over time
                 if wellness_metrics:
                     for m in wellness_metrics:
                         st.caption(m)
@@ -309,7 +308,6 @@ with tab_r:
         rpe_value_col = "srpe_total" if "srpe_total" in dfr_f.columns else None
 
         if view_mode == "Team":
-            # Team total sRPE per day
             if rpe_value_col:
                 daily = dfr_f.groupby("form_date")[rpe_value_col].sum().sort_index()
                 st.caption("Team totaal sRPE per dag")
@@ -317,7 +315,6 @@ with tab_r:
             else:
                 st.warning("srpe_total ontbreekt (missen duur/inspanning kolommen).")
 
-            # Day focus
             st.caption(f"1 dag focus: {day_focus}")
             day_df = dfr_f[dfr_f["form_date"] == day_focus].copy()
             if day_df.empty:
@@ -340,18 +337,13 @@ with tab_r:
                     st.dataframe(day_df, use_container_width=True)
 
         else:
-            # Individual
             if role in ("staff", "admin"):
                 if players_map.empty:
                     st.warning("Kan spelerslijst niet ophalen (players). Check kolomnamen/RLS voor players.")
                     sub = dfr_f.copy()
                 else:
-                    choice = st.selectbox(
-                        "Selecteer speler",
-                        players_map["__display_name"].tolist(),
-                        key="rpe_player",
-                    )
-                    pid = players_map.loc[players_map["__display_name"] == choice, "player_id").iloc[0]
+                    choice = st.selectbox("Selecteer speler", players_map["__display_name"].tolist(), key="rpe_player")
+                    pid = players_map.loc[players_map["__display_name"] == choice, "player_id"].iloc[0]
                     sub = dfr_f[dfr_f["player_id"] == pid].copy() if "player_id" in dfr_f.columns else dfr_f.copy()
             else:
                 sub = dfr_f.copy()
