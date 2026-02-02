@@ -17,8 +17,15 @@ def rest_get(table: str, access_token: str, query: str) -> pd.DataFrame:
         "Authorization": f"Bearer {access_token}",
     }
     r = requests.get(url, headers=headers, timeout=60)
-    r.raise_for_status()
-    return pd.DataFrame(r.json())
+
+    if not r.ok:
+        st.error(f"REST error for table '{table}'")
+        st.code(f"URL: {url}")
+        st.code(f"Status: {r.status_code}\nBody: {r.text}")
+        return pd.DataFrame()
+
+    data = r.json()
+    return pd.DataFrame(data)
 
 
 def get_profile(access_token: str) -> dict:
@@ -105,6 +112,6 @@ with tab2:
         st.dataframe(dfr[show_cols].head(50), use_container_width=True)
 
 with tab3:
-    dfp = rest_get("players", access_token, "select=player_id,full_name,birth_date,team,is_active&order=full_name.asc&limit=5000")
+    dfp = rest_get("players", access_token, "select=*&limit=200")
     st.subheader("Players")
     st.dataframe(dfp, use_container_width=True)
