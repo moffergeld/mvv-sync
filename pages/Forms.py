@@ -1,9 +1,6 @@
-# pages/forms.py
-# MVV – Forms (Wellness + RPE) with Staff Team/Individual views + Timeline slicers
-# Requires:
-# - Streamlit session_state["access_token"] set by app.py login
-# - Supabase tables: profiles, wellness, rpe, players
-# - RLS enabled and working (players read for staff/admin, self for player)
+# pages/Forms.py
+# MVV – Forms (Wellness + RPE) with Staff Team/Individual views + Timeline controls
+# Uses st.date_input for date ranges (more stable on Streamlit Cloud)
 
 from __future__ import annotations
 
@@ -11,6 +8,11 @@ from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
+
+# -------------------------
+# Page config
+# -------------------------
+st.set_page_config(page_title="MVV – Forms", layout="wide")
 
 # -------------------------
 # Config / Secrets
@@ -173,31 +175,45 @@ if bounds is None:
 
 min_d, max_d = bounds
 
-# Staff controls (team vs individual) + timeline slicers
+# -------------------------
+# Controls (staff: team/individual + timeline)
+# -------------------------
 if role in ("staff", "admin"):
     top = st.columns([1.4, 2.2, 2.2])
+
     with top[0]:
         view_mode = st.radio("Weergave", ["Team", "Individueel"], horizontal=True)
+
     with top[1]:
-        date_range = st.slider(
+        date_range = st.date_input(
             "Timeline (range)",
-            min_value=min_d,
-            max_value=max_d,
             value=(min_d, max_d),
-        )
-    with top[2]:
-        day_focus = st.slider(
-            "1 dag bekijken (optioneel)",
             min_value=min_d,
             max_value=max_d,
-            value=max_d,
         )
+
+        # date_input can return a single date; normalize to range
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_d, end_d = date_range
+        else:
+            start_d, end_d = min_d, max_d
+
+        if start_d > end_d:
+            start_d, end_d = end_d, start_d
+
+    with top[2]:
+        day_focus = st.date_input(
+            "1 dag bekijken (optioneel)",
+            value=max_d,
+            min_value=min_d,
+            max_value=max_d,
+        )
+
 else:
     view_mode = "Individueel"
-    date_range = (min_d, max_d)
+    start_d, end_d = min_d, max_d
     day_focus = max_d
 
-start_d, end_d = date_range
 dfw_f = filter_range(dfw, start_d, end_d)
 dfr_f = filter_range(dfr, start_d, end_d)
 
@@ -335,7 +351,7 @@ with tab_r:
                         players_map["__display_name"].tolist(),
                         key="rpe_player",
                     )
-                    pid = players_map.loc[players_map["__display_name"] == choice, "player_id"].iloc[0]
+                    pid = players_map.loc[players_map["__display_name"] == choice, "player_id").iloc[0]
                     sub = dfr_f[dfr_f["player_id"] == pid].copy() if "player_id" in dfr_f.columns else dfr_f.copy()
             else:
                 sub = dfr_f.copy()
