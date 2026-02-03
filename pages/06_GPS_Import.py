@@ -6,12 +6,10 @@
 #
 # Requires:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] set by your login
-#   st.session_state["role"] set by your login (profiles.role)
+#   st.session_state["access_token"] set by your login (JWT access token)
 
 import io
-import re
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 import requests
@@ -38,8 +36,9 @@ TYPE_OPTIONS = ["Practice", "Practice (1)", "Practice (2)", "Match", "Practice M
 # Auth / REST helpers
 # =========================
 def get_access_token() -> str | None:
-    if st.session_state.get("access_token"):
-        return st.session_state["access_token"]
+    tok = st.session_state.get("access_token")
+    if tok:
+        return tok
     sess = st.session_state.get("sb_session")
     if sess is not None:
         token = getattr(sess, "access_token", None)
@@ -70,13 +69,62 @@ def rest_upsert(access_token: str, table: str, rows: list[dict], on_conflict: st
     url = f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}"
     headers = rest_headers(access_token)
     headers["Prefer"] = "resolution=merge-duplicates"
-    # chunk to avoid payload limits
     CHUNK = 500
     for i in range(0, len(rows), CHUNK):
         chunk = rows[i : i + CHUNK]
         r = requests.post(url, headers=headers, json=chunk, timeout=120)
         if not r.ok:
             raise RuntimeError(f"UPSERT {table} failed ({r.status_code}): {r.text}")
+
+
+def auth_get_user(access_token: str) -> dict:
+    """
+    Returns Supabase user object (contains id, email, etc) using the access token.
+    """
+    url = f"{SUPABASE_URL}/auth/v1/user"
+    r = requests.get(url, headers=rest_headers(access_token), timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"AUTH user fetch failed ({r.status_code}): {r.text}")
+    return r.json()
+
+
+def normalize_role(v) -> str | None:
+    if v is None:
+        return None
+    # enum/object -> string
+    s = str(v).strip().lower()
+    # soms komt het als "user_role.data_scientist" of "data_scientist::user_role"
+    if "." in s:
+        s = s.split(".")[-1]
+    if "::" in s:
+        s = s.split("::")[0]
+    return s.strip() or None
+
+
+@st.cache_data(ttl=60)
+def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | None, str | None]:
+    """
+    Returns (user_id, email, role, team) by:
+      - /auth/v1/user -> user_id/email
+      - public.profiles lookup -> role/team
+    """
+    u = auth_get_user(access_token)
+    user_id = u.get("id")
+    email = u.get("email")
+
+    role = None
+    team = None
+
+    if user_id:
+        dfp = rest_get(
+            access_token,
+            "profiles",
+            f"select=user_id,role,team&user_id=eq.{user_id}&limit=1",
+        )
+        if not dfp.empty:
+            role = normalize_role(dfp.iloc[0].get("role"))
+            team = dfp.iloc[0].get("team")
+    return user_id, email, role, team
 
 
 # =========================
@@ -146,7 +194,6 @@ GPS_COLS = [
     "source_file",
 ]
 
-# Map JOHAN variable names -> gps_records column
 METRIC_MAP = {
     "duration": "duration",
     "totaldistance": "total_distance",
@@ -194,22 +241,16 @@ def coerce_num(v):
 
 
 def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple[list[dict], list[str]]:
-    """
-    Convert parsed df (columns like your tool) into gps_records rows.
-    Also maps player_id via players.full_name.
-    Returns (rows, unmapped_names).
-    """
     rows = []
     unmapped = set()
 
-    # parse Datum column to date
     parsed_dates = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
     if parsed_dates.isna().any():
         bad = df.loc[parsed_dates.isna(), "Datum"].head(5).tolist()
         raise ValueError(f"Kon sommige Datum waarden niet parsen, voorbeelden: {bad}")
+
     dates_iso = parsed_dates.dt.date.astype(str)
 
-    # for each row
     for idx, r in df.iterrows():
         speler = str(r.get("Speler", "")).strip()
         if not speler:
@@ -219,23 +260,19 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
         if not pid:
             unmapped.add(speler)
 
-        datum_iso = dates_iso.iloc[idx]
         dt = parsed_dates.iloc[idx].date()
-        week = int(dt.isocalendar().week)
-        year = int(dt.year)
 
         base = {
             "player_id": pid,
             "player_name": speler,
-            "datum": datum_iso,
-            "week": week,
-            "year": year,
+            "datum": dates_iso.iloc[idx],
+            "week": int(dt.isocalendar().week),
+            "year": int(dt.year),
             "type": str(r.get("Type", "")).strip(),
             "event": str(r.get("Event", "")).strip(),
             "source_file": source_file,
         }
 
-        # map metrics
         for c in df.columns:
             if c in ID_COLS_IN_PARSER or str(c).strip().endswith("/min"):
                 continue
@@ -243,7 +280,6 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
             if key in METRIC_MAP:
                 base[METRIC_MAP[key]] = coerce_num(r[c])
 
-        # keep only allowed columns
         base = {k: v for k, v in base.items() if k in GPS_COLS}
         rows.append(base)
 
@@ -251,7 +287,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
 
 
 # =========================
-# JOHAN Parsers (same logic)
+# JOHAN Parsers
 # =========================
 def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
     raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
@@ -277,24 +313,19 @@ def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: s
 
     result_df = combined_df.transpose().reset_index().rename(columns={"index": "Speler"})
 
-    # Force chosen date/type
     result_df["Datum"] = pd.to_datetime(selected_date).strftime("%d-%m-%Y")
     result_df["Type"] = selected_type
     result_df["Event"] = "Summary"
 
-    # drop /min columns (you don't want them)
     result_df = drop_min_columns(result_df)
 
-    # fill metrics
     metric_cols = [c for c in result_df.columns if c not in ["Speler", "Datum", "Type", "Event"]]
     result_df[metric_cols] = result_df[metric_cols].fillna(0)
 
-    # Week/Year derived later from Datum in df_to_db_rows, but keep columns for UI consistency
     dt = pd.to_datetime(selected_date)
     result_df["Week"] = int(dt.isocalendar().week)
     result_df["Year"] = int(dt.year)
 
-    # reorder
     fixed = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
     rest = [c for c in result_df.columns if c not in fixed]
     return result_df[fixed + rest]
@@ -342,7 +373,7 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
                 "Speler": speler,
                 "Datum": pd.to_datetime(selected_date).strftime("%d-%m-%Y"),
                 "Type": selected_type,
-                "Event": str(oef).split("_")[0],  # same as your current tool
+                "Event": str(oef).split("_")[0],
             }
 
             for var in total_work_df.index:
@@ -357,7 +388,6 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
     out = pd.DataFrame(alle)
     out = drop_min_columns(out)
 
-    # fill metrics
     metric_cols = [c for c in out.columns if c not in ["Speler", "Datum", "Type", "Event"]]
     out[metric_cols] = out[metric_cols].fillna(0)
 
@@ -374,8 +404,6 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 # Export helpers
 # =========================
 def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFrame:
-    # Use pagination if you expect >200k rows; for now single pull.
-    # Order by datum desc for export readability.
     query = f"select={','.join(GPS_COLS)}&order=datum.desc&limit={limit}"
     return rest_get(access_token, "gps_records", query)
 
@@ -393,11 +421,20 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "gps_records") -> byte
 st.title("GPS Import")
 
 access_token = get_access_token()
-role = st.session_state.get("role", None)
-
 if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
+
+# >>> BELANGRIJK: role uit Supabase profiles halen (niet vertrouwen op session_state)
+try:
+    user_id, email, role, team = get_profile_role(access_token)
+except Exception as e:
+    st.error(f"Kon profiel/role niet ophalen: {e}")
+    st.stop()
+
+with st.expander("Debug (auth/role)", expanded=False):
+    st.write({"email": email, "user_id": user_id, "role": role, "team": team})
+    st.write({"session_role_raw": st.session_state.get("role")})
 
 if role not in ALLOWED_IMPORT:
     st.error("Geen rechten voor GPS import/export.")
@@ -406,6 +443,7 @@ if role not in ALLOWED_IMPORT:
 name_to_id, player_options = get_players_map(access_token)
 
 tab_import, tab_manual, tab_export = st.tabs(["Import (Excel)", "Manual add", "Export"])
+
 
 # -------------------------
 # TAB 1: Import (Excel)
@@ -442,7 +480,6 @@ with tab_import:
                 elif is_exercises:
                     df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
                 else:
-                    # fallback
                     try:
                         df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                     except Exception:
@@ -468,6 +505,7 @@ with tab_import:
                             + "\n- ".join(unmapped[:30])
                             + (f"\n... (+{len(unmapped)-30})" if len(unmapped) > 30 else "")
                         )
+
                     rest_upsert(
                         access_token,
                         "gps_records",
@@ -475,7 +513,6 @@ with tab_import:
                         on_conflict="player_name,datum,type,event",
                     )
                     st.success(f"✅ Import klaar. Upserted rows: {len(rows)}")
-                    # clear preview so accidental double imports are less likely
                     st.session_state["gps_parsed_df"] = None
                 except Exception as e:
                     st.error(f"Import fout: {e}")
@@ -486,14 +523,11 @@ with tab_import:
 # -------------------------
 with tab_manual:
     st.subheader("Manual add (tabel)")
-
     st.caption(
         "Voeg rijen toe met het + icoon. Kies speler in de eerste kolom. "
         "Klik daarna op 'Save rows (upsert)'."
     )
 
-    # Build an empty template dataframe with user-friendly columns
-    # We'll store player_name in table and map to player_id on save.
     template_cols = [
         "player_name",
         "datum",
@@ -543,11 +577,8 @@ with tab_manual:
             columns=template_cols,
         )
 
-    # column configs (player dropdown + date + type dropdown)
     colcfg = {
-        "player_name": st.column_config.SelectboxColumn(
-            "player_name", options=player_options, required=True
-        ),
+        "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
         "datum": st.column_config.DateColumn("datum", required=True),
         "type": st.column_config.SelectboxColumn("type", options=TYPE_OPTIONS, required=True),
         "event": st.column_config.TextColumn("event", required=True),
@@ -584,7 +615,6 @@ with tab_manual:
             try:
                 dfm = edited.copy()
 
-                # basic validation
                 dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                 dfm["event"] = dfm["event"].astype(str).str.strip()
                 dfm["type"] = dfm["type"].astype(str).str.strip()
@@ -595,7 +625,6 @@ with tab_manual:
                     st.error("Geen geldige rijen om op te slaan.")
                     st.stop()
 
-                # derive week/year
                 dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                 if dt_series.isna().any():
                     st.error("Ongeldige datum in één of meer rijen.")
@@ -605,10 +634,9 @@ with tab_manual:
                 dfm["year"] = dt_series.dt.year.astype(int)
                 dfm["datum"] = dt_series.dt.date.astype(str)
 
-                # map player_id
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                # numeric coercion for metric columns
+                # numeric coercion
                 for c in dfm.columns:
                     if c in {"player_name", "datum", "type", "event", "source_file"}:
                         continue
@@ -616,13 +644,15 @@ with tab_manual:
                         continue
                     dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
 
-                # keep only gps_records columns
-                keep = [c for c in GPS_COLS if c in dfm.columns] + ["week", "year"]
-                # gps_records doesn't have week/year in GPS_COLS list? It does in table, but ensure
-                keep = [c for c in keep if c in dfm.columns]
-
-                # build rows with correct keys
                 rows = []
+                metric_keys = [
+                    "duration","total_distance","walking","jogging","running","sprint","high_sprint",
+                    "number_of_sprints","number_of_high_sprints","number_of_repeated_sprints",
+                    "max_speed","avg_speed","playerload3d","playerload2d",
+                    "total_accelerations","high_accelerations","total_decelerations","high_decelerations",
+                    "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr"
+                ]
+
                 for _, r in dfm.iterrows():
                     row = {
                         "player_id": r.get("player_id"),
@@ -634,17 +664,9 @@ with tab_manual:
                         "event": r.get("event"),
                         "source_file": r.get("source_file") or "manual",
                     }
-                    for k in [
-                        "duration","total_distance","walking","jogging","running","sprint","high_sprint",
-                        "number_of_sprints","number_of_high_sprints","number_of_repeated_sprints",
-                        "max_speed","avg_speed","playerload3d","playerload2d",
-                        "total_accelerations","high_accelerations","total_decelerations","high_decelerations",
-                        "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr"
-                    ]:
-                        if k in dfm.columns:
-                            v = r.get(k)
-                            row[k] = coerce_num(v)
-
+                    for k in metric_keys:
+                        v = r.get(k)
+                        row[k] = coerce_num(v)
                     rows.append(row)
 
                 rest_upsert(
@@ -667,9 +689,15 @@ with tab_export:
 
     c1, c2 = st.columns([1.4, 2.6])
     with c1:
-        limit = st.number_input("Max rows (veiligheidslimiet)", min_value=1, max_value=500000, value=200000, step=10000)
+        limit = st.number_input(
+            "Max rows (veiligheidslimiet)",
+            min_value=1,
+            max_value=500000,
+            value=200000,
+            step=10000,
+        )
     with c2:
-        st.caption("Export haalt alleen geselecteerde kolommen op en maakt een .xlsx download.")
+        st.caption("Export haalt kolommen op en maakt een .xlsx download.")
 
     if st.button("Generate export"):
         try:
@@ -677,7 +705,6 @@ with tab_export:
             if df.empty:
                 st.warning("Geen data gevonden.")
             else:
-                # make sure a stable column order
                 ordered = [c for c in GPS_COLS if c in df.columns]
                 df = df[ordered]
                 xbytes = df_to_excel_bytes(df, sheet_name="gps_records")
