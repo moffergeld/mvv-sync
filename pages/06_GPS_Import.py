@@ -2,6 +2,7 @@
 # - Upload JOHAN Excel (SUMMARY / EXERCISES) -> parse -> upsert into public.gps_records
 # - Date is manual (default today)
 # - Export ALL gps_records to Excel (staff roles)
+# - Export selected player(s) to Excel (each player -> own sheet)
 # - Manual add rows via editable table (+ rows) with player select
 #
 # Requires:
@@ -9,12 +10,14 @@
 #   st.session_state["access_token"] set by your login (JWT access token)
 
 import io
+import re
 from datetime import date
 
 import pandas as pd
 import requests
 import streamlit as st
 
+# Excel engine check (Streamlit Cloud must have openpyxl in requirements.txt)
 try:
     import openpyxl  # noqa: F401
 except Exception:
@@ -35,7 +38,6 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 
 ALLOWED_IMPORT = {"admin", "data_scientist", "staff", "physio", "performance_coach"}
 TYPE_OPTIONS = ["Practice", "Practice (1)", "Practice (2)", "Match", "Practice Match"]
-
 
 # =========================
 # Auth / REST helpers
@@ -83,9 +85,6 @@ def rest_upsert(access_token: str, table: str, rows: list[dict], on_conflict: st
 
 
 def auth_get_user(access_token: str) -> dict:
-    """
-    Returns Supabase user object (contains id, email, etc) using the access token.
-    """
     url = f"{SUPABASE_URL}/auth/v1/user"
     r = requests.get(url, headers=rest_headers(access_token), timeout=30)
     if not r.ok:
@@ -96,9 +95,7 @@ def auth_get_user(access_token: str) -> dict:
 def normalize_role(v) -> str | None:
     if v is None:
         return None
-    # enum/object -> string
     s = str(v).strip().lower()
-    # soms komt het als "user_role.data_scientist" of "data_scientist::user_role"
     if "." in s:
         s = s.split(".")[-1]
     if "::" in s:
@@ -108,11 +105,6 @@ def normalize_role(v) -> str | None:
 
 @st.cache_data(ttl=60)
 def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """
-    Returns (user_id, email, role, team) by:
-      - /auth/v1/user -> user_id/email
-      - public.profiles lookup -> role/team
-    """
     u = auth_get_user(access_token)
     user_id = u.get("id")
     email = u.get("email")
@@ -140,16 +132,13 @@ def normalize_key(s: str) -> str:
 
 
 def normalize_name(s: str) -> str:
-    return str(s).strip().lower()
+    s = str(s).strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    return s
 
 
 @st.cache_data(ttl=120)
 def get_players_map(access_token: str) -> tuple[dict, list[str]]:
-    """
-    returns:
-      name_to_id: full_name(lower) -> player_id
-      display_names: sorted list of full_name
-    """
     df = rest_get(access_token, "players", "select=player_id,full_name,is_active&is_active=eq.true&limit=5000")
     if df.empty:
         return {}, []
@@ -160,7 +149,9 @@ def get_players_map(access_token: str) -> tuple[dict, list[str]]:
     return name_to_id, display_names
 
 
-# gps_records db columns (exclude gps_id/inserted_at)
+# =========================
+# gps_records columns
+# =========================
 GPS_COLS = [
     "player_id",
     "player_name",
@@ -231,18 +222,51 @@ METRIC_MAP = {
 
 ID_COLS_IN_PARSER = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
 
+# Integer columns in Supabase schema
+INT_COLS = {
+    "number_of_sprints",
+    "number_of_high_sprints",
+    "number_of_repeated_sprints",
+    "total_accelerations",
+    "high_accelerations",
+    "total_decelerations",
+    "high_decelerations",
+}
+
 
 def drop_min_columns(df: pd.DataFrame) -> pd.DataFrame:
     min_cols = [c for c in df.columns if str(c).strip().endswith("/min")]
     return df.drop(columns=min_cols) if min_cols else df
 
 
-def coerce_num(v):
+def coerce_value(col: str, v):
     if pd.isna(v):
         return None
+
     if isinstance(v, (int, float)):
+        if col in INT_COLS:
+            try:
+                return int(round(float(v)))
+            except Exception:
+                return None
         return float(v)
-    return v
+
+    s = str(v).strip()
+    if s == "":
+        return None
+
+    s2 = s.replace(",", ".")
+
+    if col in INT_COLS:
+        try:
+            return int(round(float(s2)))
+        except Exception:
+            return None
+
+    try:
+        return float(s2)
+    except Exception:
+        return None
 
 
 def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple[list[dict], list[str]]:
@@ -283,7 +307,8 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
                 continue
             key = normalize_key(c)
             if key in METRIC_MAP:
-                base[METRIC_MAP[key]] = coerce_num(r[c])
+                db_col = METRIC_MAP[key]
+                base[db_col] = coerce_value(db_col, r[c])
 
         base = {k: v for k, v in base.items() if k in GPS_COLS}
         rows.append(base)
@@ -413,10 +438,69 @@ def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFram
     return rest_get(access_token, "gps_records", query)
 
 
-def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "gps_records") -> bytes:
+def fetch_gps_for_players(access_token: str, player_names: list[str], limit_per_player: int = 200000) -> dict[str, pd.DataFrame]:
+    """
+    Fetch gps_records per player_name. Returns dict {player_name: df}
+    Uses exact match on player_name.
+    """
+    out = {}
+    for name in player_names:
+        safe = str(name).replace('"', "")
+        # PostgREST: player_name=eq.<value> (URL encode spaces via requests automatically? we build manually: replace spaces with %20)
+        # We'll do minimal encoding:
+        encoded = requests.utils.quote(safe, safe="")
+        query = (
+            f"select={','.join(GPS_COLS)}"
+            f"&player_name=eq.{encoded}"
+            f"&order=datum.desc"
+            f"&limit={int(limit_per_player)}"
+        )
+        df = rest_get(access_token, "gps_records", query)
+        out[name] = df
+    return out
+
+
+def df_to_excel_bytes_single(df: pd.DataFrame, sheet_name: str = "gps_records") -> bytes:
     bio = io.BytesIO()
     with pd.ExcelWriter(bio, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    return bio.getvalue()
+
+
+def safe_sheet_name(name: str, used: set[str]) -> str:
+    """
+    Excel sheet max 31 chars, cannot contain: : \ / ? * [ ]
+    Also must be unique within file.
+    """
+    s = str(name).strip()
+    s = re.sub(r"[:\\/?*\[\]]", "_", s)
+    s = s[:31] if len(s) > 31 else s
+    if not s:
+        s = "Sheet"
+    base = s
+    i = 1
+    while s in used:
+        suffix = f"_{i}"
+        s = (base[: 31 - len(suffix)] + suffix) if len(base) + len(suffix) > 31 else (base + suffix)
+        i += 1
+    used.add(s)
+    return s
+
+
+def dfs_to_excel_bytes_multi(dfs: dict[str, pd.DataFrame]) -> bytes:
+    """
+    Each dict key -> one worksheet.
+    """
+    bio = io.BytesIO()
+    used = set()
+    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+        for player_name, df in dfs.items():
+            sheet = safe_sheet_name(player_name, used)
+            if df is None or df.empty:
+                pd.DataFrame(columns=GPS_COLS).to_excel(writer, index=False, sheet_name=sheet)
+            else:
+                ordered = [c for c in GPS_COLS if c in df.columns]
+                df[ordered].to_excel(writer, index=False, sheet_name=sheet)
     return bio.getvalue()
 
 
@@ -430,7 +514,7 @@ if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
 
-# >>> BELANGRIJK: role uit Supabase profiles halen (niet vertrouwen op session_state)
+# Role from Supabase profiles
 try:
     user_id, email, role, team = get_profile_role(access_token)
 except Exception as e:
@@ -448,7 +532,6 @@ if role not in ALLOWED_IMPORT:
 name_to_id, player_options = get_players_map(access_token)
 
 tab_import, tab_manual, tab_export = st.tabs(["Import (Excel)", "Manual add", "Export"])
-
 
 # -------------------------
 # TAB 1: Import (Excel)
@@ -521,7 +604,6 @@ with tab_import:
                     st.session_state["gps_parsed_df"] = None
                 except Exception as e:
                     st.error(f"Import fout: {e}")
-
 
 # -------------------------
 # TAB 2: Manual add
@@ -641,14 +723,6 @@ with tab_manual:
 
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                # numeric coercion
-                for c in dfm.columns:
-                    if c in {"player_name", "datum", "type", "event", "source_file"}:
-                        continue
-                    if c in {"player_id", "week", "year"}:
-                        continue
-                    dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
-
                 rows = []
                 metric_keys = [
                     "duration","total_distance","walking","jogging","running","sprint","high_sprint",
@@ -670,8 +744,7 @@ with tab_manual:
                         "source_file": r.get("source_file") or "manual",
                     }
                     for k in metric_keys:
-                        v = r.get(k)
-                        row[k] = coerce_num(v)
+                        row[k] = coerce_value(k, r.get(k))
                     rows.append(row)
 
                 rest_upsert(
@@ -685,40 +758,79 @@ with tab_manual:
             except Exception as e:
                 st.error(f"Save fout: {e}")
 
-
 # -------------------------
 # TAB 3: Export
 # -------------------------
 with tab_export:
     st.subheader("Export gps_records → Excel")
 
+    st.markdown("### 1) Export alles")
     c1, c2 = st.columns([1.4, 2.6])
     with c1:
-        limit = st.number_input(
-            "Max rows (veiligheidslimiet)",
+        limit_all = st.number_input(
+            "Max rows (alles) (veiligheidslimiet)",
             min_value=1,
             max_value=500000,
             value=200000,
             step=10000,
+            key="limit_all",
         )
     with c2:
         st.caption("Export haalt kolommen op en maakt een .xlsx download.")
 
-    if st.button("Generate export"):
+    if st.button("Generate export (ALL)"):
         try:
-            df = fetch_all_gps_records(access_token, limit=int(limit))
+            df = fetch_all_gps_records(access_token, limit=int(limit_all))
             if df.empty:
                 st.warning("Geen data gevonden.")
             else:
                 ordered = [c for c in GPS_COLS if c in df.columns]
                 df = df[ordered]
-                xbytes = df_to_excel_bytes(df, sheet_name="gps_records")
+                xbytes = df_to_excel_bytes_single(df, sheet_name="gps_records")
                 st.download_button(
-                    "Download gps_records.xlsx",
+                    "Download gps_records_ALL.xlsx",
                     data=xbytes,
-                    file_name="gps_records.xlsx",
+                    file_name="gps_records_ALL.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
                 st.success(f"✅ Klaar: {len(df)} rijen")
         except Exception as e:
             st.error(str(e))
+
+    st.divider()
+    st.markdown("### 2) Export geselecteerde speler(s) (elke speler = eigen werkblad)")
+
+    c3, c4 = st.columns([2.2, 1.8])
+    with c3:
+        selected_players = st.multiselect(
+            "Selecteer speler(s)",
+            options=player_options,
+            default=[],
+        )
+    with c4:
+        limit_pp = st.number_input(
+            "Max rows per speler",
+            min_value=1,
+            max_value=500000,
+            value=200000,
+            step=10000,
+            key="limit_per_player",
+        )
+
+    if st.button("Generate export (selected players)"):
+        if not selected_players:
+            st.error("Selecteer minimaal 1 speler.")
+        else:
+            try:
+                dfs = fetch_gps_for_players(access_token, selected_players, limit_per_player=int(limit_pp))
+                xbytes = dfs_to_excel_bytes_multi(dfs)
+                st.download_button(
+                    "Download gps_records_selected_players.xlsx",
+                    data=xbytes,
+                    file_name="gps_records_selected_players.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                total_rows = sum(len(df) for df in dfs.values() if df is not None)
+                st.success(f"✅ Klaar: {len(selected_players)} spelers, {total_rows} rijen totaal")
+            except Exception as e:
+                st.error(str(e))
