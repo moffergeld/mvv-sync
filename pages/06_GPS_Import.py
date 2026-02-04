@@ -128,8 +128,8 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
 # Mapping helpers
 # =========================
 def normalize_key(s: str) -> str:
-    return str(s).strip().lower().replace(" ", "").replace("_", "").replace("-", "")
-
+    # maakt bv "Duration (min)" -> "durationmin"
+    return re.sub(r"[^a-z0-9]", "", str(s).strip().lower())
 
 def normalize_name(s: str) -> str:
     s = str(s).strip().lower()
@@ -191,34 +191,43 @@ GPS_COLS = [
 ]
 
 METRIC_MAP = {
-    # distances
-    "totaldistance": "total_distance",
-    "walkdistance": "walking",
-    "jogdistance": "jogging",
-    "rundistance": "running",
-    "sprintdistance": "sprint",
-    "hisprintdistance": "high_sprint",
+    # --- duration ---
+    "duration": "duration",
+    "durationmin": "duration",
+    "durationminutes": "duration",
 
-    # sprint counts
+    # --- distances ---
+    "totaldistance": "total_distance",
+    "walking": "walking",
+    "walkdistance": "walking",
+    "jogging": "jogging",
+    "jogdistance": "jogging",
+    "running": "running",
+    "rundistance": "running",
+    "sprint": "sprint",
+    "sprintdistance": "sprint",
+    "highsprint": "high_sprint",
+    "highsprintdistance": "high_sprint",
+
+    # --- counts ---
     "numberofsprints": "number_of_sprints",
     "numberofhighsprints": "number_of_high_sprints",
+    "numberofhighsprint": "number_of_high_sprints",     # extra variant
     "numberofrepeatedsprints": "number_of_repeated_sprints",
 
-    # speed
+    # --- speed/load ---
     "maxspeed": "max_speed",
     "avgspeed": "avg_speed",
-
-    # player load
     "playerload3d": "playerload3d",
     "playerload2d": "playerload2d",
 
-    # accelerations
+    # --- accel/decel ---
     "totalaccelerations": "total_accelerations",
     "highaccelerations": "high_accelerations",
     "totaldecelerations": "total_decelerations",
     "highdecelerations": "high_decelerations",
 
-    # heart rate
+    # --- HR zones ---
     "hrzone1": "hrzone1",
     "hrzone2": "hrzone2",
     "hrzone3": "hrzone3",
@@ -334,16 +343,16 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
 
         # 🔑 METRICS
         for c in df.columns:
-            if c in ID_COLS_IN_PARSER or str(c).endswith("/min"):
+            if c in ID_COLS_IN_PARSER or str(c).strip().endswith("/min"):
                 continue
-
+        
             key = normalize_key(c)
             if key not in METRIC_MAP:
                 continue
-
+        
             db_col = METRIC_MAP[key]
             val = r[c]
-
+        
             if db_col in INT_DB_COLS:
                 v = pd.to_numeric(val, errors="coerce")
                 base[db_col] = int(v) if pd.notna(v) else None
