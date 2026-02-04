@@ -427,8 +427,22 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 
     fixed = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
     rest = [c for c in out.columns if c not in fixed]
+    # Zorg dat Event uniek is wanneer dezelfde oefening meerdere keren voorkomt
+    out = ensure_unique_events(out)
     return out[fixed + rest]
 
+def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Maakt Event uniek per (Speler, Datum, Type, Event) door suffix (2),(3),...
+    Eerste occurrence blijft zonder suffix.
+    """
+    df = df.copy()
+    # cumcount geeft 0,1,2,... per groep
+    dup_idx = df.groupby(["Speler", "Datum", "Type", "Event"]).cumcount()
+    # alleen voor >0 suffix toevoegen
+    df["Event"] = df["Event"].astype(str)
+    df.loc[dup_idx > 0, "Event"] = df.loc[dup_idx > 0, "Event"] + " (" + (dup_idx[dup_idx > 0] + 1).astype(str) + ")"
+    return df
 
 # =========================
 # Export helpers
