@@ -191,24 +191,34 @@ GPS_COLS = [
 ]
 
 METRIC_MAP = {
-    "duration": "duration",
+    # distances
     "totaldistance": "total_distance",
-    "walking": "walking",
-    "jogging": "jogging",
-    "running": "running",
-    "sprint": "sprint",
-    "highsprint": "high_sprint",
+    "walkdistance": "walking",
+    "jogdistance": "jogging",
+    "rundistance": "running",
+    "sprintdistance": "sprint",
+    "hisprintdistance": "high_sprint",
+
+    # sprint counts
     "numberofsprints": "number_of_sprints",
     "numberofhighsprints": "number_of_high_sprints",
     "numberofrepeatedsprints": "number_of_repeated_sprints",
+
+    # speed
     "maxspeed": "max_speed",
     "avgspeed": "avg_speed",
+
+    # player load
     "playerload3d": "playerload3d",
     "playerload2d": "playerload2d",
+
+    # accelerations
     "totalaccelerations": "total_accelerations",
     "highaccelerations": "high_accelerations",
     "totaldecelerations": "total_decelerations",
     "highdecelerations": "high_decelerations",
+
+    # heart rate
     "hrzone1": "hrzone1",
     "hrzone2": "hrzone2",
     "hrzone3": "hrzone3",
@@ -232,7 +242,6 @@ INT_COLS = {
     "total_decelerations",
     "high_decelerations",
 }
-
 
 def drop_min_columns(df: pd.DataFrame) -> pd.DataFrame:
     min_cols = [c for c in df.columns if str(c).strip().endswith("/min")]
@@ -268,6 +277,15 @@ def coerce_value(col: str, v):
     except Exception:
         return None
 
+INT_DB_COLS = {
+    "number_of_sprints",
+    "number_of_high_sprints",
+    "number_of_repeated_sprints",
+    "total_accelerations",
+    "high_accelerations",
+    "total_decelerations",
+    "high_decelerations",
+}
 
 def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple[list[dict], list[str]]:
     rows = []
@@ -276,7 +294,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
     parsed_dates = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
     if parsed_dates.isna().any():
         bad = df.loc[parsed_dates.isna(), "Datum"].head(5).tolist()
-        raise ValueError(f"Kon sommige Datum waarden niet parsen, voorbeelden: {bad}")
+        raise ValueError(f"Kon sommige Datum waarden niet parsen: {bad}")
 
     dates_iso = parsed_dates.dt.date.astype(str)
 
@@ -302,19 +320,27 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
             "source_file": source_file,
         }
 
+        # 🔑 METRICS
         for c in df.columns:
-            if c in ID_COLS_IN_PARSER or str(c).strip().endswith("/min"):
+            if c in ID_COLS_IN_PARSER or str(c).endswith("/min"):
                 continue
-            key = normalize_key(c)
-            if key in METRIC_MAP:
-                db_col = METRIC_MAP[key]
-                base[db_col] = coerce_value(db_col, r[c])
 
-        base = {k: v for k, v in base.items() if k in GPS_COLS}
+            key = normalize_key(c)
+            if key not in METRIC_MAP:
+                continue
+
+            db_col = METRIC_MAP[key]
+            val = r[c]
+
+            if db_col in INT_DB_COLS:
+                v = pd.to_numeric(val, errors="coerce")
+                base[db_col] = int(v) if pd.notna(v) else None
+            else:
+                base[db_col] = coerce_num(val)
+
         rows.append(base)
 
     return rows, sorted(unmapped)
-
 
 # =========================
 # JOHAN Parsers
