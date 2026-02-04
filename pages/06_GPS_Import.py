@@ -15,6 +15,11 @@ import pandas as pd
 import requests
 import streamlit as st
 
+try:
+    import openpyxl  # noqa: F401
+except Exception:
+    st.error("Excel support ontbreekt: installeer openpyxl via requirements.txt")
+    st.stop()
 
 # =========================
 # Page / Config
