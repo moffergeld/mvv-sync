@@ -277,6 +277,18 @@ def coerce_value(col: str, v):
     except Exception:
         return None
 
+def coerce_num(v):
+    """Convert values to float where possible; keep None for NaN/empty."""
+    if v is None or (isinstance(v, str) and v.strip() == ""):
+        return None
+    if pd.isna(v):
+        return None
+    # Some exports use comma decimals
+    if isinstance(v, str):
+        v = v.replace(",", ".")
+    num = pd.to_numeric(v, errors="coerce")
+    return float(num) if pd.notna(num) else None
+
 INT_DB_COLS = {
     "number_of_sprints",
     "number_of_high_sprints",
