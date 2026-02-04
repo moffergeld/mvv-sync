@@ -568,65 +568,91 @@ with tab_import:
     with col2:
         selected_type = st.selectbox("Type", TYPE_OPTIONS)
     with col3:
-        uploaded = st.file_uploader("Upload Excel (bestandsnaam bevat SUMMARY of EXERCISES)", type=["xlsx", "xls"])
+        uploaded_files = st.file_uploader(
+            "Upload Excel (meerdere bestanden: SUMMARY + EXERCISES)",
+            type=["xlsx", "xls"],
+            accept_multiple_files=True,
+        )
 
-    if uploaded:
-        filename = uploaded.name
-        file_bytes = uploaded.getvalue()
+    if uploaded_files:
+        colP1, colP2 = st.columns([1, 1])
+        with colP1:
+            do_preview = st.button("Preview (parse) – alle bestanden")
+        with colP2:
+            do_import = st.button("Import (upsert) – alle bestanden", type="primary")
 
-        is_summary = "summary" in filename.lower()
-        is_exercises = "exercises" in filename.lower()
+        if do_preview or do_import:
+            all_parsed = []
+            all_rows = []
+            all_unmapped = set()
 
-        if is_summary:
-            st.info("Herkenning: SUMMARY")
-        elif is_exercises:
-            st.info("Herkenning: EXERCISES")
-        else:
-            st.warning("Bestandsnaam bevat geen SUMMARY/EXERCISES. Tool probeert het automatisch te parsen.")
+            for uf in uploaded_files:
+                filename = uf.name
+                file_bytes = uf.getvalue()
 
-        if st.button("Preview (parse)"):
-            try:
+                is_summary = "summary" in filename.lower()
+                is_exercises = "exercises" in filename.lower()
+
+                # Parse per file
                 if is_summary:
                     df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                 elif is_exercises:
                     df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
                 else:
+                    # fallback: probeer summary, anders exercises
                     try:
                         df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                     except Exception:
                         df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
 
-                st.session_state["gps_parsed_df"] = df_parsed
-                st.success(f"Parsed rows: {len(df_parsed)}")
-                st.dataframe(df_parsed.head(200), use_container_width=True)
-            except Exception as e:
-                st.error(str(e))
+                all_parsed.append((filename, df_parsed))
 
-        df_parsed = st.session_state.get("gps_parsed_df")
-        if df_parsed is not None and not df_parsed.empty:
-            st.divider()
-            st.subheader("Import → Supabase (upsert)")
+                # Rows voor import
+                rows, unmapped = df_to_db_rows(df_parsed, source_file=filename, name_to_id=name_to_id)
+                all_rows.extend(rows)
+                all_unmapped.update(unmapped)
 
-            if st.button("Import (upsert naar gps_records)", type="primary"):
+            # Preview output
+            if do_preview:
+                st.success(
+                    f"Parsed bestanden: {len(all_parsed)} | totaal rijen: {sum(len(d) for _, d in all_parsed)}"
+                )
+                for fn, d in all_parsed:
+                    st.markdown(f"**{fn}** ({len(d)} rijen)")
+                    st.dataframe(d.head(50), use_container_width=True)
+
+                # optioneel debug (zet aan als je wilt)
+                # if all_parsed:
+                #     st.write("Voorbeeld kolommen:", list(all_parsed[0][1].columns))
+
+            # Import (upsert) output
+            if do_import:
+                if all_unmapped:
+                    st.warning(
+                        "Niet gematchte namen (player_id blijft NULL):\n- "
+                        + "\n- ".join(sorted(list(all_unmapped))[:50])
+                        + (f"\n... (+{len(all_unmapped)-50})" if len(all_unmapped) > 50 else "")
+                    )
+
+                # Deduplicate binnen dezelfde batch op conflict-key
+                # (voorkomt: ON CONFLICT DO UPDATE command cannot affect row a second time)
+                dedup = {}
+                for r in all_rows:
+                    k = (r.get("player_name"), r.get("datum"), r.get("type"), r.get("event"))
+                    dedup[k] = r
+                all_rows = list(dedup.values())
+
                 try:
-                    rows, unmapped = df_to_db_rows(df_parsed, source_file=filename, name_to_id=name_to_id)
-                    if unmapped:
-                        st.warning(
-                            "Niet gematchte namen (player_id blijft NULL, import gaat wel door):\n- "
-                            + "\n- ".join(unmapped[:30])
-                            + (f"\n... (+{len(unmapped)-30})" if len(unmapped) > 30 else "")
-                        )
-
                     rest_upsert(
                         access_token,
                         "gps_records",
-                        rows,
+                        all_rows,
                         on_conflict="player_name,datum,type,event",
                     )
-                    st.success(f"✅ Import klaar. Upserted rows: {len(rows)}")
-                    st.session_state["gps_parsed_df"] = None
+                    st.success(f"✅ Import klaar. Upserted rows: {len(all_rows)}")
                 except Exception as e:
                     st.error(f"Import fout: {e}")
+
 
 # -------------------------
 # TAB 2: Manual add
@@ -688,7 +714,11 @@ with tab_manual:
         )
 
     colcfg = {
-        "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
+        "player_name": st.column_config.SelectboxColumn(
+            "player_name",
+            options=player_options,
+            required=True,
+        ),
         "datum": st.column_config.DateColumn("datum", required=True),
         "type": st.column_config.SelectboxColumn("type", options=TYPE_OPTIONS, required=True),
         "event": st.column_config.TextColumn("event", required=True),
@@ -746,6 +776,14 @@ with tab_manual:
 
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
+                # numeric coercion
+                for c in dfm.columns:
+                    if c in {"player_name", "datum", "type", "event", "source_file"}:
+                        continue
+                    if c in {"player_id", "week", "year"}:
+                        continue
+                    dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
+
                 rows = []
                 metric_keys = [
                     "duration","total_distance","walking","jogging","running","sprint","high_sprint",
@@ -767,8 +805,15 @@ with tab_manual:
                         "source_file": r.get("source_file") or "manual",
                     }
                     for k in metric_keys:
-                        row[k] = coerce_value(k, r.get(k))
+                        row[k] = coerce_num(r.get(k))
                     rows.append(row)
+
+                # Deduplicate binnen batch op conflict-key
+                dedup = {}
+                for rr in rows:
+                    k = (rr.get("player_name"), rr.get("datum"), rr.get("type"), rr.get("event"))
+                    dedup[k] = rr
+                rows = list(dedup.values())
 
                 rest_upsert(
                     access_token,
@@ -781,79 +826,41 @@ with tab_manual:
             except Exception as e:
                 st.error(f"Save fout: {e}")
 
+
 # -------------------------
 # TAB 3: Export
 # -------------------------
 with tab_export:
     st.subheader("Export gps_records → Excel")
 
-    st.markdown("### 1) Export alles")
     c1, c2 = st.columns([1.4, 2.6])
     with c1:
-        limit_all = st.number_input(
-            "Max rows (alles) (veiligheidslimiet)",
+        limit = st.number_input(
+            "Max rows (veiligheidslimiet)",
             min_value=1,
             max_value=500000,
             value=200000,
             step=10000,
-            key="limit_all",
         )
     with c2:
         st.caption("Export haalt kolommen op en maakt een .xlsx download.")
 
-    if st.button("Generate export (ALL)"):
+    if st.button("Generate export"):
         try:
-            df = fetch_all_gps_records(access_token, limit=int(limit_all))
+            df = fetch_all_gps_records(access_token, limit=int(limit))
             if df.empty:
                 st.warning("Geen data gevonden.")
             else:
                 ordered = [c for c in GPS_COLS if c in df.columns]
                 df = df[ordered]
-                xbytes = df_to_excel_bytes_single(df, sheet_name="gps_records")
+                xbytes = df_to_excel_bytes(df, sheet_name="gps_records")
                 st.download_button(
-                    "Download gps_records_ALL.xlsx",
+                    "Download gps_records.xlsx",
                     data=xbytes,
-                    file_name="gps_records_ALL.xlsx",
+                    file_name="gps_records.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
                 st.success(f"✅ Klaar: {len(df)} rijen")
         except Exception as e:
             st.error(str(e))
 
-    st.divider()
-    st.markdown("### 2) Export geselecteerde speler(s) (elke speler = eigen werkblad)")
-
-    c3, c4 = st.columns([2.2, 1.8])
-    with c3:
-        selected_players = st.multiselect(
-            "Selecteer speler(s)",
-            options=player_options,
-            default=[],
-        )
-    with c4:
-        limit_pp = st.number_input(
-            "Max rows per speler",
-            min_value=1,
-            max_value=500000,
-            value=200000,
-            step=10000,
-            key="limit_per_player",
-        )
-
-    if st.button("Generate export (selected players)"):
-        if not selected_players:
-            st.error("Selecteer minimaal 1 speler.")
-        else:
-            try:
-                dfs = fetch_gps_for_players(access_token, selected_players, limit_per_player=int(limit_pp))
-                xbytes = dfs_to_excel_bytes_multi(dfs)
-                st.download_button(
-                    "Download gps_records_selected_players.xlsx",
-                    data=xbytes,
-                    file_name="gps_records_selected_players.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-                total_rows = sum(len(df) for df in dfs.values() if df is not None)
-                st.success(f"✅ Klaar: {len(selected_players)} spelers, {total_rows} rijen totaal")
-            except Exception as e:
-                st.error(str(e))
