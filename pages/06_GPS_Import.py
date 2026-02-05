@@ -191,43 +191,43 @@ GPS_COLS = [
 ]
 
 METRIC_MAP = {
-    # --- duration ---
+    # work
     "duration": "duration",
-    "durationmin": "duration",
-    "durationminutes": "duration",
-
-    # --- distances ---
     "totaldistance": "total_distance",
-    "walking": "walking",
+
+    # distances (JOHAN naming)
     "walkdistance": "walking",
-    "jogging": "jogging",
     "jogdistance": "jogging",
-    "running": "running",
     "rundistance": "running",
-    "sprint": "sprint",
     "sprintdistance": "sprint",
-    "highsprint": "high_sprint",
+
+    # high sprint distance (JOHAN uses "hi")
+    "hisprintdistance": "high_sprint",
+    # (optioneel: als er ooit wél highsprintdistance voorkomt)
     "highsprintdistance": "high_sprint",
 
-    # --- counts ---
+    # counts
     "numberofsprints": "number_of_sprints",
+    "numberofhisprints": "number_of_high_sprints",
+    # (optioneel: als er ooit wél numberofhighsprints voorkomt)
     "numberofhighsprints": "number_of_high_sprints",
-    "numberofhighsprint": "number_of_high_sprints",     # extra variant
     "numberofrepeatedsprints": "number_of_repeated_sprints",
 
-    # --- speed/load ---
+    # speed
     "maxspeed": "max_speed",
     "avgspeed": "avg_speed",
+
+    # playerload
     "playerload3d": "playerload3d",
     "playerload2d": "playerload2d",
 
-    # --- accel/decel ---
+    # accel/decel
     "totalaccelerations": "total_accelerations",
     "highaccelerations": "high_accelerations",
     "totaldecelerations": "total_decelerations",
     "highdecelerations": "high_decelerations",
 
-    # --- HR zones ---
+    # HR zones / TRIMP
     "hrzone1": "hrzone1",
     "hrzone2": "hrzone2",
     "hrzone3": "hrzone3",
