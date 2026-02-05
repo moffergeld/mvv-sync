@@ -266,7 +266,7 @@ with tab_w:
                     if "__display_name" in show.columns:
                         show = show.rename(columns={"__display_name": "player"})
 
-                st.dataframe(show, use_container_width=True)
+                st.dataframe(show, width='stretch')
 
                 if metric and "player" in show.columns and metric in show.columns:
                     chart = show[["player", metric]].dropna().set_index("player")
@@ -293,7 +293,7 @@ with tab_w:
                         s = sub[["form_date", m]].dropna().groupby("form_date")[m].mean().sort_index()
                         st.line_chart(s)
 
-                st.dataframe(sub, use_container_width=True)
+                st.dataframe(sub, width='stretch')
 
 
 # -------------------------
@@ -328,13 +328,13 @@ with tab_r:
                         if "__display_name" in show.columns:
                             show = show.rename(columns={"__display_name": "player"})
 
-                    st.dataframe(show, use_container_width=True)
+                    st.dataframe(show, width='stretch')
 
                     if "player" in show.columns:
                         chart = show[["player", rpe_value_col]].dropna().set_index("player")
                         st.bar_chart(chart)
                 else:
-                    st.dataframe(day_df, use_container_width=True)
+                    st.dataframe(day_df, width='stretch')
 
         else:
             if role in ("staff", "admin"):
@@ -356,4 +356,4 @@ with tab_r:
                     st.caption("sRPE verloop in tijd")
                     st.line_chart(s)
 
-                st.dataframe(sub, use_container_width=True)
+                st.dataframe(sub, width='stretch')
