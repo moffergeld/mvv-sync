@@ -13,7 +13,7 @@ def login_ui():
     st.title("Login")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
-    if st.button("Sign in", use_container_width=True):
+    if st.button("Sign in", width='stretch'):
         res = sb.auth.sign_in_with_password({"email": email, "password": password})
         st.session_state["access_token"] = res.session.access_token
         st.session_state["user_email"] = email
