@@ -770,11 +770,12 @@ with tab_manual:
         "type": st.column_config.SelectboxColumn("type", options=TYPE_OPTIONS, required=True),
         "event": st.column_config.TextColumn("event", required=True),
         "source_file": st.column_config.TextColumn("source_file"),
+        # (optioneel) je kunt hier later NumberColumn configs toevoegen
     }
 
     edited = st.data_editor(
         st.session_state["manual_df"],
-        width='stretch',
+        width="stretch",
         num_rows="dynamic",
         column_config=colcfg,
         key="manual_editor",
@@ -802,6 +803,7 @@ with tab_manual:
             try:
                 dfm = edited.copy()
 
+                # --- Validatie basisvelden ---
                 dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                 dfm["event"] = dfm["event"].astype(str).str.strip()
                 dfm["type"] = dfm["type"].astype(str).str.strip()
@@ -812,6 +814,7 @@ with tab_manual:
                     st.error("Geen geldige rijen om op te slaan.")
                     st.stop()
 
+                # --- Datum/Week/Year ---
                 dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                 if dt_series.isna().any():
                     st.error("Ongeldige datum in één of meer rijen.")
@@ -821,25 +824,36 @@ with tab_manual:
                 dfm["year"] = dt_series.dt.year.astype(int)
                 dfm["datum"] = dt_series.dt.date.astype(str)
 
+                # --- player_id mapping ---
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                # numeric coercion
-                for c in dfm.columns:
-                    if c in {"player_name", "datum", "type", "event", "source_file"}:
-                        continue
-                    if c in {"player_id", "week", "year"}:
-                        continue
-                    dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
+                # --- Welke DB kolommen zijn INT? (schema gps_records) ---
+                INT_DB_COLS = {
+                    "number_of_sprints",
+                    "number_of_high_sprints",
+                    "number_of_repeated_sprints",
+                    "total_accelerations",
+                    "high_accelerations",
+                    "total_decelerations",
+                    "high_decelerations",
+                }
 
-                rows = []
                 metric_keys = [
-                    "duration","total_distance","walking","jogging","running","sprint","high_sprint",
-                    "number_of_sprints","number_of_high_sprints","number_of_repeated_sprints",
-                    "max_speed","avg_speed","playerload3d","playerload2d",
-                    "total_accelerations","high_accelerations","total_decelerations","high_decelerations",
-                    "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr"
+                    "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
+                    "number_of_sprints", "number_of_high_sprints", "number_of_repeated_sprints",
+                    "max_speed", "avg_speed", "playerload3d", "playerload2d",
+                    "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
+                    "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5",
+                    "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr"
                 ]
 
+                # --- Coerce numerics ---
+                for c in metric_keys:
+                    if c in dfm.columns:
+                        dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
+
+                # --- Build rows (met INT casting waar nodig) ---
+                rows = []
                 for _, r in dfm.iterrows():
                     row = {
                         "player_id": r.get("player_id"),
@@ -849,18 +863,19 @@ with tab_manual:
                         "year": int(r.get("year")) if pd.notna(r.get("year")) else None,
                         "type": r.get("type"),
                         "event": r.get("event"),
-                        "source_file": r.get("source_file") or "manual",
+                        "source_file": (r.get("source_file") or "manual"),
                     }
-                    for k in metric_keys:
-                        row[k] = coerce_num(r.get(k))
-                    rows.append(row)
 
-                # Deduplicate binnen batch op conflict-key
-                dedup = {}
-                for rr in rows:
-                    k = (rr.get("player_name"), rr.get("datum"), rr.get("type"), rr.get("event"))
-                    dedup[k] = rr
-                rows = list(dedup.values())
+                    for k in metric_keys:
+                        v = r.get(k)
+                        if pd.isna(v):
+                            row[k] = None
+                        elif k in INT_DB_COLS:
+                            row[k] = int(float(v))  # 10000.0 -> 10000
+                        else:
+                            row[k] = float(v)
+
+                    rows.append(row)
 
                 rest_upsert(
                     access_token,
@@ -868,11 +883,12 @@ with tab_manual:
                     rows,
                     on_conflict="player_name,datum,type,event",
                 )
+
                 st.success(f"✅ Saved rows: {len(rows)}")
                 st.session_state["manual_df"] = edited
+
             except Exception as e:
                 st.error(f"Save fout: {e}")
-
 
 # -------------------------
 # TAB 3: Export
