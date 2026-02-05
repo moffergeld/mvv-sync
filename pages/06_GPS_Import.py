@@ -666,7 +666,7 @@ with tab_import:
                 )
                 for fn, d in all_parsed:
                     st.markdown(f"**{fn}** ({len(d)} rijen)")
-                    st.dataframe(d.head(50), use_container_width=True)
+                    st.dataframe(d.head(50), width='stretch')
 
                 # optioneel debug (zet aan als je wilt)
                 # if all_parsed:
@@ -774,7 +774,7 @@ with tab_manual:
 
     edited = st.data_editor(
         st.session_state["manual_df"],
-        use_container_width=True,
+        width='stretch',
         num_rows="dynamic",
         column_config=colcfg,
         key="manual_editor",
