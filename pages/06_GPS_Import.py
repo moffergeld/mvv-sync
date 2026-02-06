@@ -127,6 +127,69 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
 # =========================
 # Mapping helpers
 # =========================
+def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
+    # jouw Matches.csv is ; gescheiden
+    df = pd.read_csv(io.BytesIO(file_bytes), sep=";")
+
+    # verwachte kolommen (uit jouw file)
+    # Datum, Wedstrijd, Home/Away, Tegenstander, Type, Seizoen, Result, Goals for, Goals against
+    df = df.rename(
+        columns={
+            "Datum": "match_date",
+            "Wedstrijd": "fixture",
+            "Home/Away": "home_away",
+            "Tegenstander": "opponent",
+            "Type": "match_type",
+            "Seizoen": "season",
+            "Result": "result",
+            "Goals for": "goals_for",
+            "Goals against": "goals_against",
+        }
+    )
+
+    df["match_date"] = pd.to_datetime(df["match_date"], dayfirst=True, errors="coerce").dt.date
+    if df["match_date"].isna().any():
+        bad = df.loc[df["match_date"].isna()].head(5)
+        raise ValueError(f"Kon Datum niet parsen in Matches.csv. Voorbeelden:\n{bad}")
+
+    # ints (nullable)
+    for c in ["goals_for", "goals_against"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
+
+    # schoonmaken
+    for c in ["fixture", "home_away", "opponent", "match_type", "season", "result"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).replace("nan", "").str.strip()
+
+    keep = ["match_date", "fixture", "home_away", "opponent", "match_type", "season", "result", "goals_for", "goals_against"]
+    return df[keep]
+
+
+def matches_df_to_rows(df: pd.DataFrame, source_file: str) -> list[dict]:
+    rows = []
+    for _, r in df.iterrows():
+        rows.append(
+            {
+                "match_date": str(r["match_date"]),
+                "fixture": r.get("fixture") or None,
+                "home_away": r.get("home_away") or None,
+                "opponent": r.get("opponent") or None,
+                "match_type": r.get("match_type") or None,
+                "season": r.get("season") or None,
+                "result": r.get("result") or None,
+                "goals_for": int(r["goals_for"]) if pd.notna(r.get("goals_for")) else None,
+                "goals_against": int(r["goals_against"]) if pd.notna(r.get("goals_against")) else None,
+                "source_file": source_file,
+            }
+        )
+    return rows
+
+
+def fetch_matches_on_date(access_token: str, d: date) -> pd.DataFrame:
+    q = f"select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against&match_date=eq.{d.isoformat()}&order=match_id.desc&limit=200"
+    return rest_get(access_token, "matches", q)
+
 def normalize_key(s: str) -> str:
     # maakt bv "Duration (min)" -> "durationmin"
     return re.sub(r"[^a-z0-9]", "", str(s).strip().lower())
@@ -601,7 +664,7 @@ if role not in ALLOWED_IMPORT:
 
 name_to_id, player_options = get_players_map(access_token)
 
-tab_import, tab_manual, tab_export = st.tabs(["Import (Excel)", "Manual add", "Export"])
+tab_import, tab_manual, tab_export, tab_matches = st.tabs(["Import (Excel)", "Manual add", "Export", "Matches"])
 
 # -------------------------
 # TAB 1: Import (Excel)
@@ -927,3 +990,38 @@ with tab_export:
         except Exception as e:
             st.error(str(e))
 
+# -------------------------
+# TAB 4: Import Matches
+# -------------------------
+with tab_matches:
+    st.subheader("Import Matches.csv → Supabase")
+
+    matches_file = st.file_uploader("Upload Matches.csv", type=["csv"], key="matches_csv")
+    if matches_file:
+        b = matches_file.getvalue()
+        fname = matches_file.name
+
+        if st.button("Preview matches"):
+            try:
+                dfm = parse_matches_csv(b)
+                st.session_state["matches_preview"] = dfm
+                st.success(f"Parsed matches: {len(dfm)}")
+                st.dataframe(dfm, use_container_width=True)
+            except Exception as e:
+                st.error(str(e))
+
+        dfm = st.session_state.get("matches_preview")
+        if dfm is not None and not dfm.empty:
+            if st.button("Import matches (upsert)", type="primary"):
+                try:
+                    rows = matches_df_to_rows(dfm, source_file=fname)
+                    rest_upsert(
+                        access_token,
+                        "matches",
+                        rows,
+                        on_conflict="match_date,fixture,season",
+                    )
+                    st.success(f"✅ Matches geïmporteerd: {len(rows)}")
+                    st.session_state["matches_preview"] = None
+                except Exception as e:
+                    st.error(f"Import fout: {e}")
