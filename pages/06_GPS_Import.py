@@ -1,13 +1,7 @@
+# =========================
+# PART 1/5 — Imports, config, REST helpers, small utilities
 # pages/06_GPS_Import.py
-# - Upload JOHAN Excel (SUMMARY / EXERCISES) -> parse -> upsert into public.gps_records
-# - Date is manual (default today)
-# - Export ALL gps_records to Excel (staff roles)
-# - Export selected player(s) to Excel (each player -> own sheet)
-# - Manual add rows via editable table (+ rows) with player select
-#
-# Requires:
-#   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] set by your login (JWT access token)
+# =========================
 
 import io
 import re
@@ -38,6 +32,46 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 
 ALLOWED_IMPORT = {"admin", "data_scientist", "staff", "physio", "performance_coach"}
 TYPE_OPTIONS = ["Practice", "Practice (1)", "Practice (2)", "Match", "Practice Match"]
+
+# Matches UI config
+TEAM_NAME_MATCHES = "MVV Maastricht"
+HOME_AWAY_OPTIONS = ["Home", "Away"]
+MATCH_TYPE_OPTIONS = ["Competitie", "Oefenwedstrijd", "Beker"]
+
+
+def season_options(start_year: int = 2020, years_ahead: int = 6) -> list[str]:
+    y0 = start_year
+    y1 = date.today().year + years_ahead
+    return [f"{y}/{y+1}" for y in range(y0, y1 + 1)]
+
+
+def build_fixture(team_name: str, home_away: str | None, opponent: str | None) -> str:
+    ha = (home_away or "").strip().lower()
+    opp = (opponent or "").strip()
+    team = (team_name or "").strip()
+
+    if not team and not opp:
+        return ""
+
+    if ha == "away":
+        # Opponent - Team
+        if opp and team:
+            return f"{opp} - {team}"
+        return opp or team
+
+    # Default home
+    if team and opp:
+        return f"{team} - {opp}"
+    return team or opp
+
+
+def build_result(goals_for, goals_against) -> str:
+    gf = pd.to_numeric(goals_for, errors="coerce")
+    ga = pd.to_numeric(goals_against, errors="coerce")
+    if pd.isna(gf) or pd.isna(ga):
+        return ""
+    return f"{int(gf)}-{int(ga)}"
+
 
 # =========================
 # Auth / REST helpers
@@ -84,6 +118,18 @@ def rest_upsert(access_token: str, table: str, rows: list[dict], on_conflict: st
             raise RuntimeError(f"UPSERT {table} failed ({r.status_code}): {r.text}")
 
 
+def rest_patch(access_token: str, table: str, where_query: str, payload: dict) -> None:
+    """
+    where_query example: "match_id=eq.27"
+    """
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{where_query}"
+    headers = rest_headers(access_token)
+    headers["Prefer"] = "return=representation"
+    r = requests.patch(url, headers=headers, json=payload, timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"PATCH {table} failed ({r.status_code}): {r.text}")
+
+
 def auth_get_user(access_token: str) -> dict:
     url = f"{SUPABASE_URL}/auth/v1/user"
     r = requests.get(url, headers=rest_headers(access_token), timeout=30)
@@ -123,16 +169,14 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
             team = dfp.iloc[0].get("team")
     return user_id, email, role, team
 
+# =========================
+# PART 2/5 — Mapping helpers (players, matches CSV), gps schema + df_to_db_rows
+# =========================
 
-# =========================
-# Mapping helpers
-# =========================
 def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
     # jouw Matches.csv is ; gescheiden
     df = pd.read_csv(io.BytesIO(file_bytes), sep=";")
 
-    # verwachte kolommen (uit jouw file)
-    # Datum, Wedstrijd, Home/Away, Tegenstander, Type, Seizoen, Result, Goals for, Goals against
     df = df.rename(
         columns={
             "Datum": "match_date",
@@ -152,15 +196,17 @@ def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
         bad = df.loc[df["match_date"].isna()].head(5)
         raise ValueError(f"Kon Datum niet parsen in Matches.csv. Voorbeelden:\n{bad}")
 
-    # ints (nullable)
     for c in ["goals_for", "goals_against"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").astype("Int64")
 
-    # schoonmaken
     for c in ["fixture", "home_away", "opponent", "match_type", "season", "result"]:
         if c in df.columns:
             df[c] = df[c].astype(str).replace("nan", "").str.strip()
+
+    # fixture/result normaliseren bij import
+    df["fixture"] = df.apply(lambda r: build_fixture(TEAM_NAME_MATCHES, r.get("home_away"), r.get("opponent")), axis=1)
+    df["result"] = df.apply(lambda r: build_result(r.get("goals_for"), r.get("goals_against")), axis=1)
 
     keep = ["match_date", "fixture", "home_away", "opponent", "match_type", "season", "result", "goals_for", "goals_against"]
     return df[keep]
@@ -187,12 +233,29 @@ def matches_df_to_rows(df: pd.DataFrame, source_file: str) -> list[dict]:
 
 
 def fetch_matches_on_date(access_token: str, d: date) -> pd.DataFrame:
-    q = f"select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against&match_date=eq.{d.isoformat()}&order=match_id.desc&limit=200"
+    q = (
+        "select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against"
+        f"&match_date=eq.{d.isoformat()}"
+        "&order=match_id.desc&limit=200"
+    )
     return rest_get(access_token, "matches", q)
 
+
+def fetch_matches_range(access_token: str, d_from: date, d_to: date, season_filter: str = "") -> pd.DataFrame:
+    q = (
+        "select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against"
+        f"&match_date=gte.{d_from.isoformat()}"
+        f"&match_date=lte.{d_to.isoformat()}"
+        "&order=match_date.desc&limit=2000"
+    )
+    if season_filter.strip():
+        q += f"&season=eq.{requests.utils.quote(season_filter.strip(), safe='')}"
+    return rest_get(access_token, "matches", q)
+
+
 def normalize_key(s: str) -> str:
-    # maakt bv "Duration (min)" -> "durationmin"
     return re.sub(r"[^a-z0-9]", "", str(s).strip().lower())
+
 
 def normalize_name(s: str) -> str:
     s = str(s).strip().lower()
@@ -255,43 +318,26 @@ GPS_COLS = [
 ]
 
 METRIC_MAP = {
-    # work
     "duration": "duration",
     "totaldistance": "total_distance",
-
-    # distances (JOHAN naming)
     "walkdistance": "walking",
     "jogdistance": "jogging",
     "rundistance": "running",
     "sprintdistance": "sprint",
-
-    # high sprint distance (JOHAN uses "hi")
     "hisprintdistance": "high_sprint",
-    # (optioneel: als er ooit wél highsprintdistance voorkomt)
     "highsprintdistance": "high_sprint",
-
-    # counts
     "numberofsprints": "number_of_sprints",
     "numberofhisprints": "number_of_high_sprints",
-    # (optioneel: als er ooit wél numberofhighsprints voorkomt)
     "numberofhighsprints": "number_of_high_sprints",
     "numberofrepeatedsprints": "number_of_repeated_sprints",
-
-    # speed
     "maxspeed": "max_speed",
     "avgspeed": "avg_speed",
-
-    # playerload
     "playerload3d": "playerload3d",
     "playerload2d": "playerload2d",
-
-    # accel/decel
     "totalaccelerations": "total_accelerations",
     "highaccelerations": "high_accelerations",
     "totaldecelerations": "total_decelerations",
     "highdecelerations": "high_decelerations",
-
-    # HR zones / TRIMP
     "hrzone1": "hrzone1",
     "hrzone2": "hrzone2",
     "hrzone3": "hrzone3",
@@ -315,53 +361,29 @@ INT_DB_COLS = {
     "high_decelerations",
 }
 
+
 def drop_min_columns(df: pd.DataFrame) -> pd.DataFrame:
     min_cols = [c for c in df.columns if str(c).strip().endswith("/min")]
     return df.drop(columns=min_cols) if min_cols else df
 
 
-def coerce_value(col: str, v):
-    if pd.isna(v):
-        return None
-
-    if isinstance(v, (int, float)):
-        if col in INT_DB_COLS:
-            try:
-                return int(round(float(v)))
-            except Exception:
-                return None
-        return float(v)
-
-    s = str(v).strip()
-    if s == "":
-        return None
-
-    s2 = s.replace(",", ".")
-
-    if col in INT_DB_COLS:
-        try:
-            return int(round(float(s2)))
-        except Exception:
-            return None
-
-    try:
-        return float(s2)
-    except Exception:
-        return None
-
 def coerce_num(v):
-    """Convert values to float where possible; keep None for NaN/empty."""
     if v is None or (isinstance(v, str) and v.strip() == ""):
         return None
     if pd.isna(v):
         return None
-    # Some exports use comma decimals
     if isinstance(v, str):
         v = v.replace(",", ".")
     num = pd.to_numeric(v, errors="coerce")
     return float(num) if pd.notna(num) else None
 
-def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict, match_id: int | None = None) -> tuple[list[dict], list[str]]:
+
+def df_to_db_rows(
+    df: pd.DataFrame,
+    source_file: str,
+    name_to_id: dict,
+    match_id: int | None = None,
+) -> tuple[list[dict], list[str]]:
     rows = []
     unmapped = set()
 
@@ -395,18 +417,17 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict, match_id
             "source_file": source_file,
         }
 
-        # 🔑 METRICS
         for c in df.columns:
             if c in ID_COLS_IN_PARSER or str(c).strip().endswith("/min"):
                 continue
-        
+
             key = normalize_key(c)
             if key not in METRIC_MAP:
                 continue
-        
+
             db_col = METRIC_MAP[key]
             val = r[c]
-        
+
             if db_col in INT_DB_COLS:
                 v = pd.to_numeric(val, errors="coerce")
                 base[db_col] = int(v) if pd.notna(v) else None
@@ -418,8 +439,9 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict, match_id
     return rows, sorted(unmapped)
 
 # =========================
-# JOHAN Parsers
+# PART 3/5 — JOHAN parsers (SUMMARY / EXERCISES) + unique Event
 # =========================
+
 def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
     raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
 
@@ -475,6 +497,24 @@ def maak_lijst_uniek(lijst):
     return out
 
 
+def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Maakt Event uniek per (Speler, Datum, Type, Event).
+    - Als een oefening maar 1x voorkomt: Event blijft onveranderd
+    - Als een oefening meerdere keren voorkomt: suffix (1),(2),(3),... op ALLE occurrences
+    """
+    df = df.copy()
+    keys = ["Speler", "Datum", "Type", "Event"]
+    df["Event"] = df["Event"].astype(str).str.strip()
+
+    idx = df.groupby(keys).cumcount()
+    grp_size = df.groupby(keys)["Event"].transform("size")
+
+    mask = grp_size > 1
+    df.loc[mask, "Event"] = df.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
+    return df
+
+
 def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
     xlsx = pd.ExcelFile(io.BytesIO(file_bytes))
     sheets = [s for s in xlsx.sheet_names if s.lower() != "spelerlijst"]
@@ -528,60 +568,17 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 
     fixed = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
     rest = [c for c in out.columns if c not in fixed]
-    # Zorg dat Event uniek is wanneer dezelfde oefening meerdere keren voorkomt
+
     out = ensure_unique_events(out)
     return out[fixed + rest]
 
-def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Maakt Event uniek per (Speler, Datum, Type, Event).
-    - Als een oefening maar 1x voorkomt: Event blijft onveranderd
-    - Als een oefening meerdere keren voorkomt: suffix (1),(2),(3),... op ALLE occurrences
-    """
-    df = df.copy()
-
-    keys = ["Speler", "Datum", "Type", "Event"]
-    df["Event"] = df["Event"].astype(str).str.strip()
-
-    # 0,1,2,... per groep
-    idx = df.groupby(keys).cumcount()
-    # groepsgrootte per rij
-    grp_size = df.groupby(keys)["Event"].transform("size")
-
-    # Alleen suffix toevoegen als groepsgrootte > 1
-    mask = grp_size > 1
-    df.loc[mask, "Event"] = df.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
-
-    return df
-
 # =========================
-# Export helpers
+# PART 4/5 — Export helpers
 # =========================
+
 def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFrame:
     query = f"select={','.join(GPS_COLS)}&order=datum.desc&limit={limit}"
     return rest_get(access_token, "gps_records", query)
-
-
-def fetch_gps_for_players(access_token: str, player_names: list[str], limit_per_player: int = 200000) -> dict[str, pd.DataFrame]:
-    """
-    Fetch gps_records per player_name. Returns dict {player_name: df}
-    Uses exact match on player_name.
-    """
-    out = {}
-    for name in player_names:
-        safe = str(name).replace('"', "")
-        # PostgREST: player_name=eq.<value> (URL encode spaces via requests automatically? we build manually: replace spaces with %20)
-        # We'll do minimal encoding:
-        encoded = requests.utils.quote(safe, safe="")
-        query = (
-            f"select={','.join(GPS_COLS)}"
-            f"&player_name=eq.{encoded}"
-            f"&order=datum.desc"
-            f"&limit={int(limit_per_player)}"
-        )
-        df = rest_get(access_token, "gps_records", query)
-        out[name] = df
-    return out
 
 
 def df_to_excel_bytes_single(df: pd.DataFrame, sheet_name: str = "gps_records") -> bytes:
@@ -592,10 +589,6 @@ def df_to_excel_bytes_single(df: pd.DataFrame, sheet_name: str = "gps_records") 
 
 
 def safe_sheet_name(name: str, used: set[str]) -> str:
-    """
-    Excel sheet max 31 chars, cannot contain: : \ / ? * [ ]
-    Also must be unique within file.
-    """
     s = str(name).strip()
     s = re.sub(r"[:\\/?*\[\]]", "_", s)
     s = s[:31] if len(s) > 31 else s
@@ -610,27 +603,10 @@ def safe_sheet_name(name: str, used: set[str]) -> str:
     used.add(s)
     return s
 
-
-def dfs_to_excel_bytes_multi(dfs: dict[str, pd.DataFrame]) -> bytes:
-    """
-    Each dict key -> one worksheet.
-    """
-    bio = io.BytesIO()
-    used = set()
-    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
-        for player_name, df in dfs.items():
-            sheet = safe_sheet_name(player_name, used)
-            if df is None or df.empty:
-                pd.DataFrame(columns=GPS_COLS).to_excel(writer, index=False, sheet_name=sheet)
-            else:
-                ordered = [c for c in GPS_COLS if c in df.columns]
-                df[ordered].to_excel(writer, index=False, sheet_name=sheet)
-    return bio.getvalue()
-
-
 # =========================
-# UI
+# PART 5/5 — UI (Tabs)  ✅ inclusief Matches aanpassingen
 # =========================
+
 st.title("GPS Import")
 
 access_token = get_access_token()
@@ -638,7 +614,6 @@ if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
 
-# Role from Supabase profiles
 try:
     user_id, email, role, team = get_profile_role(access_token)
 except Exception as e:
@@ -675,11 +650,10 @@ with tab_import:
             accept_multiple_files=True,
         )
 
-    # --- Match dropdown (alleen bij match types) ---
     selected_match_id = None
     if selected_type in ["Match", "Practice Match"]:
         try:
-            df_matches = fetch_matches_on_date(access_token, selected_date)  # helper moet bestaan
+            df_matches = fetch_matches_on_date(access_token, selected_date)
         except Exception as e:
             st.error(f"Kon matches niet ophalen: {e}")
             df_matches = pd.DataFrame()
@@ -690,10 +664,9 @@ with tab_import:
             options = []
             for _, r in df_matches.iterrows():
                 fixture = (r.get("fixture") or "").strip()
-                opp = (r.get("opponent") or "").strip()
-                res = (r.get("result") or "").strip()
+                res = build_result(r.get("goals_for"), r.get("goals_against"))
                 mid = int(r["match_id"])
-                label = f"#{mid} | {fixture} | {opp} | {res}".strip()
+                label = f"#{mid} | {fixture} | {res}".strip()
                 options.append((label, mid))
 
             label_to_id = {lbl: mid for lbl, mid in options}
@@ -722,7 +695,6 @@ with tab_import:
                         df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
                         kind = "EXERCISES"
                     else:
-                        # fallback: probeer summary, anders exercises
                         try:
                             df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                             kind = "SUMMARY (auto)"
@@ -731,7 +703,6 @@ with tab_import:
                             kind = "EXERCISES (auto)"
 
                     all_parsed.append((filename, kind, df_parsed))
-
                 except Exception as e:
                     errors.append((filename, str(e)))
 
@@ -748,7 +719,6 @@ with tab_import:
                     st.markdown(f"**{fn}** — {kind} — rijen: {len(dfp)}")
                     st.dataframe(dfp.head(120), width="stretch")
 
-        # import (upsert) voor alle geparse’de bestanden
         all_parsed = st.session_state.get("gps_parsed_multi", [])
         if all_parsed:
             st.divider()
@@ -776,7 +746,6 @@ with tab_import:
                             + (f"\n... (+{len(all_unmapped)-30})" if len(all_unmapped) > 30 else "")
                         )
 
-                    # LET OP: jouw unique constraint is (player_name, datum, type, event)
                     rest_upsert(
                         access_token,
                         "gps_records",
@@ -794,112 +763,30 @@ with tab_import:
 # -------------------------
 with tab_manual:
     st.subheader("Manual add (tabel)")
-
-    st.caption(
-        "Voeg rijen toe met het + icoon. Kies speler in de eerste kolom. "
-        "Klik daarna op 'Save rows (upsert)'."
-    )
-
-    # Int kolommen in DB (int4) -> moeten als int of None weg, geen '10000.0'
-    INT_DB_COLS = {
-        "number_of_sprints",
-        "number_of_high_sprints",
-        "number_of_repeated_sprints",
-        "total_accelerations",
-        "high_accelerations",
-        "total_decelerations",
-        "high_decelerations",
-    }
-
-    selected_match_id_manual = None
-    if st.session_state.get("manual_type_last") in ["Match", "Practice Match"]:
-        # optioneel: je kunt match-koppeling ook per manual set doen
-        pass
+    st.caption("Voeg rijen toe met het + icoon. Kies speler in de eerste kolom. Klik daarna op 'Save rows (upsert)'.")
 
     template_cols = [
-        "player_name",
-        "datum",
-        "type",
-        "event",
-        "match_id",
-        "duration",
-        "total_distance",
-        "walking",
-        "jogging",
-        "running",
-        "sprint",
-        "high_sprint",
-        "number_of_sprints",
-        "number_of_high_sprints",
-        "number_of_repeated_sprints",
-        "max_speed",
-        "avg_speed",
-        "playerload3d",
-        "playerload2d",
-        "total_accelerations",
-        "high_accelerations",
-        "total_decelerations",
-        "high_decelerations",
-        "hrzone1",
-        "hrzone2",
-        "hrzone3",
-        "hrzone4",
-        "hrzone5",
-        "hrtrimp",
-        "hrzoneanaerobic",
-        "avg_hr",
-        "max_hr",
+        "player_name","datum","type","event","match_id",
+        "duration","total_distance","walking","jogging","running","sprint","high_sprint",
+        "number_of_sprints","number_of_high_sprints","number_of_repeated_sprints",
+        "max_speed","avg_speed","playerload3d","playerload2d",
+        "total_accelerations","high_accelerations","total_decelerations","high_decelerations",
+        "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr",
         "source_file",
     ]
 
     if "manual_df" not in st.session_state:
         st.session_state["manual_df"] = pd.DataFrame(
-            [
-                {
-                    "player_name": player_options[0] if player_options else "",
-                    "datum": date.today(),
-                    "type": "Practice",
-                    "event": "Summary",
-                    "match_id": None,
-                    "source_file": "manual",
-                }
-            ],
+            [{
+                "player_name": player_options[0] if player_options else "",
+                "datum": date.today(),
+                "type": "Practice",
+                "event": "Summary",
+                "match_id": None,
+                "source_file": "manual",
+            }],
             columns=template_cols,
         )
-
-    # Match dropdown voor manual (alleen als type match is)
-    manual_type_now = None
-    try:
-        manual_type_now = str(st.session_state["manual_df"].iloc[0].get("type") or "").strip()
-    except Exception:
-        manual_type_now = None
-
-    if manual_type_now in ["Match", "Practice Match"]:
-        try:
-            df_matches = fetch_matches_on_date(access_token, pd.to_datetime(st.session_state["manual_df"].iloc[0]["datum"]).date())
-        except Exception:
-            df_matches = pd.DataFrame()
-
-        if df_matches.empty:
-            st.warning("Geen match gevonden voor de (eerste rij) datum in tabel matches.")
-        else:
-            options = []
-            for _, r in df_matches.iterrows():
-                fixture = (r.get("fixture") or "").strip()
-                opp = (r.get("opponent") or "").strip()
-                res = (r.get("result") or "").strip()
-                mid = int(r["match_id"])
-                label = f"#{mid} | {fixture} | {opp} | {res}".strip()
-                options.append((label, mid))
-
-            label_to_id = {lbl: mid for lbl, mid in options}
-            pick = st.selectbox("Koppel manual input aan match", list(label_to_id.keys()))
-            selected_match_id_manual = label_to_id[pick]
-
-            # schrijf match_id alvast in alle bestaande rijen (handig)
-            df_tmp = st.session_state["manual_df"].copy()
-            df_tmp["match_id"] = selected_match_id_manual
-            st.session_state["manual_df"] = df_tmp
 
     colcfg = {
         "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
@@ -922,16 +809,14 @@ with tab_manual:
     with colA:
         if st.button("Reset table"):
             st.session_state["manual_df"] = pd.DataFrame(
-                [
-                    {
-                        "player_name": player_options[0] if player_options else "",
-                        "datum": date.today(),
-                        "type": "Practice",
-                        "event": "Summary",
-                        "match_id": None,
-                        "source_file": "manual",
-                    }
-                ],
+                [{
+                    "player_name": player_options[0] if player_options else "",
+                    "datum": date.today(),
+                    "type": "Practice",
+                    "event": "Summary",
+                    "match_id": None,
+                    "source_file": "manual",
+                }],
                 columns=template_cols,
             )
             st.rerun()
@@ -940,20 +825,16 @@ with tab_manual:
         if st.button("Save rows (upsert)", type="primary"):
             try:
                 dfm = edited.copy()
-
-                # basic validation
                 dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                 dfm["event"] = dfm["event"].astype(str).str.strip()
                 dfm["type"] = dfm["type"].astype(str).str.strip()
 
                 dfm = dfm.dropna(subset=["player_name", "datum", "type", "event"])
                 dfm = dfm[(dfm["player_name"] != "") & (dfm["event"] != "")]
-
                 if dfm.empty:
                     st.error("Geen geldige rijen om op te slaan.")
                     st.stop()
 
-                # dates
                 dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                 if dt_series.isna().any():
                     st.error("Ongeldige datum in één of meer rijen.")
@@ -963,10 +844,8 @@ with tab_manual:
                 dfm["year"] = dt_series.dt.year.astype(int)
                 dfm["datum"] = dt_series.dt.date.astype(str)
 
-                # player_id mapping
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                # match_id numeric -> int
                 if "match_id" in dfm.columns:
                     dfm["match_id"] = pd.to_numeric(dfm["match_id"], errors="coerce")
                     dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
@@ -979,12 +858,10 @@ with tab_manual:
                     "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr"
                 ]
 
-                # numeric coercion (floats)
                 for c in metric_keys:
                     if c in dfm.columns:
                         dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
 
-                # rows build
                 rows = []
                 for _, r in dfm.iterrows():
                     row = {
@@ -1000,10 +877,7 @@ with tab_manual:
                     }
 
                     for k in metric_keys:
-                        if k not in dfm.columns:
-                            continue
                         v = r.get(k)
-
                         if k in INT_DB_COLS:
                             vv = pd.to_numeric(v, errors="coerce")
                             row[k] = int(vv) if pd.notna(vv) else None
@@ -1033,13 +907,7 @@ with tab_export:
     st.markdown("### 1) Export alles")
     c1, c2 = st.columns([1.4, 2.6])
     with c1:
-        limit = st.number_input(
-            "Max rows (veiligheidslimiet)",
-            min_value=1,
-            max_value=500000,
-            value=200000,
-            step=10000,
-        )
+        limit = st.number_input("Max rows (veiligheidslimiet)", min_value=1, max_value=500000, value=200000, step=10000)
     with c2:
         st.caption("Export haalt kolommen op en maakt een .xlsx download.")
 
@@ -1065,11 +933,7 @@ with tab_export:
     st.divider()
     st.markdown("### 2) Export geselecteerde speler(s) (elk tabblad = speler)")
 
-    # speler dropdown opties: als player_options leeg is, fallback op DISTINCT uit gps_records
-    if player_options:
-        export_players = st.multiselect("Selecteer speler(s)", options=player_options)
-    else:
-        export_players = st.multiselect("Selecteer speler(s)", options=[])
+    export_players = st.multiselect("Selecteer speler(s)", options=player_options if player_options else [])
 
     date_col1, date_col2 = st.columns([1, 1])
     with date_col1:
@@ -1083,33 +947,24 @@ with tab_export:
                 st.error("Selecteer minimaal 1 speler.")
                 st.stop()
 
-            # haal alles op voor geselecteerde spelers binnen datumrange
-            # (simpel & robuust: per speler query + sheet)
             bio = io.BytesIO()
+            used = set()
             with pd.ExcelWriter(bio, engine="openpyxl") as writer:
                 for p in export_players:
-                    # filter op player_name exact
+                    pname = requests.utils.quote(str(p), safe="")
                     q = (
                         f"select={','.join(GPS_COLS)}"
-                        f"&player_name=eq.{p}"
+                        f"&player_name=eq.{pname}"
                         f"&datum=gte.{exp_from.isoformat()}"
                         f"&datum=lte.{exp_to.isoformat()}"
                         f"&order=datum.asc"
                         f"&limit=200000"
                     )
                     dfp = rest_get(access_token, "gps_records", q)
-                    if dfp.empty:
-                        continue
-
                     ordered = [c for c in GPS_COLS if c in dfp.columns]
-                    dfp = dfp[ordered]
+                    dfp = dfp[ordered] if not dfp.empty else pd.DataFrame(columns=GPS_COLS)
 
-                    # sheet name max 31 chars + verboden tekens
-                    sheet = str(p)[:31]
-                    for ch in [":", "\\", "/", "?", "*", "[", "]"]:
-                        sheet = sheet.replace(ch, " ")
-                    sheet = sheet.strip() or "player"
-
+                    sheet = safe_sheet_name(p, used)
                     dfp.to_excel(writer, index=False, sheet_name=sheet)
 
             xbytes = bio.getvalue()
@@ -1127,11 +982,9 @@ with tab_export:
 # TAB 4: Matches
 # -------------------------
 with tab_matches:
-    st.subheader("Matches (import / edit / add)")
+    st.subheader("Matches")
 
-    # -------------------------
-    # A) Import Matches.csv
-    # -------------------------
+    # 1) Import CSV
     st.markdown("### 1) Import Matches.csv → Supabase")
 
     matches_file = st.file_uploader("Upload Matches.csv", type=["csv"], key="matches_csv")
@@ -1139,190 +992,168 @@ with tab_matches:
         b = matches_file.getvalue()
         fname = matches_file.name
 
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("Preview matches"):
+        if st.button("Preview matches"):
+            try:
+                dfm = parse_matches_csv(b)
+                st.session_state["matches_preview"] = dfm
+                st.success(f"Parsed matches: {len(dfm)}")
+                st.dataframe(dfm, width="stretch")
+            except Exception as e:
+                st.error(str(e))
+
+        dfm = st.session_state.get("matches_preview")
+        if dfm is not None and not dfm.empty:
+            if st.button("Import matches (upsert)", type="primary"):
                 try:
-                    dfm = parse_matches_csv(b)
-                    st.session_state["matches_preview"] = dfm
-                    st.success(f"Parsed matches: {len(dfm)}")
-                    st.dataframe(dfm, width="stretch")
+                    rows = matches_df_to_rows(dfm, source_file=fname)
+
+                    # Vereist UNIQUE constraint in Supabase:
+                    # alter table public.matches add constraint matches_unique_key unique (match_date, fixture, season);
+                    rest_upsert(access_token, "matches", rows, on_conflict="match_date,fixture,season")
+
+                    st.success(f"✅ Matches geïmporteerd: {len(rows)}")
+                    st.session_state["matches_preview"] = None
                 except Exception as e:
-                    st.error(str(e))
-        with c2:
-            dfm = st.session_state.get("matches_preview")
-            if dfm is not None and not dfm.empty:
-                if st.button("Import matches (upsert)", type="primary"):
-                    try:
-                        rows = matches_df_to_rows(dfm, source_file=fname)
-                        rest_upsert(
-                            access_token,
-                            "matches",
-                            rows,
-                            on_conflict="match_date,fixture,season",
-                        )
-                        st.success(f"✅ Matches geïmporteerd: {len(rows)}")
-                        st.session_state["matches_preview"] = None
-                    except Exception as e:
-                        st.error(f"Import fout: {e}")
+                    st.error(f"Import fout: {e}")
 
     st.divider()
 
-    # -------------------------
-    # B) Select + Edit match
-    # -------------------------
+    # 2) Selecteer & pas score aan
     st.markdown("### 2) Selecteer & pas score aan")
 
-    # Filter UI
-    f1, f2, f3 = st.columns([1.2, 1.2, 1.6])
-    with f1:
-        filt_from = st.date_input("Van", value=date.today().replace(day=1), key="match_from")
-    with f2:
-        filt_to = st.date_input("Tot", value=date.today(), key="match_to")
-    with f3:
-        season_filter = st.text_input("Seizoen filter (optioneel)", value="", key="match_season")
-
-    # Fetch matches in range
-    try:
-        q = (
-            "select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against"
-            f"&match_date=gte.{filt_from.isoformat()}"
-            f"&match_date=lte.{filt_to.isoformat()}"
-            "&order=match_date.desc"
-            "&limit=2000"
+    c1, c2, c3 = st.columns([1, 1, 1.2])
+    with c1:
+        d_from = st.date_input("Van", value=date.today().replace(month=1, day=1), key="m_edit_from")
+    with c2:
+        d_to = st.date_input("Tot", value=date.today(), key="m_edit_to")
+    with c3:
+        season_filter = st.selectbox(
+            "Seizoen filter (optioneel)",
+            options=["(alles)"] + season_options(start_year=2020, years_ahead=6),
+            index=0,
+            key="m_edit_season",
         )
-        df_list = rest_get(access_token, "matches", q)
-        if season_filter.strip():
-            df_list = df_list[df_list["season"].astype(str).str.contains(season_filter.strip(), case=False, na=False)]
+
+    try:
+        df_list = fetch_matches_range(access_token, d_from, d_to, "" if season_filter == "(alles)" else season_filter)
     except Exception as e:
         st.error(f"Kon matches niet ophalen: {e}")
         df_list = pd.DataFrame()
 
     if df_list.empty:
-        st.info("Geen wedstrijden gevonden in deze periode.")
+        st.info("Geen matches gevonden in deze periode.")
     else:
-        # Dropdown label -> match_id
-        options = []
-        for _, r in df_list.iterrows():
-            mid = int(r["match_id"])
-            d = str(r.get("match_date") or "")
-            fix = (r.get("fixture") or "").strip()
-            opp = (r.get("opponent") or "").strip()
-            res = (r.get("result") or "").strip()
-            gf = r.get("goals_for")
-            ga = r.get("goals_against")
-            score = ""
-            if pd.notna(gf) and pd.notna(ga):
-                score = f"{int(gf)}-{int(ga)}"
-            label = f"#{mid} | {d} | {fix} | {opp} | {score} {res}".strip()
-            options.append((label, mid))
+        df_list = df_list.copy()
+        df_list["label"] = df_list.apply(
+            lambda r: f"{r.get('match_date')} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
+            axis=1,
+        )
 
-        label_to_id = {lbl: mid for lbl, mid in options}
-        pick = st.selectbox("Kies wedstrijd", list(label_to_id.keys()), key="match_pick")
+        label_to_id = {lbl: int(mid) for lbl, mid in zip(df_list["label"], df_list["match_id"])}
+        pick = st.selectbox("Kies wedstrijd", options=list(label_to_id.keys()), key="m_pick_match")
         match_id = label_to_id[pick]
 
-        # Current row
-        cur = df_list[df_list["match_id"] == match_id].iloc[0].to_dict()
+        row = df_list[df_list["match_id"] == match_id].iloc[0].to_dict()
 
-        # Edit form
-        with st.form("edit_match_form", clear_on_submit=False):
-            c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.2, 1.2])
-            with c1:
-                new_date = st.date_input("Match date", value=pd.to_datetime(cur["match_date"]).date())
-            with c2:
-                new_fixture = st.text_input("Fixture", value=cur.get("fixture") or "")
-            with c3:
-                new_opponent = st.text_input("Opponent", value=cur.get("opponent") or "")
-            with c4:
-                new_homeaway = st.selectbox("Home/Away", options=["", "Home", "Away"], index=0 if (cur.get("home_away") in [None, ""]) else (1 if cur.get("home_away") == "Home" else 2))
+        st.markdown("**Aanpassen:** (alleen score + match type + season)")
+        e1, e2, e3 = st.columns([1, 1, 1.2])
+        with e1:
+            goals_for = st.number_input("Goals for", min_value=0, step=1, value=int(row.get("goals_for") or 0), key="m_gf")
+        with e2:
+            goals_against = st.number_input("Goals against", min_value=0, step=1, value=int(row.get("goals_against") or 0), key="m_ga")
+        with e3:
+            match_type = st.selectbox(
+                "Match type",
+                options=MATCH_TYPE_OPTIONS,
+                index=(MATCH_TYPE_OPTIONS.index(row.get("match_type")) if row.get("match_type") in MATCH_TYPE_OPTIONS else 0),
+                key="m_mt",
+            )
 
-            c5, c6, c7, c8 = st.columns([1.2, 1.2, 1.2, 1.2])
-            with c5:
-                new_match_type = st.text_input("Match type", value=cur.get("match_type") or "")
-            with c6:
-                new_season = st.text_input("Season", value=cur.get("season") or "")
-            with c7:
-                new_gf = st.number_input("Goals for", min_value=0, max_value=50, value=int(cur["goals_for"]) if pd.notna(cur.get("goals_for")) else 0, step=1)
-            with c8:
-                new_ga = st.number_input("Goals against", min_value=0, max_value=50, value=int(cur["goals_against"]) if pd.notna(cur.get("goals_against")) else 0, step=1)
+        seasons = season_options(start_year=2020, years_ahead=6)
+        current_season = str(row.get("season") or "").strip()
+        if current_season and current_season not in seasons:
+            seasons = [current_season] + seasons
 
-            new_result = st.text_input("Result (optioneel)", value=cur.get("result") or "")
+        season = st.selectbox(
+            "Season",
+            options=seasons,
+            index=(seasons.index(current_season) if current_season in seasons else 0),
+            key="m_season",
+        )
 
-            submitted = st.form_submit_button("Save changes", type="primary")
-
-        if submitted:
+        if st.button("Save changes", type="primary"):
             try:
-                payload = [{
-                    "match_id": int(match_id),  # upsert op PK match_id
-                    "match_date": new_date.isoformat(),
-                    "fixture": new_fixture.strip() or None,
-                    "opponent": new_opponent.strip() or None,
-                    "home_away": new_homeaway.strip() or None,
-                    "match_type": new_match_type.strip() or None,
-                    "season": new_season.strip() or None,
-                    "result": new_result.strip() or None,
-                    "goals_for": int(new_gf),
-                    "goals_against": int(new_ga),
-                    "source_file": cur.get("source_file") or "manual_edit",
-                }]
-                # on_conflict op match_id (PK) werkt altijd
-                rest_upsert(access_token, "matches", payload, on_conflict="match_id")
-                st.success("✅ Wedstrijd bijgewerkt.")
+                result_txt = build_result(goals_for, goals_against)
+                payload = {
+                    "goals_for": int(goals_for),
+                    "goals_against": int(goals_against),
+                    "result": result_txt,
+                    "match_type": match_type,
+                    "season": season if season else None,
+                }
+                rest_patch(access_token, "matches", f"match_id=eq.{match_id}", payload)
+                st.success("✅ Opgeslagen.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Opslaan mislukt: {e}")
 
     st.divider()
 
-    # -------------------------
-    # C) Add new match manually
-    # -------------------------
+    # 3) Nieuwe wedstrijd handmatig toevoegen
     st.markdown("### 3) Nieuwe wedstrijd handmatig toevoegen")
 
-    with st.form("add_match_form", clear_on_submit=True):
-        a1, a2, a3 = st.columns([1.2, 1.6, 1.2])
-        with a1:
-            add_date = st.date_input("Match date", value=date.today(), key="add_match_date")
-        with a2:
-            add_fixture = st.text_input("Fixture", value="", key="add_match_fixture")
-        with a3:
-            add_homeaway = st.selectbox("Home/Away", options=["", "Home", "Away"], key="add_homeaway")
+    a1, a2, a3 = st.columns([1, 1.4, 1])
+    with a1:
+        new_date = st.date_input("Match date", value=date.today(), key="m_new_date")
+    with a2:
+        new_opponent = st.text_input("Opponent", value="", key="m_new_opp")
+    with a3:
+        new_home_away = st.selectbox("Home/Away", options=HOME_AWAY_OPTIONS, key="m_new_ha")
 
-        a4, a5, a6 = st.columns([1.6, 1.2, 1.2])
-        with a4:
-            add_opponent = st.text_input("Opponent", value="", key="add_opponent")
-        with a5:
-            add_match_type = st.text_input("Match type", value="", key="add_match_type")
-        with a6:
-            add_season = st.text_input("Season", value="", key="add_season")
+    b1, b2, b3 = st.columns([1, 1, 1.2])
+    with b1:
+        new_match_type = st.selectbox("Match type", options=MATCH_TYPE_OPTIONS, key="m_new_type")
+    with b2:
+        # season dropdown 2025/2026
+        seasons_new = season_options(start_year=2020, years_ahead=6)
+        y = date.today().year
+        default_season = f"{y}/{y+1}" if date.today().month >= 7 else f"{y-1}/{y}"
+        default_idx = seasons_new.index(default_season) if default_season in seasons_new else 0
+        new_season = st.selectbox("Season", options=seasons_new, index=default_idx, key="m_new_season")
+    with b3:
+        # result wordt automatisch gezet op basis van goals, maar mag overschreven worden
+        new_result = st.text_input("Result (optioneel override)", value="", key="m_new_result")
 
-        a7, a8, a9 = st.columns([1.2, 1.2, 1.6])
-        with a7:
-            add_gf = st.number_input("Goals for", min_value=0, max_value=50, value=0, step=1, key="add_gf")
-        with a8:
-            add_ga = st.number_input("Goals against", min_value=0, max_value=50, value=0, step=1, key="add_ga")
-        with a9:
-            add_result = st.text_input("Result (optioneel)", value="", key="add_result")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        new_gf = st.number_input("Goals for", min_value=0, step=1, value=0, key="m_new_gf")
+    with c2:
+        new_ga = st.number_input("Goals against", min_value=0, step=1, value=0, key="m_new_ga")
 
-        add_submit = st.form_submit_button("Add match", type="primary")
+    auto_fixture = build_fixture(TEAM_NAME_MATCHES, new_home_away, new_opponent)
+    st.text_input("Fixture (auto)", value=auto_fixture, disabled=True, key="m_new_fix")
 
-    if add_submit:
+    if st.button("Add match", type="primary"):
         try:
+            if not new_opponent.strip():
+                st.error("Opponent is verplicht.")
+                st.stop()
+
             payload = [{
-                "match_date": add_date.isoformat(),
-                "fixture": add_fixture.strip() or None,
-                "home_away": add_homeaway.strip() or None,
-                "opponent": add_opponent.strip() or None,
-                "match_type": add_match_type.strip() or None,
-                "season": add_season.strip() or None,
-                "result": add_result.strip() or None,
-                "goals_for": int(add_gf),
-                "goals_against": int(add_ga),
-                "source_file": "manual_add",
+                "match_date": new_date.isoformat(),
+                "home_away": new_home_away,
+                "opponent": new_opponent.strip(),
+                "fixture": auto_fixture,
+                "match_type": new_match_type,
+                "season": new_season.strip(),
+                "goals_for": int(new_gf),
+                "goals_against": int(new_ga),
+                "result": (new_result.strip() if new_result.strip() else build_result(new_gf, new_ga)),
+                "source_file": "manual",
             }]
-            # unique constraint is match_date,fixture,season
+
             rest_upsert(access_token, "matches", payload, on_conflict="match_date,fixture,season")
-            st.success("✅ Wedstrijd toegevoegd.")
+            st.success("✅ Match toegevoegd.")
             st.rerun()
         except Exception as e:
             st.error(f"Toevoegen mislukt: {e}")
