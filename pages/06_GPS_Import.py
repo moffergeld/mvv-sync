@@ -1124,37 +1124,205 @@ with tab_export:
             st.error(str(e))
 
 # -------------------------
-# TAB 4: Import Matches
+# TAB 4: Matches
 # -------------------------
 with tab_matches:
-    st.subheader("Import Matches.csv → Supabase")
+    st.subheader("Matches (import / edit / add)")
+
+    # -------------------------
+    # A) Import Matches.csv
+    # -------------------------
+    st.markdown("### 1) Import Matches.csv → Supabase")
 
     matches_file = st.file_uploader("Upload Matches.csv", type=["csv"], key="matches_csv")
     if matches_file:
         b = matches_file.getvalue()
         fname = matches_file.name
 
-        if st.button("Preview matches"):
-            try:
-                dfm = parse_matches_csv(b)
-                st.session_state["matches_preview"] = dfm
-                st.success(f"Parsed matches: {len(dfm)}")
-                st.dataframe(dfm, use_container_width=True)
-            except Exception as e:
-                st.error(str(e))
-
-        dfm = st.session_state.get("matches_preview")
-        if dfm is not None and not dfm.empty:
-            if st.button("Import matches (upsert)", type="primary"):
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if st.button("Preview matches"):
                 try:
-                    rows = matches_df_to_rows(dfm, source_file=fname)
-                    rest_upsert(
-                        access_token,
-                        "matches",
-                        rows,
-                        on_conflict="match_date,fixture,season",
-                    )
-                    st.success(f"✅ Matches geïmporteerd: {len(rows)}")
-                    st.session_state["matches_preview"] = None
+                    dfm = parse_matches_csv(b)
+                    st.session_state["matches_preview"] = dfm
+                    st.success(f"Parsed matches: {len(dfm)}")
+                    st.dataframe(dfm, width="stretch")
                 except Exception as e:
-                    st.error(f"Import fout: {e}")
+                    st.error(str(e))
+        with c2:
+            dfm = st.session_state.get("matches_preview")
+            if dfm is not None and not dfm.empty:
+                if st.button("Import matches (upsert)", type="primary"):
+                    try:
+                        rows = matches_df_to_rows(dfm, source_file=fname)
+                        rest_upsert(
+                            access_token,
+                            "matches",
+                            rows,
+                            on_conflict="match_date,fixture,season",
+                        )
+                        st.success(f"✅ Matches geïmporteerd: {len(rows)}")
+                        st.session_state["matches_preview"] = None
+                    except Exception as e:
+                        st.error(f"Import fout: {e}")
+
+    st.divider()
+
+    # -------------------------
+    # B) Select + Edit match
+    # -------------------------
+    st.markdown("### 2) Selecteer & pas score aan")
+
+    # Filter UI
+    f1, f2, f3 = st.columns([1.2, 1.2, 1.6])
+    with f1:
+        filt_from = st.date_input("Van", value=date.today().replace(day=1), key="match_from")
+    with f2:
+        filt_to = st.date_input("Tot", value=date.today(), key="match_to")
+    with f3:
+        season_filter = st.text_input("Seizoen filter (optioneel)", value="", key="match_season")
+
+    # Fetch matches in range
+    try:
+        q = (
+            "select=match_id,match_date,fixture,opponent,home_away,match_type,season,result,goals_for,goals_against"
+            f"&match_date=gte.{filt_from.isoformat()}"
+            f"&match_date=lte.{filt_to.isoformat()}"
+            "&order=match_date.desc"
+            "&limit=2000"
+        )
+        df_list = rest_get(access_token, "matches", q)
+        if season_filter.strip():
+            df_list = df_list[df_list["season"].astype(str).str.contains(season_filter.strip(), case=False, na=False)]
+    except Exception as e:
+        st.error(f"Kon matches niet ophalen: {e}")
+        df_list = pd.DataFrame()
+
+    if df_list.empty:
+        st.info("Geen wedstrijden gevonden in deze periode.")
+    else:
+        # Dropdown label -> match_id
+        options = []
+        for _, r in df_list.iterrows():
+            mid = int(r["match_id"])
+            d = str(r.get("match_date") or "")
+            fix = (r.get("fixture") or "").strip()
+            opp = (r.get("opponent") or "").strip()
+            res = (r.get("result") or "").strip()
+            gf = r.get("goals_for")
+            ga = r.get("goals_against")
+            score = ""
+            if pd.notna(gf) and pd.notna(ga):
+                score = f"{int(gf)}-{int(ga)}"
+            label = f"#{mid} | {d} | {fix} | {opp} | {score} {res}".strip()
+            options.append((label, mid))
+
+        label_to_id = {lbl: mid for lbl, mid in options}
+        pick = st.selectbox("Kies wedstrijd", list(label_to_id.keys()), key="match_pick")
+        match_id = label_to_id[pick]
+
+        # Current row
+        cur = df_list[df_list["match_id"] == match_id].iloc[0].to_dict()
+
+        # Edit form
+        with st.form("edit_match_form", clear_on_submit=False):
+            c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.2, 1.2])
+            with c1:
+                new_date = st.date_input("Match date", value=pd.to_datetime(cur["match_date"]).date())
+            with c2:
+                new_fixture = st.text_input("Fixture", value=cur.get("fixture") or "")
+            with c3:
+                new_opponent = st.text_input("Opponent", value=cur.get("opponent") or "")
+            with c4:
+                new_homeaway = st.selectbox("Home/Away", options=["", "Home", "Away"], index=0 if (cur.get("home_away") in [None, ""]) else (1 if cur.get("home_away") == "Home" else 2))
+
+            c5, c6, c7, c8 = st.columns([1.2, 1.2, 1.2, 1.2])
+            with c5:
+                new_match_type = st.text_input("Match type", value=cur.get("match_type") or "")
+            with c6:
+                new_season = st.text_input("Season", value=cur.get("season") or "")
+            with c7:
+                new_gf = st.number_input("Goals for", min_value=0, max_value=50, value=int(cur["goals_for"]) if pd.notna(cur.get("goals_for")) else 0, step=1)
+            with c8:
+                new_ga = st.number_input("Goals against", min_value=0, max_value=50, value=int(cur["goals_against"]) if pd.notna(cur.get("goals_against")) else 0, step=1)
+
+            new_result = st.text_input("Result (optioneel)", value=cur.get("result") or "")
+
+            submitted = st.form_submit_button("Save changes", type="primary")
+
+        if submitted:
+            try:
+                payload = [{
+                    "match_id": int(match_id),  # upsert op PK match_id
+                    "match_date": new_date.isoformat(),
+                    "fixture": new_fixture.strip() or None,
+                    "opponent": new_opponent.strip() or None,
+                    "home_away": new_homeaway.strip() or None,
+                    "match_type": new_match_type.strip() or None,
+                    "season": new_season.strip() or None,
+                    "result": new_result.strip() or None,
+                    "goals_for": int(new_gf),
+                    "goals_against": int(new_ga),
+                    "source_file": cur.get("source_file") or "manual_edit",
+                }]
+                # on_conflict op match_id (PK) werkt altijd
+                rest_upsert(access_token, "matches", payload, on_conflict="match_id")
+                st.success("✅ Wedstrijd bijgewerkt.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Opslaan mislukt: {e}")
+
+    st.divider()
+
+    # -------------------------
+    # C) Add new match manually
+    # -------------------------
+    st.markdown("### 3) Nieuwe wedstrijd handmatig toevoegen")
+
+    with st.form("add_match_form", clear_on_submit=True):
+        a1, a2, a3 = st.columns([1.2, 1.6, 1.2])
+        with a1:
+            add_date = st.date_input("Match date", value=date.today(), key="add_match_date")
+        with a2:
+            add_fixture = st.text_input("Fixture", value="", key="add_match_fixture")
+        with a3:
+            add_homeaway = st.selectbox("Home/Away", options=["", "Home", "Away"], key="add_homeaway")
+
+        a4, a5, a6 = st.columns([1.6, 1.2, 1.2])
+        with a4:
+            add_opponent = st.text_input("Opponent", value="", key="add_opponent")
+        with a5:
+            add_match_type = st.text_input("Match type", value="", key="add_match_type")
+        with a6:
+            add_season = st.text_input("Season", value="", key="add_season")
+
+        a7, a8, a9 = st.columns([1.2, 1.2, 1.6])
+        with a7:
+            add_gf = st.number_input("Goals for", min_value=0, max_value=50, value=0, step=1, key="add_gf")
+        with a8:
+            add_ga = st.number_input("Goals against", min_value=0, max_value=50, value=0, step=1, key="add_ga")
+        with a9:
+            add_result = st.text_input("Result (optioneel)", value="", key="add_result")
+
+        add_submit = st.form_submit_button("Add match", type="primary")
+
+    if add_submit:
+        try:
+            payload = [{
+                "match_date": add_date.isoformat(),
+                "fixture": add_fixture.strip() or None,
+                "home_away": add_homeaway.strip() or None,
+                "opponent": add_opponent.strip() or None,
+                "match_type": add_match_type.strip() or None,
+                "season": add_season.strip() or None,
+                "result": add_result.strip() or None,
+                "goals_for": int(add_gf),
+                "goals_against": int(add_ga),
+                "source_file": "manual_add",
+            }]
+            # unique constraint is match_date,fixture,season
+            rest_upsert(access_token, "matches", payload, on_conflict="match_date,fixture,season")
+            st.success("✅ Wedstrijd toegevoegd.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Toevoegen mislukt: {e}")
