@@ -223,6 +223,7 @@ GPS_COLS = [
     "year",
     "type",
     "event",
+    "match_id",
     "duration",
     "total_distance",
     "walking",
@@ -304,8 +305,7 @@ METRIC_MAP = {
 
 ID_COLS_IN_PARSER = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
 
-# Integer columns in Supabase schema
-INT_COLS = {
+INT_DB_COLS = {
     "number_of_sprints",
     "number_of_high_sprints",
     "number_of_repeated_sprints",
@@ -325,7 +325,7 @@ def coerce_value(col: str, v):
         return None
 
     if isinstance(v, (int, float)):
-        if col in INT_COLS:
+        if col in INT_DB_COLS:
             try:
                 return int(round(float(v)))
             except Exception:
@@ -338,7 +338,7 @@ def coerce_value(col: str, v):
 
     s2 = s.replace(",", ".")
 
-    if col in INT_COLS:
+    if col in INT_DB_COLS:
         try:
             return int(round(float(s2)))
         except Exception:
@@ -361,17 +361,7 @@ def coerce_num(v):
     num = pd.to_numeric(v, errors="coerce")
     return float(num) if pd.notna(num) else None
 
-INT_DB_COLS = {
-    "number_of_sprints",
-    "number_of_high_sprints",
-    "number_of_repeated_sprints",
-    "total_accelerations",
-    "high_accelerations",
-    "total_decelerations",
-    "high_decelerations",
-}
-
-def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple[list[dict], list[str]]:
+def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict, match_id: int | None = None) -> tuple[list[dict], list[str]]:
     rows = []
     unmapped = set()
 
@@ -401,6 +391,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
             "year": int(dt.year),
             "type": str(r.get("Type", "")).strip(),
             "event": str(r.get("Event", "")).strip(),
+            "match_id": match_id,
             "source_file": source_file,
         }
 
@@ -679,106 +670,158 @@ with tab_import:
         selected_type = st.selectbox("Type", TYPE_OPTIONS)
     with col3:
         uploaded_files = st.file_uploader(
-            "Upload Excel (meerdere bestanden: SUMMARY + EXERCISES)",
+            "Upload Excel (je mag SUMMARY én EXERCISES tegelijk selecteren)",
             type=["xlsx", "xls"],
             accept_multiple_files=True,
         )
 
+    # --- Match dropdown (alleen bij match types) ---
+    selected_match_id = None
+    if selected_type in ["Match", "Practice Match"]:
+        try:
+            df_matches = fetch_matches_on_date(access_token, selected_date)  # helper moet bestaan
+        except Exception as e:
+            st.error(f"Kon matches niet ophalen: {e}")
+            df_matches = pd.DataFrame()
+
+        if df_matches.empty:
+            st.warning("Geen match gevonden op deze datum in tabel matches.")
+        else:
+            options = []
+            for _, r in df_matches.iterrows():
+                fixture = (r.get("fixture") or "").strip()
+                opp = (r.get("opponent") or "").strip()
+                res = (r.get("result") or "").strip()
+                mid = int(r["match_id"])
+                label = f"#{mid} | {fixture} | {opp} | {res}".strip()
+                options.append((label, mid))
+
+            label_to_id = {lbl: mid for lbl, mid in options}
+            pick = st.selectbox("Koppel aan match", list(label_to_id.keys()))
+            selected_match_id = label_to_id[pick]
+
     if uploaded_files:
-        colP1, colP2 = st.columns([1, 1])
-        with colP1:
-            do_preview = st.button("Preview (parse) – alle bestanden")
-        with colP2:
-            do_import = st.button("Import (upsert) – alle bestanden", type="primary")
+        st.divider()
+        st.subheader("Preview / Parse")
 
-        if do_preview or do_import:
+        if st.button("Preview (parse)", type="secondary"):
             all_parsed = []
-            all_rows = []
-            all_unmapped = set()
-
-            for uf in uploaded_files:
-                filename = uf.name
-                file_bytes = uf.getvalue()
+            errors = []
+            for up in uploaded_files:
+                filename = up.name
+                file_bytes = up.getvalue()
 
                 is_summary = "summary" in filename.lower()
                 is_exercises = "exercises" in filename.lower()
 
-                # Parse per file
-                if is_summary:
-                    df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
-                elif is_exercises:
-                    df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
-                else:
-                    # fallback: probeer summary, anders exercises
-                    try:
-                        df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
-                    except Exception:
-                        df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
-
-                all_parsed.append((filename, df_parsed))
-
-                # Rows voor import
-                rows, unmapped = df_to_db_rows(df_parsed, source_file=filename, name_to_id=name_to_id)
-                all_rows.extend(rows)
-                all_unmapped.update(unmapped)
-
-            # Preview output
-            if do_preview:
-                st.success(
-                    f"Parsed bestanden: {len(all_parsed)} | totaal rijen: {sum(len(d) for _, d in all_parsed)}"
-                )
-                for fn, d in all_parsed:
-                    st.markdown(f"**{fn}** ({len(d)} rijen)")
-                    st.dataframe(d.head(50), width='stretch')
-
-                # optioneel debug (zet aan als je wilt)
-                # if all_parsed:
-                #     st.write("Voorbeeld kolommen:", list(all_parsed[0][1].columns))
-
-            # Import (upsert) output
-            if do_import:
-                if all_unmapped:
-                    st.warning(
-                        "Niet gematchte namen (player_id blijft NULL):\n- "
-                        + "\n- ".join(sorted(list(all_unmapped))[:50])
-                        + (f"\n... (+{len(all_unmapped)-50})" if len(all_unmapped) > 50 else "")
-                    )
-
-                # Deduplicate binnen dezelfde batch op conflict-key
-                # (voorkomt: ON CONFLICT DO UPDATE command cannot affect row a second time)
-                dedup = {}
-                for r in all_rows:
-                    k = (r.get("player_name"), r.get("datum"), r.get("type"), r.get("event"))
-                    dedup[k] = r
-                all_rows = list(dedup.values())
-
                 try:
+                    if is_summary:
+                        df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
+                        kind = "SUMMARY"
+                    elif is_exercises:
+                        df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
+                        kind = "EXERCISES"
+                    else:
+                        # fallback: probeer summary, anders exercises
+                        try:
+                            df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
+                            kind = "SUMMARY (auto)"
+                        except Exception:
+                            df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
+                            kind = "EXERCISES (auto)"
+
+                    all_parsed.append((filename, kind, df_parsed))
+
+                except Exception as e:
+                    errors.append((filename, str(e)))
+
+            st.session_state["gps_parsed_multi"] = all_parsed
+
+            if errors:
+                st.error("Sommige bestanden konden niet geparsed worden:")
+                for fn, msg in errors:
+                    st.write(f"- {fn}: {msg}")
+
+            if all_parsed:
+                st.success(f"Parsed bestanden: {len(all_parsed)}")
+                for fn, kind, dfp in all_parsed:
+                    st.markdown(f"**{fn}** — {kind} — rijen: {len(dfp)}")
+                    st.dataframe(dfp.head(120), width="stretch")
+
+        # import (upsert) voor alle geparse’de bestanden
+        all_parsed = st.session_state.get("gps_parsed_multi", [])
+        if all_parsed:
+            st.divider()
+            st.subheader("Import → Supabase (upsert)")
+
+            if st.button("Import (upsert naar gps_records)", type="primary"):
+                try:
+                    all_rows: list[dict] = []
+                    all_unmapped: set[str] = set()
+
+                    for (filename, kind, dfp) in all_parsed:
+                        rows, unmapped = df_to_db_rows(
+                            dfp,
+                            source_file=filename,
+                            name_to_id=name_to_id,
+                            match_id=selected_match_id,
+                        )
+                        all_rows.extend(rows)
+                        all_unmapped.update(unmapped)
+
+                    if all_unmapped:
+                        st.warning(
+                            "Niet gematchte namen (player_id blijft NULL, import gaat wel door):\n- "
+                            + "\n- ".join(sorted(list(all_unmapped))[:30])
+                            + (f"\n... (+{len(all_unmapped)-30})" if len(all_unmapped) > 30 else "")
+                        )
+
+                    # LET OP: jouw unique constraint is (player_name, datum, type, event)
                     rest_upsert(
                         access_token,
                         "gps_records",
                         all_rows,
                         on_conflict="player_name,datum,type,event",
                     )
+
                     st.success(f"✅ Import klaar. Upserted rows: {len(all_rows)}")
+                    st.session_state["gps_parsed_multi"] = []
                 except Exception as e:
                     st.error(f"Import fout: {e}")
-
 
 # -------------------------
 # TAB 2: Manual add
 # -------------------------
 with tab_manual:
     st.subheader("Manual add (tabel)")
+
     st.caption(
         "Voeg rijen toe met het + icoon. Kies speler in de eerste kolom. "
         "Klik daarna op 'Save rows (upsert)'."
     )
+
+    # Int kolommen in DB (int4) -> moeten als int of None weg, geen '10000.0'
+    INT_DB_COLS = {
+        "number_of_sprints",
+        "number_of_high_sprints",
+        "number_of_repeated_sprints",
+        "total_accelerations",
+        "high_accelerations",
+        "total_decelerations",
+        "high_decelerations",
+    }
+
+    selected_match_id_manual = None
+    if st.session_state.get("manual_type_last") in ["Match", "Practice Match"]:
+        # optioneel: je kunt match-koppeling ook per manual set doen
+        pass
 
     template_cols = [
         "player_name",
         "datum",
         "type",
         "event",
+        "match_id",
         "duration",
         "total_distance",
         "walking",
@@ -817,23 +860,54 @@ with tab_manual:
                     "datum": date.today(),
                     "type": "Practice",
                     "event": "Summary",
+                    "match_id": None,
                     "source_file": "manual",
                 }
             ],
             columns=template_cols,
         )
 
+    # Match dropdown voor manual (alleen als type match is)
+    manual_type_now = None
+    try:
+        manual_type_now = str(st.session_state["manual_df"].iloc[0].get("type") or "").strip()
+    except Exception:
+        manual_type_now = None
+
+    if manual_type_now in ["Match", "Practice Match"]:
+        try:
+            df_matches = fetch_matches_on_date(access_token, pd.to_datetime(st.session_state["manual_df"].iloc[0]["datum"]).date())
+        except Exception:
+            df_matches = pd.DataFrame()
+
+        if df_matches.empty:
+            st.warning("Geen match gevonden voor de (eerste rij) datum in tabel matches.")
+        else:
+            options = []
+            for _, r in df_matches.iterrows():
+                fixture = (r.get("fixture") or "").strip()
+                opp = (r.get("opponent") or "").strip()
+                res = (r.get("result") or "").strip()
+                mid = int(r["match_id"])
+                label = f"#{mid} | {fixture} | {opp} | {res}".strip()
+                options.append((label, mid))
+
+            label_to_id = {lbl: mid for lbl, mid in options}
+            pick = st.selectbox("Koppel manual input aan match", list(label_to_id.keys()))
+            selected_match_id_manual = label_to_id[pick]
+
+            # schrijf match_id alvast in alle bestaande rijen (handig)
+            df_tmp = st.session_state["manual_df"].copy()
+            df_tmp["match_id"] = selected_match_id_manual
+            st.session_state["manual_df"] = df_tmp
+
     colcfg = {
-        "player_name": st.column_config.SelectboxColumn(
-            "player_name",
-            options=player_options,
-            required=True,
-        ),
+        "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
         "datum": st.column_config.DateColumn("datum", required=True),
         "type": st.column_config.SelectboxColumn("type", options=TYPE_OPTIONS, required=True),
         "event": st.column_config.TextColumn("event", required=True),
+        "match_id": st.column_config.NumberColumn("match_id", help="Alleen invullen bij Match / Practice Match", step=1),
         "source_file": st.column_config.TextColumn("source_file"),
-        # (optioneel) je kunt hier later NumberColumn configs toevoegen
     }
 
     edited = st.data_editor(
@@ -854,6 +928,7 @@ with tab_manual:
                         "datum": date.today(),
                         "type": "Practice",
                         "event": "Summary",
+                        "match_id": None,
                         "source_file": "manual",
                     }
                 ],
@@ -866,10 +941,11 @@ with tab_manual:
             try:
                 dfm = edited.copy()
 
-                # --- Validatie basisvelden ---
+                # basic validation
                 dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                 dfm["event"] = dfm["event"].astype(str).str.strip()
                 dfm["type"] = dfm["type"].astype(str).str.strip()
+
                 dfm = dfm.dropna(subset=["player_name", "datum", "type", "event"])
                 dfm = dfm[(dfm["player_name"] != "") & (dfm["event"] != "")]
 
@@ -877,7 +953,7 @@ with tab_manual:
                     st.error("Geen geldige rijen om op te slaan.")
                     st.stop()
 
-                # --- Datum/Week/Year ---
+                # dates
                 dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                 if dt_series.isna().any():
                     st.error("Ongeldige datum in één of meer rijen.")
@@ -887,35 +963,28 @@ with tab_manual:
                 dfm["year"] = dt_series.dt.year.astype(int)
                 dfm["datum"] = dt_series.dt.date.astype(str)
 
-                # --- player_id mapping ---
+                # player_id mapping
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                # --- Welke DB kolommen zijn INT? (schema gps_records) ---
-                INT_DB_COLS = {
-                    "number_of_sprints",
-                    "number_of_high_sprints",
-                    "number_of_repeated_sprints",
-                    "total_accelerations",
-                    "high_accelerations",
-                    "total_decelerations",
-                    "high_decelerations",
-                }
+                # match_id numeric -> int
+                if "match_id" in dfm.columns:
+                    dfm["match_id"] = pd.to_numeric(dfm["match_id"], errors="coerce")
+                    dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
 
                 metric_keys = [
-                    "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
-                    "number_of_sprints", "number_of_high_sprints", "number_of_repeated_sprints",
-                    "max_speed", "avg_speed", "playerload3d", "playerload2d",
-                    "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
-                    "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5",
-                    "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr"
+                    "duration","total_distance","walking","jogging","running","sprint","high_sprint",
+                    "number_of_sprints","number_of_high_sprints","number_of_repeated_sprints",
+                    "max_speed","avg_speed","playerload3d","playerload2d",
+                    "total_accelerations","high_accelerations","total_decelerations","high_decelerations",
+                    "hrzone1","hrzone2","hrzone3","hrzone4","hrzone5","hrtrimp","hrzoneanaerobic","avg_hr","max_hr"
                 ]
 
-                # --- Coerce numerics ---
+                # numeric coercion (floats)
                 for c in metric_keys:
                     if c in dfm.columns:
                         dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
 
-                # --- Build rows (met INT casting waar nodig) ---
+                # rows build
                 rows = []
                 for _, r in dfm.iterrows():
                     row = {
@@ -926,17 +995,20 @@ with tab_manual:
                         "year": int(r.get("year")) if pd.notna(r.get("year")) else None,
                         "type": r.get("type"),
                         "event": r.get("event"),
+                        "match_id": r.get("match_id"),
                         "source_file": (r.get("source_file") or "manual"),
                     }
 
                     for k in metric_keys:
+                        if k not in dfm.columns:
+                            continue
                         v = r.get(k)
-                        if pd.isna(v):
-                            row[k] = None
-                        elif k in INT_DB_COLS:
-                            row[k] = int(float(v))  # 10000.0 -> 10000
+
+                        if k in INT_DB_COLS:
+                            vv = pd.to_numeric(v, errors="coerce")
+                            row[k] = int(vv) if pd.notna(vv) else None
                         else:
-                            row[k] = float(v)
+                            row[k] = float(v) if pd.notna(v) else None
 
                     rows.append(row)
 
@@ -949,7 +1021,6 @@ with tab_manual:
 
                 st.success(f"✅ Saved rows: {len(rows)}")
                 st.session_state["manual_df"] = edited
-
             except Exception as e:
                 st.error(f"Save fout: {e}")
 
@@ -959,6 +1030,7 @@ with tab_manual:
 with tab_export:
     st.subheader("Export gps_records → Excel")
 
+    st.markdown("### 1) Export alles")
     c1, c2 = st.columns([1.4, 2.6])
     with c1:
         limit = st.number_input(
@@ -971,7 +1043,7 @@ with tab_export:
     with c2:
         st.caption("Export haalt kolommen op en maakt een .xlsx download.")
 
-    if st.button("Generate export"):
+    if st.button("Generate export (ALL)"):
         try:
             df = fetch_all_gps_records(access_token, limit=int(limit))
             if df.empty:
@@ -979,14 +1051,75 @@ with tab_export:
             else:
                 ordered = [c for c in GPS_COLS if c in df.columns]
                 df = df[ordered]
-                xbytes = df_to_excel_bytes(df, sheet_name="gps_records")
+                xbytes = df_to_excel_bytes_single(df, sheet_name="gps_records")
                 st.download_button(
-                    "Download gps_records.xlsx",
+                    "Download gps_records_ALL.xlsx",
                     data=xbytes,
-                    file_name="gps_records.xlsx",
+                    file_name="gps_records_ALL.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
                 st.success(f"✅ Klaar: {len(df)} rijen")
+        except Exception as e:
+            st.error(str(e))
+
+    st.divider()
+    st.markdown("### 2) Export geselecteerde speler(s) (elk tabblad = speler)")
+
+    # speler dropdown opties: als player_options leeg is, fallback op DISTINCT uit gps_records
+    if player_options:
+        export_players = st.multiselect("Selecteer speler(s)", options=player_options)
+    else:
+        export_players = st.multiselect("Selecteer speler(s)", options=[])
+
+    date_col1, date_col2 = st.columns([1, 1])
+    with date_col1:
+        exp_from = st.date_input("Van datum", value=date.today().replace(day=1))
+    with date_col2:
+        exp_to = st.date_input("Tot datum", value=date.today())
+
+    if st.button("Generate export (selected players)"):
+        try:
+            if not export_players:
+                st.error("Selecteer minimaal 1 speler.")
+                st.stop()
+
+            # haal alles op voor geselecteerde spelers binnen datumrange
+            # (simpel & robuust: per speler query + sheet)
+            bio = io.BytesIO()
+            with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+                for p in export_players:
+                    # filter op player_name exact
+                    q = (
+                        f"select={','.join(GPS_COLS)}"
+                        f"&player_name=eq.{p}"
+                        f"&datum=gte.{exp_from.isoformat()}"
+                        f"&datum=lte.{exp_to.isoformat()}"
+                        f"&order=datum.asc"
+                        f"&limit=200000"
+                    )
+                    dfp = rest_get(access_token, "gps_records", q)
+                    if dfp.empty:
+                        continue
+
+                    ordered = [c for c in GPS_COLS if c in dfp.columns]
+                    dfp = dfp[ordered]
+
+                    # sheet name max 31 chars + verboden tekens
+                    sheet = str(p)[:31]
+                    for ch in [":", "\\", "/", "?", "*", "[", "]"]:
+                        sheet = sheet.replace(ch, " ")
+                    sheet = sheet.strip() or "player"
+
+                    dfp.to_excel(writer, index=False, sheet_name=sheet)
+
+            xbytes = bio.getvalue()
+            st.download_button(
+                "Download gps_records_SELECTED_PLAYERS.xlsx",
+                data=xbytes,
+                file_name="gps_records_SELECTED_PLAYERS.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            st.success("✅ Export klaar.")
         except Exception as e:
             st.error(str(e))
 
