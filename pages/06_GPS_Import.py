@@ -25,7 +25,7 @@ except Exception:
 # =========================
 # Page / Config
 # =========================
-st.set_page_config(page_title="GPS Import", layout="wide")
+st.set_page_config(page_title="Import Data", layout="wide")
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
