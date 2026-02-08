@@ -1,7 +1,9 @@
 # session_load_pages.py
 # ==========================================
 # Session Load dashboard
-# - Power BI-achtige Date slicer (D/W/M/Q/Y + range + dagselectie binnen range)
+# - Power BI-achtige Date slicer (2 sliders):
+#     1) Periode (range slider: start–eind)
+#     2) Selecteer dag binnen periode (single slider)
 # - Kies sessie: Practice (1) / Practice (2) / beide
 # - 4 grafieken per speler:
 #   * Total Distance
@@ -12,8 +14,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -41,32 +41,8 @@ MVV_RED = "#FF0033"
 
 
 # -----------------------------
-# Power BI-achtige date slicer
+# Power BI-achtige slicer (2 sliders)
 # -----------------------------
-@dataclass
-class TimeSlicerResult:
-    granularity: str
-    start: date
-    end: date
-    selected_day: date
-
-
-def _fmt_month(d: date) -> str:
-    return pd.Timestamp(d).strftime("%b %Y")  # Jan 2026
-
-
-def _fmt_range_label(granularity: str, start: date, end: date) -> str:
-    if granularity == "Month":
-        return f"{_fmt_month(start)} - {_fmt_month(end)}"
-    if granularity == "Quarter":
-        s = pd.Period(pd.Timestamp(start), freq="Q")
-        e = pd.Period(pd.Timestamp(end), freq="Q")
-        return f"{s} - {e}"
-    if granularity == "Year":
-        return f"{start.year} - {end.year}"
-    return f"{pd.Timestamp(start).strftime('%d-%m-%Y')} - {pd.Timestamp(end).strftime('%d-%m-%Y')}"
-
-
 def _powerbi_slicer_css(accent: str = MVV_RED) -> None:
     st.markdown(
         f"""
@@ -96,20 +72,7 @@ def _powerbi_slicer_css(accent: str = MVV_RED) -> None:
             white-space: nowrap;
         }}
 
-        /* Segmented control styling */
-        div[data-testid="stSegmentedControl"] > div {{
-            background: rgba(255,255,255,0.03) !important;
-            border-radius: 12px !important;
-            border: 1px solid rgba(255,255,255,0.08) !important;
-            padding: 4px !important;
-        }}
-        div[data-testid="stSegmentedControl"] button {{
-            border-radius: 10px !important;
-            font-size: 12px !important;
-            padding: 6px 10px !important;
-        }}
-
-        /* Slider styling */
+        /* Range slider */
         div[data-testid="stSlider"] {{
             padding-top: 0.15rem;
         }}
@@ -129,7 +92,7 @@ def _powerbi_slicer_css(accent: str = MVV_RED) -> None:
             background: {accent} !important;
         }}
 
-        /* Select slider styling (day picker) */
+        /* Single-day select slider */
         div[data-testid="stSelectSlider"] [data-baseweb="slider"] > div {{
             height: 14px !important;
         }}
@@ -139,24 +102,26 @@ def _powerbi_slicer_css(accent: str = MVV_RED) -> None:
             background: {accent} !important;
             border: 2px solid rgba(255,255,255,0.85) !important;
         }}
+        div[data-testid="stSelectSlider"] [data-baseweb="track"] > div {{
+            background: {accent} !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def powerbi_time_slicer(
+def powerbi_two_sliders(
     df: pd.DataFrame,
     date_col: str,
-    key_prefix: str = "pbi",
+    key_prefix: str = "sl",
     accent: str = MVV_RED,
-    default_granularity: str = "Month",
-) -> TimeSlicerResult:
+) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
     """
-    Power BI-achtige tijd slicer:
-    - Granularity: Day / Week / Month / Quarter / Year
-    - Range slider: start–end (bucket-based)
-    - Extra single-day selection binnen range (voor jouw dag-dashboard)
+    Returns:
+      period_start (Timestamp),
+      period_end (Timestamp),
+      selected_day (Timestamp)  # always within range
     """
     _powerbi_slicer_css(accent=accent)
 
@@ -164,87 +129,46 @@ def powerbi_time_slicer(
     if dts.empty:
         raise ValueError("Geen geldige datums in de data.")
 
-    # Granularity buttons
-    gran = st.segmented_control(
-        "Granularity",
-        options=["Day", "Week", "Month", "Quarter", "Year"],
-        default=default_granularity,
-        key=f"{key_prefix}_gran",
-    )
+    all_days = sorted(pd.Series(dts.dt.date.unique()).tolist())
+    min_d = all_days[0]
+    max_d = all_days[-1]
 
-    # Bucket representative dates
-    if gran == "Day":
-        rep = sorted(pd.Series(dts.dt.date.unique()).tolist())
+    # Default periode = laatste 30 dagen (als beschikbaar)
+    if len(all_days) > 30:
+        default_start = all_days[-30]
     else:
-        ts = pd.to_datetime(dts.dt.date.astype(str))
-        if gran == "Week":
-            rep = sorted((ts - pd.to_timedelta(ts.dt.weekday, unit="D")).dt.date.unique().tolist())
-        elif gran == "Month":
-            rep = sorted(ts.dt.to_period("M").dt.to_timestamp().dt.date.unique().tolist())
-        elif gran == "Quarter":
-            rep = sorted(ts.dt.to_period("Q").dt.to_timestamp().dt.date.unique().tolist())
-        else:  # Year
-            rep = sorted(ts.dt.to_period("Y").dt.to_timestamp().dt.date.unique().tolist())
+        default_start = min_d
+    default_end = max_d
 
-    if not rep:
-        raise ValueError("Geen buckets konden worden gemaakt op basis van de datums.")
-
-    # Default range (laatste 12 buckets als mogelijk)
-    default_start = rep[-12] if len(rep) > 12 else rep[0]
-    default_end = rep[-1]
-
-    # Header met range label
     st.markdown(
         f"""
         <div class="pbi-slicer-wrap">
           <div class="pbi-slicer-top">
             <div class="pbi-slicer-title">Date</div>
-            <div class="pbi-slicer-range">{_fmt_range_label(gran, default_start, default_end)}</div>
+            <div class="pbi-slicer-range">{pd.Timestamp(default_start).strftime('%d-%m-%Y')} - {pd.Timestamp(default_end).strftime('%d-%m-%Y')}</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Range slider
-    start, end = st.slider(
-        " ",
-        min_value=rep[0],
-        max_value=rep[-1],
+    # 1) Periode slider
+    start_d, end_d = st.slider(
+        "Periode",
+        min_value=min_d,
+        max_value=max_d,
         value=(default_start, default_end),
         format="DD-MM-YYYY",
         key=f"{key_prefix}_range",
-        label_visibility="collapsed",
     )
 
-    # Compute actual available days inside range
-    all_days = sorted(pd.Series(dts.dt.date.unique()).tolist())
-
-    if gran == "Day":
-        days_in_range = [d for d in all_days if start <= d <= end]
-    elif gran == "Week":
-        def week_monday(d: date) -> date:
-            dt0 = pd.Timestamp(d)
-            return (dt0 - pd.Timedelta(days=dt0.weekday())).date()
-        days_in_range = [d for d in all_days if start <= week_monday(d) <= end]
-    elif gran == "Month":
-        def month_start(d: date) -> date:
-            return pd.Timestamp(d).to_period("M").to_timestamp().date()
-        days_in_range = [d for d in all_days if start <= month_start(d) <= end]
-    elif gran == "Quarter":
-        def q_start(d: date) -> date:
-            return pd.Timestamp(d).to_period("Q").to_timestamp().date()
-        days_in_range = [d for d in all_days if start <= q_start(d) <= end]
-    else:  # Year
-        def y_start(d: date) -> date:
-            return pd.Timestamp(d).to_period("Y").to_timestamp().date()
-        days_in_range = [d for d in all_days if start <= y_start(d) <= end]
-
+    # Dagen binnen periode
+    days_in_range = [d for d in all_days if start_d <= d <= end_d]
     if not days_in_range:
-        days_in_range = [all_days[-1]]
+        days_in_range = [end_d]
 
-    # Single-day slider binnen range (voor jouw bestaande dag-view)
-    selected_day = st.select_slider(
+    # 2) Dag slider binnen periode
+    selected_d = st.select_slider(
         "Selecteer dag",
         options=days_in_range,
         value=days_in_range[-1],
@@ -252,7 +176,7 @@ def powerbi_time_slicer(
         key=f"{key_prefix}_day",
     )
 
-    return TimeSlicerResult(granularity=gran, start=start, end=end, selected_day=selected_day)
+    return pd.Timestamp(start_d), pd.Timestamp(end_d), pd.Timestamp(selected_d)
 
 
 # -----------------------------
@@ -323,12 +247,11 @@ def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: s
     if has_p1 and has_p2:
         if session_mode == "Practice (1)":
             return df_day[df_day[COL_TYPE].astype(str) == "Practice (1)"].copy()
-        elif session_mode == "Practice (2)":
+        if session_mode == "Practice (2)":
             return df_day[df_day[COL_TYPE].astype(str) == "Practice (2)"].copy()
-        else:  # Beide (1+2)
-            return df_day[df_day[COL_TYPE].astype(str).isin(["Practice (1)", "Practice (2)"])].copy()
-    else:
-        return df_day
+        return df_day[df_day[COL_TYPE].astype(str).isin(["Practice (1)", "Practice (2)"])].copy()
+
+    return df_day
 
 
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
@@ -537,24 +460,27 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden (controleer Datum / Event='Summary').")
         return
 
-    # Power BI-achtige slicer
+    # 2 sliders (periode + dag)
     try:
-        slicer = powerbi_time_slicer(
+        period_start, period_end, selected_day = powerbi_two_sliders(
             df=df,
             date_col=COL_DATE,
             key_prefix="sl",
             accent=MVV_RED,
-            default_granularity="Month",
         )
     except Exception as e:
         st.error(f"Kon date slicer niet maken: {e}")
         return
 
-    selected_date = slicer.selected_day
-    st.caption(f"Geselecteerde datum: {pd.Timestamp(selected_date).strftime('%d-%m-%Y')}")
+    st.caption(
+        f"Periode: {period_start.strftime('%d-%m-%Y')} – {period_end.strftime('%d-%m-%Y')} | "
+        f"Dag: {selected_day.strftime('%d-%m-%Y')}"
+    )
+
+    # Dagfilter (jouw bestaande dashboard blijft per dag)
+    df_day_all = df[(df[COL_DATE].dt.date == selected_day.date())].copy()
 
     # Beschikbare types op deze dag
-    df_day_all = df[df[COL_DATE].dt.date == selected_date].copy()
     types_day = (
         sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
         if (not df_day_all.empty and COL_TYPE in df_day_all.columns)
@@ -576,9 +502,9 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         else:
             st.caption("Geen kolom 'Type' of sessies op deze dag gevonden.")
 
-    df_day = _get_day_session_subset(df, pd.to_datetime(selected_date), session_mode)
+    df_day = _get_day_session_subset(df, selected_day, session_mode)
     if df_day.empty:
-        st.warning("Geen data gevonden voor deze selectie (datum + sessie).")
+        st.warning("Geen data gevonden voor deze selectie (dag + sessie).")
         return
 
     df_agg = _agg_by_player(df_day)
