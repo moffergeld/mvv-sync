@@ -456,6 +456,7 @@ GPS_COLS = [
 ]
 
 METRIC_MAP = {
+    # --- bestaand ---
     "duration": "duration",
     "totaldistance": "total_distance",
     "walkdistance": "walking",
@@ -485,7 +486,22 @@ METRIC_MAP = {
     "hrzoneanaerobic": "hrzoneanaerobic",
     "avghr": "avg_hr",
     "maxhr": "max_hr",
+
+    # --- ✅ NIEUW: zonder "distance" (zoals in jouw screenshot) ---
+    "walking": "walking",
+    "jogging": "jogging",
+    "running": "running",
+    "sprint": "sprint",
+    "highsprint": "high_sprint",
+    "hisprint": "high_sprint",  # soms afkorting
+    "highsprintm": "high_sprint",  # als header bv "High Sprint (m)" -> normalize_key kan dit opleveren afhankelijk van export
+
+    # --- optioneel: andere veelvoorkomende headers ---
+    "walk": "walking",
+    "jog": "jogging",
+    "run": "running",
 }
+
 
 ID_COLS_IN_PARSER = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
 
