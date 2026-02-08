@@ -38,6 +38,7 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 
 ALLOWED_IMPORT = {"admin", "data_scientist", "staff", "physio", "performance_coach"}
 TYPE_OPTIONS = ["Practice", "Practice (1)", "Practice (2)", "Match", "Practice Match"]
+MATCH_TYPES = {"Match", "Practice Match"}  # ✅ used everywhere
 
 # Matches UI config
 TEAM_NAME_MATCHES = "MVV Maastricht"
@@ -325,6 +326,7 @@ def fetch_gps_match_ids_on_date(access_token: str, d: date, match_type: str) -> 
         return pd.Series(dtype="Int64")
     return pd.to_numeric(df["match_id"], errors="coerce").dropna().astype(int)
 
+
 def resolve_match_id_for_date(access_token: str, d: date, match_type: str) -> tuple[int | None, pd.DataFrame]:
     """
     Resolving order:
@@ -333,6 +335,9 @@ def resolve_match_id_for_date(access_token: str, d: date, match_type: str) -> tu
           - exactly 1 match => auto
           - multiple => return None + df (caller can show dropdown)
     """
+    if match_type not in MATCH_TYPES:
+        return None, pd.DataFrame()
+
     s = fetch_gps_match_ids_on_date(access_token, d, match_type)
     if not s.empty:
         return int(s.value_counts().idxmax()), pd.DataFrame()
@@ -345,6 +350,38 @@ def resolve_match_id_for_date(access_token: str, d: date, match_type: str) -> tu
         return int(pd.to_numeric(dfm["match_id"], errors="coerce").dropna().iloc[0]), dfm
 
     return None, dfm
+
+
+def ui_pick_match_if_needed(access_token: str, d: date, match_type: str, key_prefix: str) -> int | None:
+    """
+    Always tries to auto-resolve match_id.
+    If ambiguous (multiple matches on date and no existing gps_records match_id), user can pick ONE id via dropdown.
+    If no match exists in matches table, returns None.
+    """
+    if match_type not in MATCH_TYPES:
+        return None
+
+    auto_id, dfm = resolve_match_id_for_date(access_token, d, match_type)
+    if auto_id is not None:
+        return int(auto_id)
+
+    if dfm is None or dfm.empty:
+        st.warning(f"Geen match gevonden op {d.isoformat()} in tabel matches (match_id blijft leeg).")
+        return None
+
+    # multiple matches: show picker
+    dfm = dfm.copy()
+    dfm["label"] = dfm.apply(
+        lambda r: f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
+        axis=1,
+    )
+    pick_key = f"{key_prefix}_{d.isoformat()}_{match_type}"
+    pick = st.selectbox(
+        f"Kies match voor {d.isoformat()} ({match_type})",
+        options=dfm["label"].tolist(),
+        key=pick_key,
+    )
+    return int(dfm.loc[dfm["label"] == pick, "match_id"].iloc[0])
 
 
 # =========================
@@ -454,7 +491,6 @@ def df_to_db_rows(
     df: pd.DataFrame,
     source_file: str,
     name_to_id: dict,
-    match_id: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     rows = []
     unmapped = set()
@@ -476,6 +512,8 @@ def df_to_db_rows(
             unmapped.add(speler)
 
         dt = parsed_dates.iloc[idx].date()
+        t = str(r.get("Type", "")).strip()
+        ev = str(r.get("Event", "")).strip()
 
         base = {
             "player_id": pid,
@@ -483,9 +521,9 @@ def df_to_db_rows(
             "datum": dates_iso.iloc[idx],
             "week": int(dt.isocalendar().week),
             "year": int(dt.year),
-            "type": str(r.get("Type", "")).strip(),
-            "event": str(r.get("Event", "")).strip(),
-            "match_id": match_id,
+            "type": t,
+            "event": ev,
+            "match_id": None,  # ✅ ALWAYS auto-filled later (per datum+type)
             "source_file": source_file,
         }
 
@@ -509,6 +547,43 @@ def df_to_db_rows(
         rows.append(base)
 
     return rows, sorted(unmapped)
+
+
+def apply_auto_match_ids_to_rows(
+    access_token: str,
+    rows: list[dict],
+    ui_key_prefix: str,
+) -> list[dict]:
+    """
+    For each (datum, type) group where type is Match/Practice Match:
+      - if gps_records already has match_id on that date/type -> reuse it
+      - else if matches has exactly one match -> use it
+      - else if multiple -> show dropdown to pick once
+      - else -> keep None
+    """
+    if not rows:
+        return rows
+
+    # group keys present in payload
+    keys = sorted({(r.get("datum"), r.get("type")) for r in rows if r.get("type") in MATCH_TYPES and r.get("datum")})
+    chosen: dict[tuple[str, str], int | None] = {}
+
+    for d_iso, t in keys:
+        try:
+            d_obj = pd.to_datetime(d_iso).date()
+        except Exception:
+            continue
+        mid = ui_pick_match_if_needed(access_token, d_obj, t, key_prefix=ui_key_prefix)
+        chosen[(d_iso, t)] = mid
+
+    # apply
+    for r in rows:
+        k = (r.get("datum"), r.get("type"))
+        if k in chosen:
+            r["match_id"] = chosen[k]
+        else:
+            r["match_id"] = None  # ensure practice stays null
+    return rows
 
 
 # =========================
@@ -678,6 +753,7 @@ def safe_sheet_name(name: str, used: set[str]) -> str:
 # ✅ Geen “terugspringen” naar Import GPS
 # ✅ Matches: select/edit/delete + confirm; import CSV; add manual
 # ✅ Manual add: match_id volledig auto (op datum/type + existing gps_records)
+# ✅ Excel import: match_id volledig auto (zelfde logica)
 # =========================
 
 st.title("GPS Import")
@@ -743,24 +819,16 @@ if main_page == "Import GPS":
                 key="gps_imp_files",
             )
 
-        selected_match_id = None
-        if selected_type in ["Match", "Practice Match"]:
-            try:
-                df_matches = fetch_matches_on_date(access_token, selected_date)
-            except Exception as e:
-                toast_err(f"Kon matches niet ophalen: {e}")
-                df_matches = pd.DataFrame()
-
-            if df_matches.empty:
-                st.warning("Geen match gevonden op deze datum in tabel matches.")
-            else:
-                df_matches = df_matches.copy()
-                df_matches["label"] = df_matches.apply(
-                    lambda r: f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
-                    axis=1,
-                )
-                pick = st.selectbox("Koppel aan match", options=df_matches["label"].tolist(), key="gps_imp_match_pick")
-                selected_match_id = int(df_matches.loc[df_matches["label"] == pick, "match_id"].iloc[0])
+        # ✅ Auto match_id (no manual typing)
+        import_match_id = None
+        if selected_type in MATCH_TYPES:
+            st.caption("Match-koppeling wordt automatisch gedaan op basis van datum (en bestaande gps_records).")
+            import_match_id = ui_pick_match_if_needed(
+                access_token,
+                selected_date,
+                selected_type,
+                key_prefix="gps_excel_match_pick",
+            )
 
         if uploaded_files:
             st.divider()
@@ -824,10 +892,21 @@ if main_page == "Import GPS":
                                 dfp,
                                 source_file=filename,
                                 name_to_id=name_to_id,
-                                match_id=selected_match_id,
                             )
+                            # ✅ apply chosen match_id for excel import (single date/type), but still robust:
+                            if selected_type in MATCH_TYPES:
+                                for r in rows:
+                                    r["match_id"] = import_match_id
                             all_rows.extend(rows)
                             all_unmapped.update(unmapped)
+
+                        # ✅ If Excel import is match type: still ensure consistency with existing gps_records (date/type)
+                        if selected_type in MATCH_TYPES and all_rows:
+                            all_rows = apply_auto_match_ids_to_rows(
+                                access_token,
+                                all_rows,
+                                ui_key_prefix="gps_excel_apply",
+                            )
 
                         if all_unmapped:
                             st.warning(
@@ -878,7 +957,6 @@ if main_page == "Import GPS":
                 columns=template_cols,
             )
 
-        # Match pick (only if needed) is shown AFTER editor; we keep column disabled to avoid manual typing.
         colcfg = {
             "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
             "datum": st.column_config.DateColumn("datum", required=True),
@@ -901,43 +979,38 @@ if main_page == "Import GPS":
             key="manual_editor",
         )
 
-        # -------- AUTO match_id (based on first row date+type + existing gps_records)
         df_preview = edited.copy()
-        try:
-            first_date = pd.to_datetime(df_preview.iloc[0].get("datum")).date()
-        except Exception:
-            first_date = date.today()
 
-        first_type = str(df_preview.iloc[0].get("type") or "").strip()
+        # ✅ AUTO match_id for each (datum,type) group in editor (with dropdowns if ambiguous)
+        if not df_preview.empty:
+            # normalize
+            df_preview["type"] = df_preview["type"].astype(str).str.strip()
+            dt_series = pd.to_datetime(df_preview["datum"], errors="coerce")
+            df_preview["_datum_iso"] = dt_series.dt.date.astype(str)
 
-        auto_match_id = None
-        matches_on_date = pd.DataFrame()
+            needed = sorted({(d_iso, t) for d_iso, t in zip(df_preview["_datum_iso"], df_preview["type"]) if t in MATCH_TYPES and d_iso != "NaT"})
+            chosen_map: dict[tuple[str, str], int | None] = {}
 
-        if first_type in ["Match", "Practice Match"]:
-            auto_match_id, matches_on_date = resolve_match_id_for_date(access_token, first_date, first_type)
+            if needed:
+                st.markdown("**Automatische match-koppeling**")
+                for d_iso, t in needed:
+                    try:
+                        d_obj = pd.to_datetime(d_iso).date()
+                    except Exception:
+                        continue
+                    mid = ui_pick_match_if_needed(access_token, d_obj, t, key_prefix="manual_match_pick")
+                    chosen_map[(d_iso, t)] = mid
 
-            # If multiple matches exist and no GPS match_id yet -> allow 1 dropdown choice
-            if auto_match_id is None and matches_on_date is not None and not matches_on_date.empty:
-                matches_on_date = matches_on_date.copy()
-                matches_on_date["label"] = matches_on_date.apply(
-                    lambda r: f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
-                    axis=1,
-                )
-                pick_key = f"manual_match_pick_{first_date.isoformat()}_{first_type}"
-                pick = st.selectbox(
-                    "Kies match voor deze datum (wordt toegepast op alle rijen zonder match_id)",
-                    options=matches_on_date["label"].tolist(),
-                    key=pick_key,
-                )
-                auto_match_id = int(matches_on_date.loc[matches_on_date["label"] == pick, "match_id"].iloc[0])
-
-            # fill missing match_id for all rows
-            if auto_match_id is not None:
+                # fill match_id where missing (disabled column)
                 cur = pd.to_numeric(df_preview.get("match_id"), errors="coerce")
-                df_preview.loc[cur.isna(), "match_id"] = int(auto_match_id)
+                is_missing = cur.isna()
+                for (d_iso, t), mid in chosen_map.items():
+                    mask = (df_preview["_datum_iso"] == d_iso) & (df_preview["type"] == t) & is_missing
+                    if mid is not None:
+                        df_preview.loc[mask, "match_id"] = int(mid)
 
                 # keep session consistent for next rerun
-                st.session_state["manual_df"] = df_preview
+                st.session_state["manual_df"] = df_preview.drop(columns=["_datum_iso"], errors="ignore").copy()
 
         colA, colB = st.columns([1, 1])
         with colA:
@@ -984,28 +1057,35 @@ if main_page == "Import GPS":
                     # player_id mapping
                     dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                    # ensure match_id int/None
+                    # ensure match_id int/None (but will be forced below for match types)
                     dfm["match_id"] = pd.to_numeric(dfm.get("match_id"), errors="coerce")
                     dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
 
-                    # enforce match_id consistency per (datum,type) for match types
-                    MATCH_TYPES = {"Match", "Practice Match"}
+                    # ✅ enforce match_id consistency per (datum,type) for match types:
+                    #    existing gps_records match_id wins; else matches table; else UI pick (already done above)
                     for (d_iso, t), g in dfm.groupby(["datum", "type"], dropna=False):
                         if t not in MATCH_TYPES:
+                            dfm.loc[g.index, "match_id"] = None
                             continue
+
                         d_obj = pd.to_datetime(d_iso).date()
 
                         existing_ids = fetch_gps_match_ids_on_date(access_token, d_obj, t)
                         if not existing_ids.empty:
                             forced_id = int(existing_ids.value_counts().idxmax())
                         else:
-                            forced_id, dfm_on_date = resolve_match_id_for_date(access_token, d_obj, t)
+                            forced_id, df_on_date = resolve_match_id_for_date(access_token, d_obj, t)
                             if forced_id is None:
-                                toast_err(
-                                    f"Geen unieke match gevonden op {d_iso} voor type '{t}'. "
-                                    "Ga naar Matches en voeg/selecteer de match (of kies hier de match dropdown)."
-                                )
-                                st.stop()
+                                # last resort: maybe user picked via dropdown (already filled in dfm)
+                                picked = pd.to_numeric(dfm.loc[g.index, "match_id"], errors="coerce").dropna()
+                                if not picked.empty:
+                                    forced_id = int(picked.iloc[0])
+                                else:
+                                    toast_err(
+                                        f"Geen match_id beschikbaar voor {d_iso} ({t}). "
+                                        "Voeg match toe in Matches of kies de match in de dropdown."
+                                    )
+                                    st.stop()
 
                         dfm.loc[g.index, "match_id"] = forced_id
 
@@ -1016,7 +1096,6 @@ if main_page == "Import GPS":
                         "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
                         "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5", "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr"
                     ]
-
                     for c in metric_keys:
                         if c in dfm.columns:
                             dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
@@ -1034,7 +1113,6 @@ if main_page == "Import GPS":
                             "match_id": r.get("match_id"),
                             "source_file": (r.get("source_file") or "manual"),
                         }
-
                         for k in metric_keys:
                             v = r.get(k)
                             if k in INT_DB_COLS:
@@ -1042,7 +1120,6 @@ if main_page == "Import GPS":
                                 row[k] = int(vv) if pd.notna(vv) else None
                             else:
                                 row[k] = float(v) if pd.notna(v) else None
-
                         rows.append(row)
 
                     rest_upsert(
