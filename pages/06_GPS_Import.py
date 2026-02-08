@@ -947,6 +947,12 @@ if main_page == "Import GPS":
         BASIC_COLS = ["player_name", "datum", "type", "event", "match_id", "source_file"]
         METRIC_COLS = [c for c in template_cols if c not in BASIC_COLS]
     
+        DEFAULT_METRICS = [
+            "duration", "total_distance", "sprint", "high_sprint",
+            "number_of_sprints", "max_speed", "avg_speed",
+            "playerload2d", "total_accelerations", "total_decelerations",
+        ]
+    
         def _blank_row() -> dict:
             return {
                 "player_name": player_options[0] if player_options else "",
@@ -987,54 +993,42 @@ if main_page == "Import GPS":
         if "manual_df" not in st.session_state:
             st.session_state["manual_df"] = pd.DataFrame([_blank_row()], columns=template_cols)
     
-        # --- CSS: maak de + knop rood en groot
-        st.markdown(
-            """
-            <style>
-            div[data-testid="stButton"] button[kind="primary"].manual-add {
-                background-color: #ff0033 !important;
-                border: 1px solid #ff0033 !important;
-                color: white !important;
-                font-weight: 700 !important;
-                border-radius: 10px !important;
-                height: 42px !important;
-                padding: 0 16px !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+        if "manual_selected_metrics" not in st.session_state:
+            st.session_state["manual_selected_metrics"] = [m for m in DEFAULT_METRICS if m in METRIC_COLS]
     
-        # --- Top toolbar: links +, rechts reset/save
-        left, mid, right = st.columns([1.0, 1.0, 2.0], vertical_alignment="bottom")
+        # --- Compacte UI: toolbar boven de editor
+        top_left, top_mid, top_right = st.columns([1.0, 1.2, 3.8], vertical_alignment="bottom")
     
-        with left:
-            # Streamlit laat geen className op button toe; workaround: HTML wrapper + data-testid is fragiel.
-            # Praktisch: gebruik label als grote plus en primary style.
-            add_clicked = st.button("＋", type="primary", key="manual_add_row_btn")
+        with top_left:
+            add_clicked = st.button("＋", type="primary", key="manual_add_row_btn", help="Voeg een rij toe")
             if add_clicked:
                 df0 = st.session_state["manual_df"].copy()
                 df0 = pd.concat([pd.DataFrame([_blank_row()], columns=template_cols), df0], ignore_index=True)
                 st.session_state["manual_df"] = df0
                 st.rerun()
     
-        with mid:
+        with top_mid:
             show_metrics = st.toggle("Toon metrics", value=True, key="manual_show_metrics")
     
-        with right:
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                if st.button("Reset table", key="manual_reset_btn"):
-                    st.session_state["manual_df"] = pd.DataFrame([_blank_row()], columns=template_cols)
-                    toast_ok("Reset bevestigd.")
-                    st.rerun()
-            with c2:
-                save_clicked = st.button("Save rows (upsert)", type="primary", key="manual_save_btn")
+        with top_right:
+            selected = st.multiselect(
+                "Selecteer metrics (kolommen)",
+                options=METRIC_COLS,
+                default=st.session_state["manual_selected_metrics"],
+                key="manual_metrics_picker",
+                help="Kies welke metric-kolommen je wilt zien/bewerken in de tabel.",
+            )
+            st.session_state["manual_selected_metrics"] = selected
     
-        # --- Kies welke kolommen je toont (minder horizontaal schuiven)
-        visible_cols = BASIC_COLS + (METRIC_COLS if show_metrics else [])
+        # --- Zichtbare kolommen (dynamisch)
+        if show_metrics:
+            visible_cols = BASIC_COLS + list(st.session_state["manual_selected_metrics"])
+        else:
+            visible_cols = BASIC_COLS
+    
         df_for_editor = st.session_state["manual_df"][visible_cols].copy()
     
+        # --- Column config
         colcfg = {
             "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
             "datum": st.column_config.DateColumn("datum", required=True),
@@ -1049,17 +1043,25 @@ if main_page == "Import GPS":
             "source_file": st.column_config.TextColumn("source_file"),
         }
     
-        # --- Editor: extra hoogte vermindert “bar in de weg”
+        # Configureer number columns voor alle zichtbare metrics
+        for m in METRIC_COLS:
+            if m in df_for_editor.columns:
+                if m in INT_DB_COLS:
+                    colcfg[m] = st.column_config.NumberColumn(m, step=1)
+                else:
+                    colcfg[m] = st.column_config.NumberColumn(m)
+    
+        # --- Editor (vaste rijen: toevoegen via + knop)
         edited = st.data_editor(
             df_for_editor,
             use_container_width=True,
-            height=520,           # ✅ belangrijk: meer ruimte
-            num_rows="fixed",     # ✅ rijen toevoegen via rode + (niet via onderkant)
+            height=520,
+            num_rows="fixed",
             column_config=colcfg,
             key="manual_editor",
         )
     
-        # --- Merge edits terug in volledige manual_df (ook als metrics verborgen waren)
+        # --- Merge edits terug in volledige manual_df (verborgen kolommen blijven behouden)
         full_df = st.session_state["manual_df"].copy()
         for c in edited.columns:
             full_df[c] = edited[c].values
@@ -1067,15 +1069,19 @@ if main_page == "Import GPS":
     
         df_preview = full_df.copy()
     
-        # ✅ AUTO match_id per (datum,type) groep (zelfde logica als eerder, maar nu op full_df)
+        # ✅ AUTO match_id per (datum,type) groep in de volledige tabel
         if not df_preview.empty:
             df_preview["type"] = df_preview["type"].astype(str).str.strip()
             dt_series = pd.to_datetime(df_preview["datum"], errors="coerce")
             df_preview["_datum_iso"] = dt_series.dt.date.astype(str)
     
-            needed = sorted({(d_iso, t) for d_iso, t in zip(df_preview["_datum_iso"], df_preview["type"]) if t in MATCH_TYPES and d_iso != "NaT"})
-            chosen_map: dict[tuple[str, str], int | None] = {}
+            needed = sorted({
+                (d_iso, t)
+                for d_iso, t in zip(df_preview["_datum_iso"], df_preview["type"])
+                if t in MATCH_TYPES and d_iso != "NaT"
+            })
     
+            chosen_map: dict[tuple[str, str], int | None] = {}
             if needed:
                 with st.expander("Automatische match-koppeling (alleen als nodig)", expanded=False):
                     for d_iso, t in needed:
@@ -1085,6 +1091,7 @@ if main_page == "Import GPS":
     
                 cur = pd.to_numeric(df_preview.get("match_id"), errors="coerce")
                 is_missing = cur.isna()
+    
                 for (d_iso, t), mid in chosen_map.items():
                     mask = (df_preview["_datum_iso"] == d_iso) & (df_preview["type"] == t) & is_missing
                     if mid is not None:
@@ -1092,11 +1099,23 @@ if main_page == "Import GPS":
     
                 st.session_state["manual_df"] = df_preview.drop(columns=["_datum_iso"], errors="ignore").copy()
     
-        # --- Save (upsert) blijft hetzelfde; gebruik nu df_preview/st.session_state["manual_df"]
+        # --- Bottom actions
+        b1, b2 = st.columns([1, 1], vertical_alignment="bottom")
+        with b1:
+            if st.button("Reset table", key="manual_reset_btn"):
+                st.session_state["manual_df"] = pd.DataFrame([_blank_row()], columns=template_cols)
+                toast_ok("Reset bevestigd.")
+                st.rerun()
+    
+        with b2:
+            save_clicked = st.button("Save rows (upsert)", type="primary", key="manual_save_btn")
+    
+        # --- Save logic (gebruik je bestaande save-blok; hieronder is compatibel met je eerdere versie)
         if save_clicked:
             try:
                 dfm = st.session_state["manual_df"].copy()
     
+                # basic cleanup
                 dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                 dfm["event"] = dfm["event"].astype(str).str.strip()
                 dfm["type"] = dfm["type"].astype(str).str.strip()
@@ -1107,6 +1126,7 @@ if main_page == "Import GPS":
                     toast_err("Geen geldige rijen om op te slaan.")
                     st.stop()
     
+                # dates
                 dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                 if dt_series.isna().any():
                     toast_err("Ongeldige datum in één of meer rijen.")
@@ -1116,12 +1136,14 @@ if main_page == "Import GPS":
                 dfm["year"] = dt_series.dt.year.astype(int)
                 dfm["datum"] = dt_series.dt.date.astype(str)
     
+                # player_id mapping
                 dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
     
+                # match_id int/None
                 dfm["match_id"] = pd.to_numeric(dfm.get("match_id"), errors="coerce")
                 dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
     
-                # enforce match_id per (datum,type)
+                # enforce match_id consistency per (datum,type) for match types
                 for (d_iso, t), g in dfm.groupby(["datum", "type"], dropna=False):
                     if t not in MATCH_TYPES:
                         dfm.loc[g.index, "match_id"] = None
@@ -1144,11 +1166,13 @@ if main_page == "Import GPS":
     
                     dfm.loc[g.index, "match_id"] = forced_id
     
-                metric_keys = [c for c in template_cols if c not in ["player_name", "datum", "type", "event", "match_id", "source_file", "player_id", "week", "year"]]
+                # coerce metrics
+                metric_keys = [c for c in template_cols if c not in ["player_name", "datum", "type", "event", "match_id", "source_file"]]
                 for c in metric_keys:
                     if c in dfm.columns:
                         dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
     
+                # build rows
                 rows = []
                 for _, r in dfm.iterrows():
                     row = {
