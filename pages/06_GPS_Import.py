@@ -1,11 +1,16 @@
 # pages/06_GPS_Import.py
-# - Upload JOHAN Excel (SUMMARY / EXERCISES) -> parse -> upsert into public.gps_records
-# - Import GPS (Excel) + Manual add + Export zitten onder "Import GPS" (radio sub-navigatie)
-# - Matches: import CSV, select + edit score/type/season, delete (met confirm), manual add
+# - Import GPS (Excel): Upload JOHAN Excel (SUMMARY / EXERCISES) -> parse -> upsert public.gps_records
+# - Manual add GPS: add/edit rows -> upsert public.gps_records
+# - Export GPS: export gps_records -> Excel
+# - Matches: import Matches.csv -> upsert public.matches, edit score/type/season, delete match, add match manual
 #
 # Requires:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] set by your login (JWT access token)
+#   st.session_state["access_token"] (JWT)
+
+# =========================
+# PART 1/5 — Imports, config, REST helpers, small utilities
+# =========================
 
 import io
 import re
@@ -22,10 +27,7 @@ except Exception:
     st.error("Excel support ontbreekt: installeer openpyxl via requirements.txt")
     st.stop()
 
-# =========================
-# Page / Config
-# =========================
-st.set_page_config(page_title="Import Data", layout="wide")
+st.set_page_config(page_title="GPS Import", layout="wide")
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
@@ -43,9 +45,6 @@ HOME_AWAY_OPTIONS = ["Home", "Away"]
 MATCH_TYPE_OPTIONS = ["Competitie", "Oefenwedstrijd", "Beker"]
 
 
-# =========================
-# Small utilities
-# =========================
 def toast_ok(msg: str) -> None:
     try:
         st.toast(msg, icon="✅")
@@ -61,13 +60,13 @@ def toast_err(msg: str) -> None:
 
 
 def season_options(start_year: int = 2020, years_ahead: int = 6) -> list[str]:
-    y0 = start_year
     y1 = date.today().year + years_ahead
-    return [f"{y}/{y+1}" for y in range(y0, y1 + 1)]
+    return [f"{y}/{y+1}" for y in range(start_year, y1 + 1)]
 
 
 def default_season_today() -> str:
     y = date.today().year
+    # in NL start seizoen typisch juli/aug -> vanaf juli nemen y/y+1, anders y-1/y
     return f"{y}/{y+1}" if date.today().month >= 7 else f"{y-1}/{y}"
 
 
@@ -80,13 +79,10 @@ def build_fixture(team_name: str, home_away: str | None, opponent: str | None) -
         return ""
 
     if ha == "away":
-        if opp and team:
-            return f"{opp} - {team}"
-        return opp or team
+        return f"{opp} - {team}".strip(" -") if opp and team else (opp or team)
 
-    if team and opp:
-        return f"{team} - {opp}"
-    return team or opp
+    # default home
+    return f"{team} - {opp}".strip(" -") if team and opp else (team or opp)
 
 
 def build_result(goals_for, goals_against) -> str:
@@ -95,16 +91,6 @@ def build_result(goals_for, goals_against) -> str:
     if pd.isna(gf) or pd.isna(ga):
         return ""
     return f"{int(gf)}-{int(ga)}"
-
-
-def normalize_key(s: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(s).strip().lower())
-
-
-def normalize_name(s: str) -> str:
-    s = str(s).strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    return s
 
 
 # =========================
@@ -170,7 +156,7 @@ def rest_delete(access_token: str, table: str, where_query: str) -> None:
     """
     url = f"{SUPABASE_URL}/rest/v1/{table}?{where_query}"
     headers = rest_headers(access_token)
-    headers["Prefer"] = "return=minimal"
+    headers["Prefer"] = "return=representation"
     r = requests.delete(url, headers=headers, timeout=60)
     if not r.ok:
         raise RuntimeError(f"DELETE {table} failed ({r.status_code}): {r.text}")
@@ -217,9 +203,32 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
 
 
 # =========================
-# Matches helpers (CSV + queries)
+# PART 2/5 — Mapping helpers (players, matches), gps schema + df_to_db_rows
 # =========================
+def normalize_key(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(s).strip().lower())
+
+
+def normalize_name(s: str) -> str:
+    s = str(s).strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+
+@st.cache_data(ttl=120)
+def get_players_map(access_token: str) -> tuple[dict, list[str]]:
+    df = rest_get(access_token, "players", "select=player_id,full_name,is_active&is_active=eq.true&limit=5000")
+    if df.empty:
+        return {}, []
+    df["full_name"] = df["full_name"].astype(str).str.strip()
+    df = df.dropna(subset=["player_id", "full_name"])
+    name_to_id = {normalize_name(n): pid for n, pid in zip(df["full_name"], df["player_id"])}
+    display_names = sorted(df["full_name"].tolist())
+    return name_to_id, display_names
+
+
 def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
+    # Matches.csv is ; separated
     df = pd.read_csv(io.BytesIO(file_bytes), sep=";")
 
     df = df.rename(
@@ -249,21 +258,11 @@ def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype(str).replace("nan", "").str.strip()
 
-    # fixture/result normaliseren bij import
+    # force fixture/result based on home_away+opponent and goals
     df["fixture"] = df.apply(lambda r: build_fixture(TEAM_NAME_MATCHES, r.get("home_away"), r.get("opponent")), axis=1)
     df["result"] = df.apply(lambda r: build_result(r.get("goals_for"), r.get("goals_against")), axis=1)
 
-    keep = [
-        "match_date",
-        "fixture",
-        "home_away",
-        "opponent",
-        "match_type",
-        "season",
-        "result",
-        "goals_for",
-        "goals_against",
-    ]
+    keep = ["match_date", "fixture", "home_away", "opponent", "match_type", "season", "result", "goals_for", "goals_against"]
     return df[keep]
 
 
@@ -308,23 +307,49 @@ def fetch_matches_range(access_token: str, d_from: date, d_to: date, season_filt
     return rest_get(access_token, "matches", q)
 
 
-# =========================
-# Players mapping
-# =========================
-@st.cache_data(ttl=120)
-def get_players_map(access_token: str) -> tuple[dict, list[str]]:
-    df = rest_get(access_token, "players", "select=player_id,full_name,is_active&is_active=eq.true&limit=5000")
-    if df.empty:
-        return {}, []
-    df["full_name"] = df["full_name"].astype(str).str.strip()
-    df = df.dropna(subset=["player_id", "full_name"])
-    name_to_id = {normalize_name(n): pid for n, pid in zip(df["full_name"], df["player_id"])}
-    display_names = sorted(df["full_name"].tolist())
-    return name_to_id, display_names
+@st.cache_data(ttl=30)
+def fetch_gps_match_ids_on_date(access_token: str, d: date, match_type: str) -> pd.Series:
+    """
+    Gets match_id(s) present in gps_records for date+type (non-null).
+    """
+    t = requests.utils.quote(str(match_type), safe="")
+    q = (
+        "select=match_id"
+        f"&datum=eq.{d.isoformat()}"
+        f"&type=eq.{t}"
+        "&match_id=is.not.null"
+        "&limit=20000"
+    )
+    df = rest_get(access_token, "gps_records", q)
+    if df.empty or "match_id" not in df.columns:
+        return pd.Series(dtype="Int64")
+    return pd.to_numeric(df["match_id"], errors="coerce").dropna().astype(int)
+
+
+def resolve_match_id_for_date(access_token: str, d: date, match_type: str) -> tuple[int | None, pd.DataFrame]:
+    """
+    Resolving order:
+      1) existing gps_records match_id mode for that date+type
+      2) matches table on date:
+          - exactly 1 match => auto
+          - multiple => return None + df (caller can show dropdown)
+    """
+    s = fetch_gps_match_ids_on_date(access_token, d, match_type)
+    if not s.empty:
+        return int(s.value_counts().idxmax()), pd.DataFrame()
+
+    dfm = fetch_matches_on_date(access_token, d)
+    if dfm.empty:
+        return None, dfm
+
+    if dfm["match_id"].nunique() == 1:
+        return int(pd.to_numeric(dfm["match_id"], errors="coerce").dropna().iloc[0]), dfm
+
+    return None, dfm
 
 
 # =========================
-# gps_records schema + mapping
+# gps_records columns
 # =========================
 GPS_COLS = [
     "player_id",
@@ -399,7 +424,6 @@ METRIC_MAP = {
 
 ID_COLS_IN_PARSER = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
 
-# Integer columns in Supabase schema (int4)
 INT_DB_COLS = {
     "number_of_sprints",
     "number_of_high_sprints",
@@ -489,7 +513,7 @@ def df_to_db_rows(
 
 
 # =========================
-# JOHAN parsers (SUMMARY / EXERCISES) + unique Event
+# PART 3/5 — JOHAN parsers (SUMMARY / EXERCISES) + unique Event
 # =========================
 def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
     raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
@@ -618,7 +642,7 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 
 
 # =========================
-# Export helpers
+# PART 4/5 — Export helpers
 # =========================
 def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFrame:
     query = f"select={','.join(GPS_COLS)}&order=datum.desc&limit={limit}"
@@ -649,8 +673,14 @@ def safe_sheet_name(name: str, used: set[str]) -> str:
 
 
 # =========================
-# UI
+# PART 5/5 — UI
+# ✅ Subtabs onder Import GPS (radio)
+# ✅ Confirm messages (toast) bij import/export/save/delete
+# ✅ Geen “terugspringen” naar Import GPS
+# ✅ Matches: select/edit/delete + confirm; import CSV; add manual
+# ✅ Manual add: match_id volledig auto (op datum/type + existing gps_records)
 # =========================
+
 st.title("GPS Import")
 
 access_token = get_access_token()
@@ -674,9 +704,7 @@ if role not in ALLOWED_IMPORT:
 
 name_to_id, player_options = get_players_map(access_token)
 
-# -------------------------
-# NAVIGATIE (blijft staan na actions)
-# -------------------------
+# Navigation (persists across reruns)
 main_page = st.radio(
     "Navigatie",
     options=["Import GPS", "Matches"],
@@ -686,7 +714,7 @@ main_page = st.radio(
 )
 
 # -------------------------
-# PAGE: Import GPS (subpages)
+# PAGE: Import GPS
 # -------------------------
 if main_page == "Import GPS":
     sub_page = st.radio(
@@ -729,10 +757,7 @@ if main_page == "Import GPS":
             else:
                 df_matches = df_matches.copy()
                 df_matches["label"] = df_matches.apply(
-                    lambda r: (
-                        f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | "
-                        f"{build_result(r.get('goals_for'), r.get('goals_against'))}"
-                    ),
+                    lambda r: f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
                     axis=1,
                 )
                 pick = st.selectbox("Koppel aan match", options=df_matches["label"].tolist(), key="gps_imp_match_pick")
@@ -780,7 +805,7 @@ if main_page == "Import GPS":
                         st.write(f"- {fn}: {msg}")
 
                 if all_parsed:
-                    toast_ok(f"Parsed bestanden: {len(all_parsed)}")
+                    toast_ok(f"Preview bevestigd: parsed bestanden = {len(all_parsed)}")
                     for fn, kind, dfp in all_parsed:
                         st.markdown(f"**{fn}** — {kind} — rijen: {len(dfp)}")
                         st.dataframe(dfp.head(120), width="stretch")
@@ -821,7 +846,6 @@ if main_page == "Import GPS":
 
                         st.session_state["gps_parsed_multi"] = []
                         toast_ok(f"Import bevestigd: upserted rows = {len(all_rows)}")
-                        st.rerun()
                     except Exception as e:
                         toast_err(f"Import fout: {e}")
 
@@ -830,65 +854,43 @@ if main_page == "Import GPS":
     # -------------------------
     if sub_page == "Manual add":
         st.subheader("Manual add (tabel)")
-        st.caption("Voeg rijen toe met het + icoon. Kies speler in de eerste kolom. Klik daarna op 'Save rows (upsert)'.")
+        st.caption("Voeg rijen toe met het + icoon. match_id wordt automatisch gezet bij Match / Practice Match.")
 
         template_cols = [
-            "player_name",
-            "datum",
-            "type",
-            "event",
-            "match_id",
-            "duration",
-            "total_distance",
-            "walking",
-            "jogging",
-            "running",
-            "sprint",
-            "high_sprint",
-            "number_of_sprints",
-            "number_of_high_sprints",
-            "number_of_repeated_sprints",
-            "max_speed",
-            "avg_speed",
-            "playerload3d",
-            "playerload2d",
-            "total_accelerations",
-            "high_accelerations",
-            "total_decelerations",
-            "high_decelerations",
-            "hrzone1",
-            "hrzone2",
-            "hrzone3",
-            "hrzone4",
-            "hrzone5",
-            "hrtrimp",
-            "hrzoneanaerobic",
-            "avg_hr",
-            "max_hr",
+            "player_name", "datum", "type", "event", "match_id",
+            "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
+            "number_of_sprints", "number_of_high_sprints", "number_of_repeated_sprints",
+            "max_speed", "avg_speed", "playerload3d", "playerload2d",
+            "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
+            "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5", "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr",
             "source_file",
         ]
 
         if "manual_df" not in st.session_state:
             st.session_state["manual_df"] = pd.DataFrame(
-                [
-                    {
-                        "player_name": player_options[0] if player_options else "",
-                        "datum": date.today(),
-                        "type": "Practice",
-                        "event": "Summary",
-                        "match_id": None,
-                        "source_file": "manual",
-                    }
-                ],
+                [{
+                    "player_name": player_options[0] if player_options else "",
+                    "datum": date.today(),
+                    "type": "Practice",
+                    "event": "Summary",
+                    "match_id": None,
+                    "source_file": "manual",
+                }],
                 columns=template_cols,
             )
 
+        # Match pick (only if needed) is shown AFTER editor; we keep column disabled to avoid manual typing.
         colcfg = {
             "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
             "datum": st.column_config.DateColumn("datum", required=True),
             "type": st.column_config.SelectboxColumn("type", options=TYPE_OPTIONS, required=True),
             "event": st.column_config.TextColumn("event", required=True),
-            "match_id": st.column_config.NumberColumn("match_id", help="Alleen invullen bij Match / Practice Match", step=1),
+            "match_id": st.column_config.NumberColumn(
+                "match_id",
+                help="Wordt automatisch gevuld bij Match/Practice Match (op basis van datum).",
+                step=1,
+                disabled=True,
+            ),
             "source_file": st.column_config.TextColumn("source_file"),
         }
 
@@ -900,30 +902,66 @@ if main_page == "Import GPS":
             key="manual_editor",
         )
 
+        # -------- AUTO match_id (based on first row date+type + existing gps_records)
+        df_preview = edited.copy()
+        try:
+            first_date = pd.to_datetime(df_preview.iloc[0].get("datum")).date()
+        except Exception:
+            first_date = date.today()
+
+        first_type = str(df_preview.iloc[0].get("type") or "").strip()
+
+        auto_match_id = None
+        matches_on_date = pd.DataFrame()
+
+        if first_type in ["Match", "Practice Match"]:
+            auto_match_id, matches_on_date = resolve_match_id_for_date(access_token, first_date, first_type)
+
+            # If multiple matches exist and no GPS match_id yet -> allow 1 dropdown choice
+            if auto_match_id is None and matches_on_date is not None and not matches_on_date.empty:
+                matches_on_date = matches_on_date.copy()
+                matches_on_date["label"] = matches_on_date.apply(
+                    lambda r: f"#{int(r['match_id'])} | {(r.get('fixture') or '').strip()} | {build_result(r.get('goals_for'), r.get('goals_against'))}",
+                    axis=1,
+                )
+                pick_key = f"manual_match_pick_{first_date.isoformat()}_{first_type}"
+                pick = st.selectbox(
+                    "Kies match voor deze datum (wordt toegepast op alle rijen zonder match_id)",
+                    options=matches_on_date["label"].tolist(),
+                    key=pick_key,
+                )
+                auto_match_id = int(matches_on_date.loc[matches_on_date["label"] == pick, "match_id"].iloc[0])
+
+            # fill missing match_id for all rows
+            if auto_match_id is not None:
+                cur = pd.to_numeric(df_preview.get("match_id"), errors="coerce")
+                df_preview.loc[cur.isna(), "match_id"] = int(auto_match_id)
+
+                # keep session consistent for next rerun
+                st.session_state["manual_df"] = df_preview
+
         colA, colB = st.columns([1, 1])
         with colA:
             if st.button("Reset table", key="manual_reset_btn"):
                 st.session_state["manual_df"] = pd.DataFrame(
-                    [
-                        {
-                            "player_name": player_options[0] if player_options else "",
-                            "datum": date.today(),
-                            "type": "Practice",
-                            "event": "Summary",
-                            "match_id": None,
-                            "source_file": "manual",
-                        }
-                    ],
+                    [{
+                        "player_name": player_options[0] if player_options else "",
+                        "datum": date.today(),
+                        "type": "Practice",
+                        "event": "Summary",
+                        "match_id": None,
+                        "source_file": "manual",
+                    }],
                     columns=template_cols,
                 )
                 toast_ok("Reset bevestigd.")
-                st.rerun()
 
         with colB:
             if st.button("Save rows (upsert)", type="primary", key="manual_save_btn"):
                 try:
-                    dfm = edited.copy()
+                    dfm = df_preview.copy()
 
+                    # basic cleanup
                     dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
                     dfm["event"] = dfm["event"].astype(str).str.strip()
                     dfm["type"] = dfm["type"].astype(str).str.strip()
@@ -934,6 +972,7 @@ if main_page == "Import GPS":
                         toast_err("Geen geldige rijen om op te slaan.")
                         st.stop()
 
+                    # dates
                     dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
                     if dt_series.isna().any():
                         toast_err("Ongeldige datum in één of meer rijen.")
@@ -943,40 +982,40 @@ if main_page == "Import GPS":
                     dfm["year"] = dt_series.dt.year.astype(int)
                     dfm["datum"] = dt_series.dt.date.astype(str)
 
+                    # player_id mapping
                     dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
 
-                    if "match_id" in dfm.columns:
-                        dfm["match_id"] = pd.to_numeric(dfm["match_id"], errors="coerce")
-                        dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
+                    # ensure match_id int/None
+                    dfm["match_id"] = pd.to_numeric(dfm.get("match_id"), errors="coerce")
+                    dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
+
+                    # enforce match_id consistency per (datum,type) for match types
+                    MATCH_TYPES = {"Match", "Practice Match"}
+                    for (d_iso, t), g in dfm.groupby(["datum", "type"], dropna=False):
+                        if t not in MATCH_TYPES:
+                            continue
+                        d_obj = pd.to_datetime(d_iso).date()
+
+                        existing_ids = fetch_gps_match_ids_on_date(access_token, d_obj, t)
+                        if not existing_ids.empty:
+                            forced_id = int(existing_ids.value_counts().idxmax())
+                        else:
+                            forced_id, dfm_on_date = resolve_match_id_for_date(access_token, d_obj, t)
+                            if forced_id is None:
+                                toast_err(
+                                    f"Geen unieke match gevonden op {d_iso} voor type '{t}'. "
+                                    "Ga naar Matches en voeg/selecteer de match (of kies hier de match dropdown)."
+                                )
+                                st.stop()
+
+                        dfm.loc[g.index, "match_id"] = forced_id
 
                     metric_keys = [
-                        "duration",
-                        "total_distance",
-                        "walking",
-                        "jogging",
-                        "running",
-                        "sprint",
-                        "high_sprint",
-                        "number_of_sprints",
-                        "number_of_high_sprints",
-                        "number_of_repeated_sprints",
-                        "max_speed",
-                        "avg_speed",
-                        "playerload3d",
-                        "playerload2d",
-                        "total_accelerations",
-                        "high_accelerations",
-                        "total_decelerations",
-                        "high_decelerations",
-                        "hrzone1",
-                        "hrzone2",
-                        "hrzone3",
-                        "hrzone4",
-                        "hrzone5",
-                        "hrtrimp",
-                        "hrzoneanaerobic",
-                        "avg_hr",
-                        "max_hr",
+                        "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
+                        "number_of_sprints", "number_of_high_sprints", "number_of_repeated_sprints",
+                        "max_speed", "avg_speed", "playerload3d", "playerload2d",
+                        "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
+                        "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5", "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr"
                     ]
 
                     for c in metric_keys:
@@ -1014,9 +1053,8 @@ if main_page == "Import GPS":
                         on_conflict="player_name,datum,type,event",
                     )
 
-                    st.session_state["manual_df"] = edited
+                    st.session_state["manual_df"] = dfm[template_cols].copy()
                     toast_ok(f"Save bevestigd: rows = {len(rows)}")
-                    st.rerun()
                 except Exception as e:
                     toast_err(f"Save fout: {e}")
 
@@ -1042,7 +1080,6 @@ if main_page == "Import GPS":
 
         if st.button("Generate export (ALL)", key="exp_all_btn"):
             try:
-                st.session_state["export_all_bytes"] = None
                 df = fetch_all_gps_records(access_token, limit=int(limit))
                 if df.empty:
                     st.warning("Geen data gevonden.")
@@ -1081,7 +1118,6 @@ if main_page == "Import GPS":
 
         if st.button("Generate export (selected players)", key="exp_sel_btn"):
             try:
-                st.session_state["export_sel_bytes"] = None
                 if not export_players:
                     toast_err("Selecteer minimaal 1 speler.")
                     st.stop()
@@ -1125,9 +1161,7 @@ if main_page == "Import GPS":
 if main_page == "Matches":
     st.subheader("Matches")
 
-    # -------------------------
     # 1) Import CSV
-    # -------------------------
     st.markdown("### 1) Import Matches.csv → Supabase")
 
     matches_file = st.file_uploader("Upload Matches.csv", type=["csv"], key="matches_csv")
@@ -1150,21 +1184,18 @@ if main_page == "Matches":
                 try:
                     rows = matches_df_to_rows(dfm, source_file=fname)
 
-                    # Vereist UNIQUE constraint:
+                    # Requires UNIQUE constraint in Supabase:
                     # alter table public.matches add constraint matches_unique_key unique (match_date, fixture, season);
                     rest_upsert(access_token, "matches", rows, on_conflict="match_date,fixture,season")
 
                     st.session_state["matches_preview"] = None
                     toast_ok(f"Import bevestigd: matches = {len(rows)}")
-                    st.rerun()
                 except Exception as e:
                     toast_err(f"Import fout: {e}")
 
     st.divider()
 
-    # -------------------------
-    # 2) Selecteer & pas score aan (+ verwijderen)
-    # -------------------------
+    # 2) Select/edit/delete
     st.markdown("### 2) Selecteer & pas score aan")
 
     c1, c2, c3 = st.columns([1, 1, 1.2])
@@ -1238,7 +1269,6 @@ if main_page == "Matches":
                     }
                     rest_patch(access_token, "matches", f"match_id=eq.{match_id}", payload)
                     toast_ok("Save bevestigd.")
-                    st.rerun()
                 except Exception as e:
                     toast_err(f"Opslaan mislukt: {e}")
 
@@ -1255,20 +1285,16 @@ if main_page == "Matches":
                         rest_delete(access_token, "matches", f"match_id=eq.{match_id}")
                         st.session_state["confirm_delete_match_id"] = None
                         toast_ok("Verwijderen bevestigd.")
-                        st.rerun()
                     except Exception as e:
                         toast_err(f"Verwijderen mislukt: {e}")
             with n:
                 if st.button("Nee, annuleren", key="m_del_no"):
                     st.session_state["confirm_delete_match_id"] = None
                     toast_ok("Verwijderen geannuleerd.")
-                    st.rerun()
 
     st.divider()
 
-    # -------------------------
-    # 3) Nieuwe wedstrijd handmatig toevoegen
-    # -------------------------
+    # 3) Add match manual
     st.markdown("### 3) Nieuwe wedstrijd handmatig toevoegen")
 
     a1, a2, a3 = st.columns([1, 1.4, 1])
@@ -1305,23 +1331,22 @@ if main_page == "Matches":
                 toast_err("Opponent is verplicht.")
                 st.stop()
 
-            payload = [
-                {
-                    "match_date": new_date.isoformat(),
-                    "home_away": new_home_away,
-                    "opponent": new_opponent.strip(),
-                    "fixture": auto_fixture,
-                    "match_type": new_match_type,
-                    "season": new_season.strip(),
-                    "goals_for": int(new_gf),
-                    "goals_against": int(new_ga),
-                    "result": (new_result.strip() if new_result.strip() else build_result(new_gf, new_ga)),
-                    "source_file": "manual",
-                }
-            ]
+            payload = [{
+                "match_date": new_date.isoformat(),
+                "home_away": new_home_away,
+                "opponent": new_opponent.strip(),
+                "fixture": auto_fixture,
+                "match_type": new_match_type,
+                "season": new_season.strip(),
+                "goals_for": int(new_gf),
+                "goals_against": int(new_ga),
+                "result": (new_result.strip() if new_result.strip() else build_result(new_gf, new_ga)),
+                "source_file": "manual",
+            }]
 
+            # Requires UNIQUE constraint:
+            # alter table public.matches add constraint matches_unique_key unique (match_date, fixture, season);
             rest_upsert(access_token, "matches", payload, on_conflict="match_date,fixture,season")
             toast_ok("Toevoegen bevestigd.")
-            st.rerun()
         except Exception as e:
             toast_err(f"Toevoegen mislukt: {e}")
