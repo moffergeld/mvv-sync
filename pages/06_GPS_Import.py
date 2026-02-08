@@ -1,5 +1,5 @@
 # pages/06_GPS_Import.py
-# - Import GPS (Excel): Upload JOHAN Excel (SUMMARY / EXERCISES) -> parse -> upsert public.gps_records
+# - Import GPS (Excel): Upload JOHAN Excel (SUMMARY / EXERCISES) or FLAT GPS Excel -> parse -> upsert public.gps_records
 # - Manual add GPS: add/edit rows -> upsert public.gps_records
 # - Export GPS: export gps_records -> Excel
 # - Matches: import Matches.csv -> upsert public.matches, edit score/type/season, delete match, add match manual
@@ -329,7 +329,7 @@ def fetch_gps_match_ids_on_date(access_token: str, d: date, match_type: str) -> 
         "select=match_id"
         f"&datum=eq.{d.isoformat()}"
         f"&type=eq.{t}"
-        "&match_id=is.not_null"   # ✅ FIX
+        "&match_id=is.not_null"  # ✅ FIX
         "&limit=20000"
     )
     df = rest_get(access_token, "gps_records", q)
@@ -383,6 +383,11 @@ def ui_pick_match_if_needed(access_token: str, d: date, match_type: str, key_pre
 
 
 def apply_auto_match_ids_to_rows(access_token: str, rows: list[dict], ui_key_prefix: str) -> list[dict]:
+    """
+    Auto match_id per (datum,type) met UI dropdown alleen als nodig.
+    - Als er al gps_records match_id bestaat op die datum+type -> neem mode.
+    - Anders: kijk in matches table; bij 1 match auto, bij meerdere dropdown.
+    """
     if not rows:
         return rows
 
@@ -399,7 +404,7 @@ def apply_auto_match_ids_to_rows(access_token: str, rows: list[dict], ui_key_pre
 
     for r in rows:
         k = (r.get("datum"), r.get("type"))
-        if k in chosen:
+        if r.get("type") in MATCH_TYPES and k in chosen:
             r["match_id"] = chosen[k]
         elif r.get("type") in MATCH_TYPES:
             r["match_id"] = None
@@ -570,8 +575,80 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
 
 
 # =========================
-# PART 3/5 — JOHAN parsers (SUMMARY / EXERCISES) + unique Event
+# PART 3/5 — Parsers (JOHAN SUMMARY / EXERCISES) + FLAT GPS + unique Event
 # =========================
+def maak_lijst_uniek(lijst):
+    seen = {}
+    out = []
+    for item in lijst:
+        if item in seen:
+            seen[item] += 1
+            out.append(f"{item}_{seen[item]}")
+        else:
+            seen[item] = 1
+            out.append(item)
+    return out
+
+
+def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    keys = ["Speler", "Datum", "Type", "Event"]
+    df["Event"] = df["Event"].astype(str).str.strip()
+
+    idx = df.groupby(keys).cumcount()
+    grp_size = df.groupby(keys)["Event"].transform("size")
+
+    mask = grp_size > 1
+    df.loc[mask, "Event"] = df.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
+    return df
+
+
+def is_flat_gps_excel(file_bytes: bytes) -> bool:
+    """
+    Detecteert of Excel al een 'platte' GPS tabel is (zoals Map1.xlsx):
+    kolommen bevatten minimaal: Speler, Datum, Type, Event.
+    """
+    try:
+        df0 = pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, nrows=3)
+        cols = {str(c).strip().lower() for c in df0.columns}
+        return {"speler", "datum", "type", "event"}.issubset(cols)
+    except Exception:
+        return False
+
+
+def parse_flat_gps_excel(file_bytes: bytes) -> pd.DataFrame:
+    """
+    Leest een platte GPS sheet (zoals Map1.xlsx, sheet 'GPS' of eerste sheet).
+    Verwacht minimaal: Speler, Datum, Type, Event.
+    """
+    xlsx = pd.ExcelFile(io.BytesIO(file_bytes))
+    sheet = "GPS" if "GPS" in xlsx.sheet_names else xlsx.sheet_names[0]
+    df = pd.read_excel(xlsx, sheet_name=sheet)
+
+    need = ["Speler", "Datum", "Type", "Event"]
+    missing = [c for c in need if c not in df.columns]
+    if missing:
+        raise ValueError(f"Flat GPS Excel mist kolommen: {missing}")
+
+    dt = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
+    if dt.isna().any():
+        bad = df.loc[dt.isna(), "Datum"].head(5).tolist()
+        raise ValueError(f"Kon sommige Datum waarden niet parsen: {bad}")
+
+    df["Datum"] = dt.dt.strftime("%d-%m-%Y")
+    df["Week"] = dt.dt.isocalendar().week.astype(int)
+    df["Year"] = dt.dt.year.astype(int)
+
+    df = drop_min_columns(df)
+
+    fixed = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
+    rest = [c for c in df.columns if c not in fixed]
+    df = df[fixed + rest]
+
+    df = ensure_unique_events(df)
+    return df
+
+
 def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
     raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
 
@@ -612,32 +689,6 @@ def parse_summary_excel(file_bytes: bytes, selected_date: date, selected_type: s
     fixed = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
     rest = [c for c in result_df.columns if c not in fixed]
     return result_df[fixed + rest]
-
-
-def maak_lijst_uniek(lijst):
-    seen = {}
-    out = []
-    for item in lijst:
-        if item in seen:
-            seen[item] += 1
-            out.append(f"{item}_{seen[item]}")
-        else:
-            seen[item] = 1
-            out.append(item)
-    return out
-
-
-def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    keys = ["Speler", "Datum", "Type", "Event"]
-    df["Event"] = df["Event"].astype(str).str.strip()
-
-    idx = df.groupby(keys).cumcount()
-    grp_size = df.groupby(keys)["Event"].transform("size")
-
-    mask = grp_size > 1
-    df.loc[mask, "Event"] = df.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
-    return df
 
 
 def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type: str) -> pd.DataFrame:
@@ -781,29 +832,20 @@ if main_page == "Import GPS":
     # SUB: Import (Excel)
     # -------------------------
     if sub_page == "Import (Excel)":
-        st.subheader("Import JOHAN Excel")
+        st.subheader("Import Excel → gps_records")
+        st.caption("Ondersteunt: JOHAN SUMMARY/EXERCISES én 'Flat GPS' Excel (zoals Map1.xlsx). match_id wordt automatisch gekoppeld per (datum,type) bij Match/Practice Match.")
 
         col1, col2, col3 = st.columns([1.2, 1.2, 2.6])
         with col1:
-            selected_date = st.date_input("Datum", value=date.today(), key="gps_imp_date")
+            selected_date = st.date_input("Datum (alleen nodig voor JOHAN files)", value=date.today(), key="gps_imp_date")
         with col2:
-            selected_type = st.selectbox("Type", TYPE_OPTIONS, key="gps_imp_type")
+            selected_type = st.selectbox("Type (alleen nodig voor JOHAN files)", TYPE_OPTIONS, key="gps_imp_type")
         with col3:
             uploaded_files = st.file_uploader(
-                "Upload Excel (je mag SUMMARY én EXERCISES tegelijk selecteren)",
+                "Upload Excel (je mag meerdere tegelijk selecteren)",
                 type=["xlsx", "xls"],
                 accept_multiple_files=True,
                 key="gps_imp_files",
-            )
-
-        import_match_id = None
-        if selected_type in MATCH_TYPES:
-            st.caption("Match-koppeling wordt automatisch gedaan op basis van datum (en bestaande gps_records).")
-            import_match_id = ui_pick_match_if_needed(
-                access_token,
-                selected_date,
-                selected_type,
-                key_prefix="gps_excel_match_pick",
             )
 
         if uploaded_files:
@@ -822,13 +864,19 @@ if main_page == "Import GPS":
                     is_exercises = "exercises" in filename.lower()
 
                     try:
-                        if is_summary:
+                        # 1) Flat GPS (zoals Map1.xlsx) heeft eigen Datum/Type/Event
+                        if is_flat_gps_excel(file_bytes):
+                            df_parsed = parse_flat_gps_excel(file_bytes)
+                            kind = "FLAT GPS (auto)"
+                        # 2) JOHAN: datum/type uit UI
+                        elif is_summary:
                             df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                             kind = "SUMMARY"
                         elif is_exercises:
                             df_parsed = parse_exercises_excel(file_bytes, selected_date, selected_type)
                             kind = "EXERCISES"
                         else:
+                            # auto-detect SUMMARY/EXERCISES
                             try:
                                 df_parsed = parse_summary_excel(file_bytes, selected_date, selected_type)
                                 kind = "SUMMARY (auto)"
@@ -851,7 +899,7 @@ if main_page == "Import GPS":
                     toast_ok(f"Preview bevestigd: parsed bestanden = {len(all_parsed)}")
                     for fn, kind, dfp in all_parsed:
                         st.markdown(f"**{fn}** — {kind} — rijen: {len(dfp)}")
-                        st.dataframe(dfp.head(120), width="stretch")
+                        st.dataframe(dfp.head(120), use_container_width=True)
 
             all_parsed = st.session_state.get("gps_parsed_multi", [])
             if all_parsed:
@@ -865,15 +913,11 @@ if main_page == "Import GPS":
 
                         for (filename, kind, dfp) in all_parsed:
                             rows, unmapped = df_to_db_rows(dfp, source_file=filename, name_to_id=name_to_id)
-
-                            if selected_type in MATCH_TYPES:
-                                for r in rows:
-                                    r["match_id"] = import_match_id
-
                             all_rows.extend(rows)
                             all_unmapped.update(unmapped)
 
-                        if selected_type in MATCH_TYPES and all_rows:
+                        # ✅ Auto match_id voor alle match-typen in de data (ook bij Flat GPS)
+                        if all_rows:
                             all_rows = apply_auto_match_ids_to_rows(access_token, all_rows, ui_key_prefix="gps_excel_apply")
 
                         if all_unmapped:
@@ -884,6 +928,7 @@ if main_page == "Import GPS":
                             )
 
                         rest_upsert(access_token, "gps_records", all_rows, on_conflict="player_name,datum,type,event")
+
                         st.session_state["gps_parsed_multi"] = []
                         toast_ok(f"Import bevestigd: upserted rows = {len(all_rows)}")
                     except Exception as e:
@@ -1264,7 +1309,7 @@ if main_page == "Matches":
                 dfm = parse_matches_csv(b)
                 st.session_state["matches_preview"] = dfm
                 toast_ok(f"Preview bevestigd: {len(dfm)} rijen.")
-                st.dataframe(dfm, width="stretch")
+                st.dataframe(dfm, use_container_width=True)
             except Exception as e:
                 toast_err(str(e))
 
