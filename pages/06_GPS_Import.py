@@ -932,8 +932,8 @@ if main_page == "Import GPS":
     # -------------------------
     if sub_page == "Manual add":
         st.subheader("Manual add (tabel)")
-        st.caption("Voeg rijen toe met het + icoon. match_id wordt automatisch gezet bij Match / Practice Match.")
-
+        st.caption("match_id wordt automatisch gezet bij Match / Practice Match (op basis van datum + bestaande gps_records).")
+    
         template_cols = [
             "player_name", "datum", "type", "event", "match_id",
             "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
@@ -943,20 +943,98 @@ if main_page == "Import GPS":
             "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5", "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr",
             "source_file",
         ]
-
+    
+        BASIC_COLS = ["player_name", "datum", "type", "event", "match_id", "source_file"]
+        METRIC_COLS = [c for c in template_cols if c not in BASIC_COLS]
+    
+        def _blank_row() -> dict:
+            return {
+                "player_name": player_options[0] if player_options else "",
+                "datum": date.today(),
+                "type": "Practice",
+                "event": "Summary",
+                "match_id": None,
+                "duration": None,
+                "total_distance": None,
+                "walking": None,
+                "jogging": None,
+                "running": None,
+                "sprint": None,
+                "high_sprint": None,
+                "number_of_sprints": None,
+                "number_of_high_sprints": None,
+                "number_of_repeated_sprints": None,
+                "max_speed": None,
+                "avg_speed": None,
+                "playerload3d": None,
+                "playerload2d": None,
+                "total_accelerations": None,
+                "high_accelerations": None,
+                "total_decelerations": None,
+                "high_decelerations": None,
+                "hrzone1": None,
+                "hrzone2": None,
+                "hrzone3": None,
+                "hrzone4": None,
+                "hrzone5": None,
+                "hrtrimp": None,
+                "hrzoneanaerobic": None,
+                "avg_hr": None,
+                "max_hr": None,
+                "source_file": "manual",
+            }
+    
         if "manual_df" not in st.session_state:
-            st.session_state["manual_df"] = pd.DataFrame(
-                [{
-                    "player_name": player_options[0] if player_options else "",
-                    "datum": date.today(),
-                    "type": "Practice",
-                    "event": "Summary",
-                    "match_id": None,
-                    "source_file": "manual",
-                }],
-                columns=template_cols,
-            )
-
+            st.session_state["manual_df"] = pd.DataFrame([_blank_row()], columns=template_cols)
+    
+        # --- CSS: maak de + knop rood en groot
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stButton"] button[kind="primary"].manual-add {
+                background-color: #ff0033 !important;
+                border: 1px solid #ff0033 !important;
+                color: white !important;
+                font-weight: 700 !important;
+                border-radius: 10px !important;
+                height: 42px !important;
+                padding: 0 16px !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+    
+        # --- Top toolbar: links +, rechts reset/save
+        left, mid, right = st.columns([1.0, 1.0, 2.0], vertical_alignment="bottom")
+    
+        with left:
+            # Streamlit laat geen className op button toe; workaround: HTML wrapper + data-testid is fragiel.
+            # Praktisch: gebruik label als grote plus en primary style.
+            add_clicked = st.button("＋", type="primary", key="manual_add_row_btn")
+            if add_clicked:
+                df0 = st.session_state["manual_df"].copy()
+                df0 = pd.concat([pd.DataFrame([_blank_row()], columns=template_cols), df0], ignore_index=True)
+                st.session_state["manual_df"] = df0
+                st.rerun()
+    
+        with mid:
+            show_metrics = st.toggle("Toon metrics", value=True, key="manual_show_metrics")
+    
+        with right:
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                if st.button("Reset table", key="manual_reset_btn"):
+                    st.session_state["manual_df"] = pd.DataFrame([_blank_row()], columns=template_cols)
+                    toast_ok("Reset bevestigd.")
+                    st.rerun()
+            with c2:
+                save_clicked = st.button("Save rows (upsert)", type="primary", key="manual_save_btn")
+    
+        # --- Kies welke kolommen je toont (minder horizontaal schuiven)
+        visible_cols = BASIC_COLS + (METRIC_COLS if show_metrics else [])
+        df_for_editor = st.session_state["manual_df"][visible_cols].copy()
+    
         colcfg = {
             "player_name": st.column_config.SelectboxColumn("player_name", options=player_options, required=True),
             "datum": st.column_config.DateColumn("datum", required=True),
@@ -970,169 +1048,134 @@ if main_page == "Import GPS":
             ),
             "source_file": st.column_config.TextColumn("source_file"),
         }
-
+    
+        # --- Editor: extra hoogte vermindert “bar in de weg”
         edited = st.data_editor(
-            st.session_state["manual_df"],
-            width="stretch",
-            num_rows="dynamic",
+            df_for_editor,
+            use_container_width=True,
+            height=520,           # ✅ belangrijk: meer ruimte
+            num_rows="fixed",     # ✅ rijen toevoegen via rode + (niet via onderkant)
             column_config=colcfg,
             key="manual_editor",
         )
-
-        df_preview = edited.copy()
-
-        # ✅ AUTO match_id for each (datum,type) group in editor (with dropdowns if ambiguous)
+    
+        # --- Merge edits terug in volledige manual_df (ook als metrics verborgen waren)
+        full_df = st.session_state["manual_df"].copy()
+        for c in edited.columns:
+            full_df[c] = edited[c].values
+        st.session_state["manual_df"] = full_df
+    
+        df_preview = full_df.copy()
+    
+        # ✅ AUTO match_id per (datum,type) groep (zelfde logica als eerder, maar nu op full_df)
         if not df_preview.empty:
-            # normalize
             df_preview["type"] = df_preview["type"].astype(str).str.strip()
             dt_series = pd.to_datetime(df_preview["datum"], errors="coerce")
             df_preview["_datum_iso"] = dt_series.dt.date.astype(str)
-
+    
             needed = sorted({(d_iso, t) for d_iso, t in zip(df_preview["_datum_iso"], df_preview["type"]) if t in MATCH_TYPES and d_iso != "NaT"})
             chosen_map: dict[tuple[str, str], int | None] = {}
-
+    
             if needed:
-                st.markdown("**Automatische match-koppeling**")
-                for d_iso, t in needed:
-                    try:
+                with st.expander("Automatische match-koppeling (alleen als nodig)", expanded=False):
+                    for d_iso, t in needed:
                         d_obj = pd.to_datetime(d_iso).date()
-                    except Exception:
-                        continue
-                    mid = ui_pick_match_if_needed(access_token, d_obj, t, key_prefix="manual_match_pick")
-                    chosen_map[(d_iso, t)] = mid
-
-                # fill match_id where missing (disabled column)
+                        mid = ui_pick_match_if_needed(access_token, d_obj, t, key_prefix="manual_match_pick")
+                        chosen_map[(d_iso, t)] = mid
+    
                 cur = pd.to_numeric(df_preview.get("match_id"), errors="coerce")
                 is_missing = cur.isna()
                 for (d_iso, t), mid in chosen_map.items():
                     mask = (df_preview["_datum_iso"] == d_iso) & (df_preview["type"] == t) & is_missing
                     if mid is not None:
                         df_preview.loc[mask, "match_id"] = int(mid)
-
-                # keep session consistent for next rerun
+    
                 st.session_state["manual_df"] = df_preview.drop(columns=["_datum_iso"], errors="ignore").copy()
-
-        colA, colB = st.columns([1, 1])
-        with colA:
-            if st.button("Reset table", key="manual_reset_btn"):
-                st.session_state["manual_df"] = pd.DataFrame(
-                    [{
-                        "player_name": player_options[0] if player_options else "",
-                        "datum": date.today(),
-                        "type": "Practice",
-                        "event": "Summary",
-                        "match_id": None,
-                        "source_file": "manual",
-                    }],
-                    columns=template_cols,
-                )
-                toast_ok("Reset bevestigd.")
-
-        with colB:
-            if st.button("Save rows (upsert)", type="primary", key="manual_save_btn"):
-                try:
-                    dfm = df_preview.copy()
-
-                    # basic cleanup
-                    dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
-                    dfm["event"] = dfm["event"].astype(str).str.strip()
-                    dfm["type"] = dfm["type"].astype(str).str.strip()
-
-                    dfm = dfm.dropna(subset=["player_name", "datum", "type", "event"])
-                    dfm = dfm[(dfm["player_name"] != "") & (dfm["event"] != "")]
-                    if dfm.empty:
-                        toast_err("Geen geldige rijen om op te slaan.")
-                        st.stop()
-
-                    # dates
-                    dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
-                    if dt_series.isna().any():
-                        toast_err("Ongeldige datum in één of meer rijen.")
-                        st.stop()
-
-                    dfm["week"] = dt_series.dt.isocalendar().week.astype(int)
-                    dfm["year"] = dt_series.dt.year.astype(int)
-                    dfm["datum"] = dt_series.dt.date.astype(str)
-
-                    # player_id mapping
-                    dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
-
-                    # ensure match_id int/None (but will be forced below for match types)
-                    dfm["match_id"] = pd.to_numeric(dfm.get("match_id"), errors="coerce")
-                    dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
-
-                    # ✅ enforce match_id consistency per (datum,type) for match types:
-                    #    existing gps_records match_id wins; else matches table; else UI pick (already done above)
-                    for (d_iso, t), g in dfm.groupby(["datum", "type"], dropna=False):
-                        if t not in MATCH_TYPES:
-                            dfm.loc[g.index, "match_id"] = None
-                            continue
-
-                        d_obj = pd.to_datetime(d_iso).date()
-
-                        existing_ids = fetch_gps_match_ids_on_date(access_token, d_obj, t)
-                        if not existing_ids.empty:
-                            forced_id = int(existing_ids.value_counts().idxmax())
-                        else:
-                            forced_id, df_on_date = resolve_match_id_for_date(access_token, d_obj, t)
-                            if forced_id is None:
-                                # last resort: maybe user picked via dropdown (already filled in dfm)
-                                picked = pd.to_numeric(dfm.loc[g.index, "match_id"], errors="coerce").dropna()
-                                if not picked.empty:
-                                    forced_id = int(picked.iloc[0])
-                                else:
-                                    toast_err(
-                                        f"Geen match_id beschikbaar voor {d_iso} ({t}). "
-                                        "Voeg match toe in Matches of kies de match in de dropdown."
-                                    )
-                                    st.stop()
-
-                        dfm.loc[g.index, "match_id"] = forced_id
-
-                    metric_keys = [
-                        "duration", "total_distance", "walking", "jogging", "running", "sprint", "high_sprint",
-                        "number_of_sprints", "number_of_high_sprints", "number_of_repeated_sprints",
-                        "max_speed", "avg_speed", "playerload3d", "playerload2d",
-                        "total_accelerations", "high_accelerations", "total_decelerations", "high_decelerations",
-                        "hrzone1", "hrzone2", "hrzone3", "hrzone4", "hrzone5", "hrtrimp", "hrzoneanaerobic", "avg_hr", "max_hr"
-                    ]
-                    for c in metric_keys:
-                        if c in dfm.columns:
-                            dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
-
-                    rows = []
-                    for _, r in dfm.iterrows():
-                        row = {
-                            "player_id": r.get("player_id"),
-                            "player_name": r.get("player_name"),
-                            "datum": r.get("datum"),
-                            "week": int(r.get("week")) if pd.notna(r.get("week")) else None,
-                            "year": int(r.get("year")) if pd.notna(r.get("year")) else None,
-                            "type": r.get("type"),
-                            "event": r.get("event"),
-                            "match_id": r.get("match_id"),
-                            "source_file": (r.get("source_file") or "manual"),
-                        }
-                        for k in metric_keys:
-                            v = r.get(k)
-                            if k in INT_DB_COLS:
-                                vv = pd.to_numeric(v, errors="coerce")
-                                row[k] = int(vv) if pd.notna(vv) else None
+    
+        # --- Save (upsert) blijft hetzelfde; gebruik nu df_preview/st.session_state["manual_df"]
+        if save_clicked:
+            try:
+                dfm = st.session_state["manual_df"].copy()
+    
+                dfm["player_name"] = dfm["player_name"].astype(str).str.strip()
+                dfm["event"] = dfm["event"].astype(str).str.strip()
+                dfm["type"] = dfm["type"].astype(str).str.strip()
+    
+                dfm = dfm.dropna(subset=["player_name", "datum", "type", "event"])
+                dfm = dfm[(dfm["player_name"] != "") & (dfm["event"] != "")]
+                if dfm.empty:
+                    toast_err("Geen geldige rijen om op te slaan.")
+                    st.stop()
+    
+                dt_series = pd.to_datetime(dfm["datum"], errors="coerce")
+                if dt_series.isna().any():
+                    toast_err("Ongeldige datum in één of meer rijen.")
+                    st.stop()
+    
+                dfm["week"] = dt_series.dt.isocalendar().week.astype(int)
+                dfm["year"] = dt_series.dt.year.astype(int)
+                dfm["datum"] = dt_series.dt.date.astype(str)
+    
+                dfm["player_id"] = dfm["player_name"].map(lambda x: name_to_id.get(normalize_name(x)))
+    
+                dfm["match_id"] = pd.to_numeric(dfm.get("match_id"), errors="coerce")
+                dfm["match_id"] = dfm["match_id"].map(lambda v: int(v) if pd.notna(v) else None)
+    
+                # enforce match_id per (datum,type)
+                for (d_iso, t), g in dfm.groupby(["datum", "type"], dropna=False):
+                    if t not in MATCH_TYPES:
+                        dfm.loc[g.index, "match_id"] = None
+                        continue
+    
+                    d_obj = pd.to_datetime(d_iso).date()
+    
+                    existing_ids = fetch_gps_match_ids_on_date(access_token, d_obj, t)
+                    if not existing_ids.empty:
+                        forced_id = int(existing_ids.value_counts().idxmax())
+                    else:
+                        forced_id, _ = resolve_match_id_for_date(access_token, d_obj, t)
+                        if forced_id is None:
+                            picked = pd.to_numeric(dfm.loc[g.index, "match_id"], errors="coerce").dropna()
+                            if not picked.empty:
+                                forced_id = int(picked.iloc[0])
                             else:
-                                row[k] = float(v) if pd.notna(v) else None
-                        rows.append(row)
-
-                    rest_upsert(
-                        access_token,
-                        "gps_records",
-                        rows,
-                        on_conflict="player_name,datum,type,event",
-                    )
-
-                    st.session_state["manual_df"] = dfm[template_cols].copy()
-                    toast_ok(f"Save bevestigd: rows = {len(rows)}")
-                except Exception as e:
-                    toast_err(f"Save fout: {e}")
+                                toast_err(f"Geen match_id beschikbaar voor {d_iso} ({t}). Voeg match toe of kies match.")
+                                st.stop()
+    
+                    dfm.loc[g.index, "match_id"] = forced_id
+    
+                metric_keys = [c for c in template_cols if c not in ["player_name", "datum", "type", "event", "match_id", "source_file", "player_id", "week", "year"]]
+                for c in metric_keys:
+                    if c in dfm.columns:
+                        dfm[c] = pd.to_numeric(dfm[c], errors="coerce")
+    
+                rows = []
+                for _, r in dfm.iterrows():
+                    row = {
+                        "player_id": r.get("player_id"),
+                        "player_name": r.get("player_name"),
+                        "datum": r.get("datum"),
+                        "week": int(r.get("week")) if pd.notna(r.get("week")) else None,
+                        "year": int(r.get("year")) if pd.notna(r.get("year")) else None,
+                        "type": r.get("type"),
+                        "event": r.get("event"),
+                        "match_id": r.get("match_id"),
+                        "source_file": (r.get("source_file") or "manual"),
+                    }
+                    for k in metric_keys:
+                        v = r.get(k)
+                        if k in INT_DB_COLS:
+                            vv = pd.to_numeric(v, errors="coerce")
+                            row[k] = int(vv) if pd.notna(vv) else None
+                        else:
+                            row[k] = float(v) if pd.notna(v) else None
+                    rows.append(row)
+    
+                rest_upsert(access_token, "gps_records", rows, on_conflict="player_name,datum,type,event")
+                st.session_state["manual_df"] = dfm[template_cols].copy()
+                toast_ok(f"Save bevestigd: rows = {len(rows)}")
+            except Exception as e:
+                toast_err(f"Save fout: {e}")
 
     # -------------------------
     # SUB: Export
