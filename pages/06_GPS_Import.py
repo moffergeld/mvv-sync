@@ -317,14 +317,13 @@ def fetch_gps_match_ids_on_date(access_token: str, d: date, match_type: str) -> 
         "select=match_id"
         f"&datum=eq.{d.isoformat()}"
         f"&type=eq.{t}"
-        "&match_id=is.not.null"
+        "&match_id=is.not_null"   # ✅ FIX
         "&limit=20000"
     )
     df = rest_get(access_token, "gps_records", q)
     if df.empty or "match_id" not in df.columns:
         return pd.Series(dtype="Int64")
     return pd.to_numeric(df["match_id"], errors="coerce").dropna().astype(int)
-
 
 def resolve_match_id_for_date(access_token: str, d: date, match_type: str) -> tuple[int | None, pd.DataFrame]:
     """
