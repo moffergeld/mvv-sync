@@ -1,25 +1,24 @@
 # session_load_pages.py
 # ==========================================
-# Session Load dashboard
-# - ECHTE kalenderbalk:
-#     * 1 rij met maanden
-#     * daaronder alle dagen (dd) als klikbare “chips”
-#     * kleurstatus:
-#         🟥 Match / Practice Match
-#         🟦 Practice / data
-#         ⬜ geen data
-#     * klik op dag => selecteer dag (stuurt ook de dag-slider)
-# - Power BI-achtige date slicer (2 sliders) blijft bestaan:
-#     1) Periode (range slider)
-#     2) Selecteer dag (single slider)
-# - Kies sessie: Practice (1) / Practice (2) / beide
-# - 4 grafieken per speler
+# Session Load dashboard (KALENDER als enige dag-filter)
+# - Geen sliders/extra filters
+# - 1 echte kalender (FullCalendar) met kleur-codering per dag:
+#     * Rood  = Match / Practice Match (als die dag zo'n Type bevat)
+#     * Lichtblauw = Data/Practice (wel data maar geen match-type)
+#     * Grijs = Geen data
+# - Klik op dag in kalender = selecteer dag
+# - Daarna (optioneel) sessiekeuze: Practice (1) / Practice (2) / beide (alleen als beide bestaan op die dag)
+# - 4 grafieken per speler:
+#   * Total Distance
+#   * Sprint & High Sprint
+#   * Accelerations / Decelerations
+#   * Time in HR zones + HR Trimp
+#
+# Vereist in requirements.txt:
+#   streamlit-calendar
 # ==========================================
 
 from __future__ import annotations
-
-import calendar
-from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -27,7 +26,12 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Kolomnamen
+from streamlit_calendar import calendar  # pip install streamlit-calendar
+
+
+# -----------------------------
+# Config
+# -----------------------------
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -44,297 +48,11 @@ COL_DEC_HI = "High Decelerations"
 HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
 TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
+MATCH_TYPES = {"Match", "Practice Match"}
+
 MVV_RED = "#FF0033"
-MVV_BLUE = "#5AA7FF"
-MVV_GREY = "#9AA0A6"
-
-MATCH_TYPES = {"Match", "Practice Match"}  # voor rode dagen
-
-
-# -----------------------------
-# Power BI-achtige slicer CSS + kalender chips
-# -----------------------------
-def _ui_css(accent: str = MVV_RED) -> None:
-    st.markdown(
-        f"""
-        <style>
-        .pbi-slicer-wrap {{
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
-            padding: 12px 14px;
-            background: rgba(255,255,255,0.02);
-            margin-bottom: 10px;
-        }}
-        .pbi-slicer-top {{
-            display:flex;
-            align-items:center;
-            justify-content:space-between;
-            gap: 12px;
-            margin-bottom: 8px;
-        }}
-        .pbi-slicer-title {{
-            font-size: 14px;
-            opacity: 0.9;
-            font-weight: 600;
-        }}
-        .pbi-slicer-range {{
-            font-size: 13px;
-            opacity: 0.75;
-            white-space: nowrap;
-        }}
-
-        /* Slider styling */
-        div[data-testid="stSlider"] [data-baseweb="thumb"],
-        div[data-testid="stSelectSlider"] [data-baseweb="thumb"] {{
-            background: {accent} !important;
-            border: 2px solid rgba(255,255,255,0.85) !important;
-        }}
-        div[data-testid="stSlider"] [data-baseweb="track"] > div,
-        div[data-testid="stSelectSlider"] [data-baseweb="track"] > div {{
-            background: {accent} !important;
-        }}
-
-        /* Calendar bar */
-        .calbar {{
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
-            padding: 10px 12px;
-            background: rgba(255,255,255,0.02);
-            margin: 8px 0 12px 0;
-        }}
-        .cal-month-row {{
-            display:flex;
-            gap: 10px;
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            padding-bottom: 6px;
-            margin-bottom: 6px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-        }}
-        .cal-month {{
-            font-size: 12px;
-            opacity: 0.8;
-            font-weight: 700;
-            padding: 6px 10px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.03);
-            white-space: nowrap;
-        }}
-        .cal-days {{
-            display:flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }}
-
-        /* Make st.button look like a chip */
-        div[data-testid="stButton"] > button {{
-            border-radius: 999px !important;
-            padding: 6px 10px !important;
-            min-height: 32px !important;
-            font-size: 12px !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
-        }}
-
-        /* Legends */
-        .cal-legend {{
-            font-size: 12px;
-            opacity: 0.8;
-            margin-top: 6px;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# -----------------------------
-# 2 sliders (range + day)
-# -----------------------------
-def powerbi_two_sliders(
-    df: pd.DataFrame,
-    date_col: str,
-    key_prefix: str = "sl",
-    accent: str = MVV_RED,
-) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp]:
-    _ui_css(accent=accent)
-
-    dts = pd.to_datetime(df[date_col], errors="coerce").dropna()
-    if dts.empty:
-        raise ValueError("Geen geldige datums in de data.")
-
-    all_days = sorted(pd.Series(dts.dt.date.unique()).tolist())
-    min_d = all_days[0]
-    max_d = all_days[-1]
-
-    default_start = all_days[-30] if len(all_days) > 30 else min_d
-    default_end = max_d
-
-    st.markdown(
-        f"""
-        <div class="pbi-slicer-wrap">
-          <div class="pbi-slicer-top">
-            <div class="pbi-slicer-title">Date</div>
-            <div class="pbi-slicer-range">{pd.Timestamp(default_start).strftime('%d-%m-%Y')} - {pd.Timestamp(default_end).strftime('%d-%m-%Y')}</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    start_d, end_d = st.slider(
-        "Periode",
-        min_value=min_d,
-        max_value=max_d,
-        value=(default_start, default_end),
-        format="DD-MM-YYYY",
-        key=f"{key_prefix}_range",
-    )
-
-    days_in_range = [d for d in all_days if start_d <= d <= end_d]
-    if not days_in_range:
-        days_in_range = [end_d]
-
-    day_key = f"{key_prefix}_day"
-    if day_key in st.session_state:
-        try:
-            cur = pd.to_datetime(st.session_state[day_key]).date()
-        except Exception:
-            cur = None
-        default_day = cur if cur in days_in_range else days_in_range[-1]
-    else:
-        default_day = days_in_range[-1]
-        st.session_state[day_key] = default_day
-
-    selected_d = st.select_slider(
-        "Selecteer dag",
-        options=days_in_range,
-        value=default_day,
-        format_func=lambda d: pd.Timestamp(d).strftime("%d-%m-%Y"),
-        key=day_key,
-    )
-
-    return pd.Timestamp(start_d), pd.Timestamp(end_d), pd.Timestamp(selected_d)
-
-
-# -----------------------------
-# Kalenderbalk: 1 rij maanden + alle dagen chips
-# -----------------------------
-def _month_spans(days: list[date]) -> list[tuple[int, int, int]]:
-    """
-    Returns list of (year, month, count_days_in_period_for_this_month)
-    """
-    if not days:
-        return []
-    spans: list[tuple[int, int, int]] = []
-    cur_y, cur_m = days[0].year, days[0].month
-    cnt = 0
-    for d in days:
-        if d.year == cur_y and d.month == cur_m:
-            cnt += 1
-        else:
-            spans.append((cur_y, cur_m, cnt))
-            cur_y, cur_m = d.year, d.month
-            cnt = 1
-    spans.append((cur_y, cur_m, cnt))
-    return spans
-
-
-def _day_status_map(df: pd.DataFrame) -> dict[date, str]:
-    """
-    date -> "match" | "data"
-    (missing => geen data)
-    """
-    out: dict[date, str] = {}
-    if df.empty or COL_DATE not in df.columns:
-        return out
-
-    dts = pd.to_datetime(df[COL_DATE], errors="coerce")
-    tmp = pd.DataFrame(
-        {
-            "d": dts.dt.date,
-            "t": df[COL_TYPE].astype(str).str.strip() if COL_TYPE in df.columns else "",
-        }
-    ).dropna(subset=["d"])
-    if tmp.empty:
-        return out
-
-    for d, g in tmp.groupby("d"):
-        ts = set(g["t"].tolist())
-        out[d] = "match" if any(t in MATCH_TYPES for t in ts) else "data"
-    return out
-
-
-def calendar_bar_click_day(
-    df: pd.DataFrame,
-    period_start: pd.Timestamp,
-    period_end: pd.Timestamp,
-    selected_day: pd.Timestamp,
-    key_prefix: str = "sl",
-) -> pd.Timestamp:
-    d0 = period_start.date()
-    d1 = period_end.date()
-    if d0 > d1:
-        d0, d1 = d1, d0
-
-    all_days = [d0 + pd.Timedelta(days=i) for i in range((d1 - d0).days + 1)]
-    all_days = [pd.Timestamp(d).date() for d in all_days]
-
-    if not all_days:
-        return selected_day
-
-    status = _day_status_map(df)
-    sel = selected_day.date()
-
-    spans = _month_spans(all_days)
-    month_labels = [
-        f"{calendar.month_abbr[m].upper()} {y}" if i == 0 or spans[i - 1][0] != y else f"{calendar.month_abbr[m].upper()}"
-        for i, (y, m, _) in enumerate(spans)
-    ]
-
-    st.markdown('<div class="calbar">', unsafe_allow_html=True)
-
-    # 1 rij maanden
-    st.markdown('<div class="cal-month-row">', unsafe_allow_html=True)
-    for lab in month_labels:
-        st.markdown(f'<div class="cal-month">{lab}</div>', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # dagen chips (dd)
-    # kleur: 🟥 match, 🟦 data, ⬜ none; selected krijgt "▶"
-    st.markdown('<div class="cal-days">', unsafe_allow_html=True)
-
-    cols = st.columns(14)  # wrap in nette “flow”
-    col_idx = 0
-
-    for d in all_days:
-        stt = status.get(d)
-        if stt == "match":
-            prefix = "🟥"
-        elif stt == "data":
-            prefix = "🟦"
-        else:
-            prefix = "⬜"
-
-        label = f"{prefix} {d.day:02d}"
-        if d == sel:
-            label = f"▶ {label}"
-
-        with cols[col_idx]:
-            if st.button(label, key=f"{key_prefix}_calbar_{d.isoformat()}"):
-                st.session_state[f"{key_prefix}_day"] = d
-                st.rerun()
-
-        col_idx = (col_idx + 1) % len(cols)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown(
-        "<div class='cal-legend'>🟥 Match/Practice Match &nbsp;&nbsp; 🟦 Practice/data &nbsp;&nbsp; ⬜ geen data</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    return pd.Timestamp(st.session_state.get(f"{key_prefix}_day", sel))
+LIGHT_BLUE = "#4EA3FF"
+GREY = "#8A8A8A"
 
 
 # -----------------------------
@@ -342,10 +60,19 @@ def calendar_bar_click_day(
 # -----------------------------
 def _normalize_event(e: str) -> str:
     s = str(e).strip().lower()
-    return "summary" if s == "summary" else s
+    if s == "summary":
+        return "summary"
+    return s
 
 
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
+    """
+    - Datum naar datetime
+    - Alleen rijen met datum + speler
+    - Event normaliseren en filteren op Summary
+    - TRIMP-naam normaliseren naar kolom 'TRIMP'
+    - Metric kolommen numeriek
+    """
     df = df_gps.copy()
 
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -358,21 +85,29 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["EVENT_NORM"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["EVENT_NORM"] == "summary"].copy()
 
+    # TRIMP alias → 'TRIMP'
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
             trimp_col = c
             break
-    df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
+    if trimp_col is not None:
+        df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0)
+    else:
+        df["TRIMP"] = 0.0
 
     numeric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
         COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        *HR_COLS,
+        "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    if COL_TYPE in df.columns:
+        df[COL_TYPE] = df[COL_TYPE].astype(str).str.strip()
 
     return df
 
@@ -383,6 +118,7 @@ def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: s
         return df_day
 
     types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
+
     has_p1 = "Practice (1)" in types_day
     has_p2 = "Practice (2)" in types_day
 
@@ -403,14 +139,199 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     metric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
         COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        *HR_COLS,
+        "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
 
 # -----------------------------
-# Plot helpers
+# Calendar (kleur per dag) + click = select day
+# -----------------------------
+def _day_color_map(df: pd.DataFrame) -> dict[str, str]:
+    """
+    Returns {YYYY-MM-DD: hexcolor}
+    - red if match/practice match
+    - light blue if any data (but no match type)
+    - grey if no data (filled later by range)
+    """
+    df0 = df.copy()
+    df0["d"] = df0[COL_DATE].dt.date
+    day_to_types = (
+        df0.groupby("d")[COL_TYPE]
+        .apply(lambda s: set(map(str, s.dropna().tolist())))
+        .to_dict()
+    )
+
+    out: dict[str, str] = {}
+    for d, types in day_to_types.items():
+        if any(t in MATCH_TYPES for t in types):
+            out[pd.Timestamp(d).strftime("%Y-%m-%d")] = MVV_RED
+        else:
+            out[pd.Timestamp(d).strftime("%Y-%m-%d")] = LIGHT_BLUE
+    return out
+
+
+def _calendar_css() -> None:
+    # FullCalendar styling + legenda blokjes
+    st.markdown(
+        f"""
+        <style>
+        /* Calendar container look */
+        .fc {{
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 10px 12px;
+            background: rgba(255,255,255,0.02);
+        }}
+        .fc .fc-toolbar-title {{
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.2px;
+        }}
+        .fc .fc-button {{
+            border-radius: 10px !important;
+            border: 1px solid rgba(255,255,255,0.10) !important;
+            background: rgba(255,255,255,0.04) !important;
+        }}
+        .fc .fc-button:hover {{
+            background: rgba(255,255,255,0.07) !important;
+        }}
+        /* day numbers visible & clean */
+        .fc .fc-daygrid-day-number {{
+            font-weight: 700;
+            opacity: 0.95;
+        }}
+        /* background events should not cover the number */
+        .fc .fc-bg-event {{
+            opacity: 0.28;
+        }}
+
+        /* Legend */
+        .sl-legend {{
+            display:flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            align-items:center;
+            margin: 10px 0 0 0;
+            opacity: 0.95;
+        }}
+        .sl-legend-item {{
+            display:flex;
+            gap: 8px;
+            align-items:center;
+            font-size: 12.5px;
+        }}
+        .sl-dot {{
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            display:inline-block;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class="sl-legend">
+          <div class="sl-legend-item"><span class="sl-dot" style="background:{MVV_RED};"></span>Match/Practice Match</div>
+          <div class="sl-legend-item"><span class="sl-dot" style="background:{LIGHT_BLUE};"></span>Practice/data</div>
+          <div class="sl-legend-item"><span class="sl-dot" style="background:{GREY};"></span>Geen data</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _calendar_select_day(df: pd.DataFrame, key: str = "sl_cal") -> pd.Timestamp:
+    """
+    Renders calendar; click date sets st.session_state[f"{key}_selected"].
+    Returns selected day (Timestamp).
+    """
+    _calendar_css()
+
+    dts = pd.to_datetime(df[COL_DATE], errors="coerce").dropna()
+    all_days = sorted(pd.Series(dts.dt.date.unique()).tolist())
+    if not all_days:
+        raise ValueError("Geen datums gevonden in de data.")
+
+    min_d = all_days[0]
+    max_d = all_days[-1]
+
+    # default selection
+    ss_key = f"{key}_selected"
+    if ss_key not in st.session_state:
+        st.session_state[ss_key] = pd.Timestamp(max_d).strftime("%Y-%m-%d")
+
+    # build colors for days with data
+    color_by_day = _day_color_map(df)
+
+    # fill full range with grey for "no data"
+    full_range = pd.date_range(pd.Timestamp(min_d), pd.Timestamp(max_d), freq="D")
+    events = []
+    for d in full_range:
+        iso = d.strftime("%Y-%m-%d")
+        col = color_by_day.get(iso, GREY)
+        # background event fills the cell
+        events.append(
+            {
+                "title": "",
+                "start": iso,
+                "end": iso,  # same day
+                "display": "background",
+                "backgroundColor": col,
+            }
+        )
+
+    # initial date = selected
+    initial_date = st.session_state[ss_key]
+
+    cal_options = {
+        "initialView": "dayGridMonth",
+        "height": 520,
+        "locale": "nl",
+        "firstDay": 1,  # Monday
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "",
+        },
+        "navLinks": True,
+        "selectable": True,
+        "dayMaxEvents": False,
+        "initialDate": initial_date,
+    }
+
+    cal_state = calendar(
+        events=events,
+        options=cal_options,
+        key=key,
+    )
+
+    # streamlit-calendar returns callbacks state; handle date click/select
+    picked_iso = None
+
+    # dateClick
+    if isinstance(cal_state, dict):
+        if cal_state.get("dateClick"):
+            picked_iso = cal_state["dateClick"].get("date")
+        # select (range) – if user drags, take start
+        if not picked_iso and cal_state.get("select"):
+            picked_iso = cal_state["select"].get("start")
+
+    if picked_iso:
+        # normalize to YYYY-MM-DD
+        picked_iso = str(picked_iso)[:10]
+        st.session_state[ss_key] = picked_iso
+
+    return pd.Timestamp(st.session_state[ss_key])
+
+
+# -----------------------------
+# Plots (4 grafieken)
 # -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
@@ -599,39 +520,24 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden (controleer Datum / Event='Summary').")
         return
 
-    # 2 sliders (periode + dag)
+    # --- Kalender = enige filter
     try:
-        period_start, period_end, selected_day = powerbi_two_sliders(
-            df=df,
-            date_col=COL_DATE,
-            key_prefix="sl",
-            accent=MVV_RED,
-        )
+        selected_day = _calendar_select_day(df, key="sl_cal")
     except Exception as e:
-        st.error(f"Kon date slicer niet maken: {e}")
+        st.error(f"Kon kalender niet maken: {e}")
         return
-
-    # Kalenderbalk (1 rij maanden + alle dagen met kleur + dagnummer)
-    selected_day = calendar_bar_click_day(
-        df=df,
-        period_start=period_start,
-        period_end=period_end,
-        selected_day=selected_day,
-        key_prefix="sl",
-    )
-
-    st.caption(
-        f"Periode: {period_start.strftime('%d-%m-%Y')} – {period_end.strftime('%d-%m-%Y')} | "
-        f"Dag: {selected_day.strftime('%d-%m-%Y')}"
-    )
 
     # Dagfilter
     df_day_all = df[df[COL_DATE].dt.date == selected_day.date()].copy()
 
-    # Beschikbare types op deze dag
+    if df_day_all.empty:
+        st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
+        return
+
+    # Sessiekeuze alleen als Practice (1) en (2) beide bestaan
     types_day = (
         sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
-        if (not df_day_all.empty and COL_TYPE in df_day_all.columns)
+        if (COL_TYPE in df_day_all.columns)
         else []
     )
 
@@ -647,8 +553,6 @@ def session_load_pages_main(df_gps: pd.DataFrame):
     else:
         if types_day:
             st.caption("Beschikbare sessies op deze dag: " + ", ".join(types_day))
-        else:
-            st.caption("Geen kolom 'Type' of sessies op deze dag gevonden.")
 
     df_day = _get_day_session_subset(df, selected_day, session_mode)
     if df_day.empty:
@@ -660,6 +564,9 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen data om te aggregeren per speler.")
         return
 
+    st.caption(f"Geselecteerde dag: {selected_day.strftime('%d-%m-%Y')}")
+
+    # 4 grafieken in 2×2 grid
     col_top1, col_top2 = st.columns(2)
     with col_top1:
         _plot_total_distance(df_agg)
