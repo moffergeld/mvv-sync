@@ -77,8 +77,13 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["TRIMP"] = 0.0
 
     numeric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
         *HR_COLS,
         "TRIMP",
     ]
@@ -96,7 +101,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
 def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
     """
     days_with_data: dagen met minstens 1 record
-    match_days: dagen die als match/practice match getagged zijn
+    match_days: dagen die als match/practice match getagged zijn (Type bevat "match")
     """
     if df.empty:
         return set(), set()
@@ -115,8 +120,19 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
 
 def _month_label_nl(y: int, m: int) -> str:
     months = [
-        "", "Januari", "Februari", "Maart", "April", "Mei", "Juni",
-        "Juli", "Augustus", "September", "Oktober", "November", "December"
+        "",
+        "Januari",
+        "Februari",
+        "Maart",
+        "April",
+        "Mei",
+        "Juni",
+        "Juli",
+        "Augustus",
+        "September",
+        "Oktober",
+        "November",
+        "December",
     ]
     return f"{months[m]} {y}"
 
@@ -161,7 +177,7 @@ def _calendar_css_compact() -> None:
             margin-bottom: 2px;
         }}
 
-        /* 🔻 Compact knoppen: minder breed + lagere hoogte */
+        /* Compacte buttons */
         div[data-testid="stButton"] button {{
             width: 100% !important;
             border-radius: 18px !important;
@@ -179,11 +195,10 @@ def _calendar_css_compact() -> None:
             background: rgba(255,255,255,0.05) !important;
         }}
 
-        /* 🔻 Minder gaps tussen columns/rows */
+        /* Minder gaps tussen columns/rows */
         section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.06rem !important; }}
         div[data-testid="stVerticalBlock"] > div {{ gap: 0.04rem; }}
 
-        /* 🔻 Zet container wat compacter */
         .sl-wrap {{
             margin-top: -6px;
         }}
@@ -253,10 +268,10 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
     cal = calendar.Calendar(firstweekday=0)  # Monday
     month_days = list(cal.itermonthdates(y, m))
-    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
+    weeks = [month_days[i : i + 7] for i in range(0, len(month_days), 7)]
 
     # CSS per dag: HELE tile opvullen
-    css_rules = []
+    css_rules: list[str] = []
     for d in month_days:
         if d.month != m:
             continue
@@ -273,9 +288,13 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             bg = "rgba(180,180,180,0.14)"
             bd = "rgba(180,180,180,0.22)"
 
+        # ✅ Streamlit key zit soms op wrapper, soms op button → meerdere selectors
         css_rules.append(
             f"""
-            button[id*="{dkey}"] {{
+            div[data-testid="stButton"][id*="{dkey}"] button,
+            div[data-testid="stButton"] button[id*="{dkey}"],
+            div[id*="{dkey}"][data-testid="stButton"] button {{
+                background-color: {bg} !important;
                 background: {bg} !important;
                 border: 1px solid {bd} !important;
             }}
@@ -287,7 +306,9 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         selkey = f"{key_prefix}_d_{sel.isoformat()}"
         css_rules.append(
             f"""
-            button[id*="{selkey}"] {{
+            div[data-testid="stButton"][id*="{selkey}"] button,
+            div[data-testid="stButton"] button[id*="{selkey}"],
+            div[id*="{selkey}"][data-testid="stButton"] button {{
                 outline: 2px solid rgba(255,255,255,0.85) !important;
                 box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
             }}
@@ -307,7 +328,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
-            in_month = (d.month == m)
+            in_month = d.month == m
             label = f"{d.day}"
             bkey = f"{key_prefix}_d_{d.isoformat()}"
             with cols[i]:
@@ -350,8 +371,13 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
         *HR_COLS,
         "TRIMP",
     ]
@@ -460,17 +486,37 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
     width = 0.18
 
     if COL_ACC_TOT in data.columns:
-        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
-                    marker_color="rgba(255,180,180,0.9)")
+        fig.add_bar(
+            x=x - 1.5 * width,
+            y=data[COL_ACC_TOT],
+            width=width,
+            name="Total Accelerations",
+            marker_color="rgba(255,180,180,0.9)",
+        )
     if COL_ACC_HI in data.columns:
-        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations",
-                    marker_color="rgba(200,0,0,0.9)")
+        fig.add_bar(
+            x=x - 0.5 * width,
+            y=data[COL_ACC_HI],
+            width=width,
+            name="High Accelerations",
+            marker_color="rgba(200,0,0,0.9)",
+        )
     if COL_DEC_TOT in data.columns:
-        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations",
-                    marker_color="rgba(180,210,255,0.9)")
+        fig.add_bar(
+            x=x + 0.5 * width,
+            y=data[COL_DEC_TOT],
+            width=width,
+            name="Total Decelerations",
+            marker_color="rgba(180,210,255,0.9)",
+        )
     if COL_DEC_HI in data.columns:
-        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
-                    marker_color="rgba(0,60,180,0.9)")
+        fig.add_bar(
+            x=x + 1.5 * width,
+            y=data[COL_DEC_HI],
+            width=width,
+            name="High Decelerations",
+            marker_color="rgba(0,60,180,0.9)",
+        )
 
     fig.update_layout(
         title="Accelerations / Decelerations",
@@ -504,7 +550,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
-    # ✅ gegroepeerde balken
+    # gegroepeerde balken
     if have_hr:
         n = len(have_hr)
         group_w = 0.80
@@ -620,6 +666,3 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
-
-
-
