@@ -164,7 +164,7 @@ def _calendar_css_compact() -> None:
         /* 🔻 Compact knoppen: minder breed + lagere hoogte */
         div[data-testid="stButton"] button {{
             width: 100% !important;
-            border-radius: 9px !important;
+            border-radius: 15px !important;
             padding: 2px 4px !important;
             min-height: 28px !important;
             line-height: 1.0 !important;
@@ -620,4 +620,5 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
 
