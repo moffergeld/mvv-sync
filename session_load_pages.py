@@ -1,12 +1,9 @@
 # session_load_pages.py
 # ==========================================
 # Session Load dashboard
-# - Kalender als enige dag-filter
-# - Compactere tiles (halve breedte, door 14 columns (2 per weekday))
-# - Dagnummer + kleur-dot in tile (geen "select")
-# - Maand+jaar tussen pijltjes
-# - Maanden met hoofdletter (NL)
-# - Grafiek-kleuren terug zoals eerder (rood/roze/blauw-acc/dec + HR zones + trimp)
+# - Kalender: gaps verwijderd (geen "gap columns" meer)
+# - Tiles smaller via CSS (lagere hoogte + kleinere padding)
+# - HR-zone chart: gegroepeerde balken (naast elkaar) i.p.v. stacked
 # ==========================================
 
 from __future__ import annotations
@@ -42,9 +39,9 @@ PRACTICE_BLUE = "#4AA3FF"
 
 
 # -----------------------------
-# UI / CSS (ultra-compact calendar)
+# UI / CSS (compact calendar)
 # -----------------------------
-def _calendar_css_ultra_compact():
+def _calendar_css_compact():
     st.markdown(
         """
         <style>
@@ -58,12 +55,12 @@ def _calendar_css_ultra_compact():
 
         .sl-dow { font-size: 12px; font-weight: 700; opacity: .85; margin-bottom: 2px; }
 
-        /* --- Compact buttons --- */
+        /* Compact buttons */
         div[data-testid="stButton"] button {
             width: 100% !important;
             border-radius: 9px !important;
-            padding: 2px 4px !important;
-            min-height: 22px !important;
+            padding: 1px 4px !important;
+            min-height: 20px !important;
             line-height: 1.0 !important;
             border: 1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
@@ -77,8 +74,8 @@ def _calendar_css_ultra_compact():
         }
 
         /* Minder ruimte tussen columns/rows */
-        section.main div[data-testid="stHorizontalBlock"] { gap: 0.16rem !important; }
-        div[data-testid="stVerticalBlock"] > div { gap: 0.10rem; }
+        section.main div[data-testid="stHorizontalBlock"] { gap: 0.12rem !important; }
+        div[data-testid="stVerticalBlock"] > div { gap: 0.08rem; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -113,7 +110,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-    # Session Load is op Summary
+    # Session Load: Summary
     if COL_EVENT in df.columns:
         df["EVENT_NORM"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["EVENT_NORM"] == "summary"].copy()
@@ -201,10 +198,10 @@ def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> p
 
 
 # -----------------------------
-# Calendar renderer (HALF WIDTH)
+# Calendar renderer (NO GAPS)
 # -----------------------------
 def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
-    _calendar_css_ultra_compact()
+    _calendar_css_compact()
 
     days_with_data, match_days = _compute_day_sets(df)
 
@@ -220,7 +217,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     y, m = st.session_state[f"{key_prefix}_ym"]
 
     # Toolbar: prev | title | next | today
-    c1, c2, c3, c4 = st.columns([0.65, 2.7, 0.65, 0.85])
+    c1, c2, c3, c4 = st.columns([0.7, 2.6, 0.7, 0.9])
     with c1:
         if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
             first = date(y, m, 1)
@@ -265,17 +262,15 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # DOW headers: 14 columns (each weekday = [labelcol, gapcol]) -> visually ~ half width tiles
+    # DOW headers: 7 columns (NO gaps)
     dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-    header_cols = st.columns([1, 1] * 7)  # halve breedte door extra gap-col
+    header_cols = st.columns(7)
     for i, name in enumerate(dows):
-        with header_cols[i * 2]:
+        with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
-        with header_cols[i * 2 + 1]:
-            st.markdown("", unsafe_allow_html=True)
 
     for week in weeks:
-        cols = st.columns([1, 1] * 7)  # halve breedte per weekday
+        cols = st.columns(7)
         for i, d in enumerate(week):
             in_month = (d.month == m)
             disabled = not in_month
@@ -292,13 +287,10 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
                 label = f"✅ {dot} {d.day}"
 
             bkey = f"{key_prefix}_d_{d.isoformat()}"
-            with cols[i * 2]:
+            with cols[i]:
                 if st.button(label, key=bkey, disabled=disabled, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
-            with cols[i * 2 + 1]:
-                # Gap column: empty (forces half-width feel)
-                st.write("")
 
     return st.session_state[f"{key_prefix}_selected"]
 
@@ -319,7 +311,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     fig.add_bar(
         x=players,
         y=vals,
-        marker_color="rgba(255,150,150,0.9)",  # zoals eerder
+        marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
         insidetextanchor="middle",
@@ -364,7 +356,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
         y=sprint_vals,
         width=0.4,
         name="Sprint",
-        marker_color="rgba(255,180,180,0.9)",  # zoals eerder
+        marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
@@ -373,7 +365,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
         y=hs_vals,
         width=0.4,
         name="High Sprint",
-        marker_color="rgba(150,0,0,0.9)",  # zoals eerder
+        marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
     )
@@ -439,7 +431,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     x = np.arange(len(players))
 
     fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
-
     color_map = {
         "HRzone1": "rgba(180,180,180,0.9)",
         "HRzone2": "rgba(150,200,255,0.9)",
@@ -448,8 +439,18 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
-    for z in have_hr:
-        fig.add_bar(x=x, y=df_agg[z], name=z, marker_color=color_map.get(z, "gray"), secondary_y=False)
+    # ✅ gegroepeerd (naast elkaar)
+    step = 0.14
+    offsets = np.linspace(-0.28, 0.28, num=max(len(have_hr), 1)) if have_hr else [0.0]
+    for i, z in enumerate(have_hr):
+        fig.add_bar(
+            x=x + offsets[i],
+            y=df_agg[z],
+            width=step,
+            name=z,
+            marker_color=color_map.get(z, "gray"),
+            secondary_y=False,
+        )
 
     if has_trimp:
         fig.add_trace(
@@ -466,7 +467,8 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     fig.update_layout(
         title="Time in HR zone",
         xaxis_title=None,
-        barmode="stack",
+        barmode="group",   # ✅ group i.p.v. stack
+        bargap=0.2,
         margin=dict(l=10, r=10, t=40, b=80),
     )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
