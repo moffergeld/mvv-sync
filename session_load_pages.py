@@ -2,20 +2,25 @@
 # ==========================================
 # Session Load dashboard
 # - Dag-selectie via kalender grid (geen sliders)
+# - In elk vak: kleur + dagnummer (geen "select" tekst)
 # - Kleuren:
-#     * Rood: Match/Practice Match (Type bevat 'match')
-#     * Blauw: Practice/data (wel data, geen match)
-#     * Grijs: geen data
-# - Klik dag = selecteer dag
-# - Optioneel sessie-keuze als meerdere Type's op die dag
-# - 4 grafieken per speler (ongewijzigd)
+#     * 🔴 Match/Practice Match (Type bevat 'match')
+#     * 🔵 Practice/data (wel data, geen match)
+#     * ⚪ geen data
+# - Navigatie: <  [Maand Jaar]  >   (title tussen pijlen) + today knop
+# - Compactere kalender (kleiner)
+# - Sneller gevoel: caching voor dag-aggregatie + geen onnodige herberekeningen
+#
+# Let op (Streamlit): elke klik veroorzaakt altijd een rerun van de pagina.
+# We maken het “instant” door:
+#   - alleen dag-aggregaties te cachen
+#   - kalender rendering compact/licht te houden
 # ==========================================
 
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -42,7 +47,6 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
-NO_DATA_GRAY = "rgba(180,180,180,0.28)"
 
 
 # -----------------------------
@@ -57,7 +61,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     """
     - Datum naar datetime
     - Alleen rijen met datum + speler
-    - (BELANGRIJK) In session load gebruiken we Summary-level voor load (als aanwezig)
+    - Event='Summary' (session load werkt op summary-level)
     - TRIMP alias → 'TRIMP'
     """
     df = df_gps.copy()
@@ -65,16 +69,13 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
         return df.iloc[0:0].copy()
 
-    # Datum kan al datetime zijn; errors=coerce maakt consistent
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-    # Gebruik Summary voor session load (wat jij wil)
     if COL_EVENT in df.columns:
         df["EVENT_NORM"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["EVENT_NORM"] == "summary"].copy()
 
-    # TRIMP alias → 'TRIMP'
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -85,7 +86,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     else:
         df["TRIMP"] = 0.0
 
-    # Numeriek maken
     numeric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
         COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
@@ -95,7 +95,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # Type normaliseren
     if COL_TYPE in df.columns:
         df[COL_TYPE] = df[COL_TYPE].astype(str).str.strip()
 
@@ -107,10 +106,14 @@ def _is_match_type(type_val: str) -> bool:
     return "match" in s  # match + practice match
 
 
+def _month_add(year: int, month: int, delta: int) -> tuple[int, int]:
+    m = month + delta
+    y = year + (m - 1) // 12
+    m = (m - 1) % 12 + 1
+    return y, m
+
+
 def _day_status(df: pd.DataFrame, day: date) -> str:
-    """
-    Returns: 'match' | 'practice' | 'none'
-    """
     sub = df[df[COL_DATE].dt.date == day]
     if sub.empty:
         return "none"
@@ -120,18 +123,11 @@ def _day_status(df: pd.DataFrame, day: date) -> str:
 
 
 def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> pd.DataFrame:
-    """
-    session_mode:
-      - "Alle sessies"
-      - specifieke Type-waarde
-    """
     df_day = df[df[COL_DATE].dt.date == day].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
         return df_day
-
     if session_mode == "Alle sessies":
         return df_day
-
     return df_day[df_day[COL_TYPE].astype(str) == str(session_mode)].copy()
 
 
@@ -145,8 +141,29 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
         *HR_COLS, "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
-
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
+
+
+# -----------------------------
+# Cached day aggregation (sneller gevoel bij klikken)
+# -----------------------------
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_day_agg(df: pd.DataFrame, day_iso: str, session_mode: str) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Cache key wordt bepaald door (day_iso + session_mode + df contents hash in streamlit).
+    Retour:
+      df_agg, types_day
+    """
+    day = date.fromisoformat(day_iso)
+    df_day_all = df[df[COL_DATE].dt.date == day].copy()
+
+    types_day: list[str] = []
+    if not df_day_all.empty and COL_TYPE in df_day_all.columns:
+        types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
+
+    df_day = _get_day_session_subset(df, day, session_mode)
+    df_agg = _agg_by_player(df_day) if not df_day.empty else df_day
+    return df_agg, types_day
 
 
 # -----------------------------
@@ -324,111 +341,94 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
 
 
 # -----------------------------
-# Kalender UI
+# Kalender UI (compact)
 # -----------------------------
-MONTHS_NL = [
-    "januari", "februari", "maart", "april", "mei", "juni",
-    "juli", "augustus", "september", "oktober", "november", "december",
+MONTHS_NL_CAP = [
+    "Januari", "Februari", "Maart", "April", "Mei", "Juni",
+    "Juli", "Augustus", "September", "Oktober", "November", "December",
 ]
 
 
-def _calendar_css():
+def _calendar_css_compact():
     st.markdown(
         """
         <style>
-        .sl-cal-top {
-            display:flex; align-items:center; justify-content:space-between;
-            margin: 4px 0 8px 0;
-        }
-        .sl-cal-title {
-            font-size: 22px;
-            font-weight: 700;
-            text-align:center;
-            width: 100%;
-        }
-        .sl-legend { display:flex; gap:18px; align-items:center; margin: 6px 0 8px 0; }
-        .sl-dot { width:10px; height:10px; border-radius: 50%; display:inline-block; margin-right:8px; }
+        .sl-legend { display:flex; gap:16px; align-items:center; margin: 6px 0 10px 0; font-size: 12px; opacity:.9; }
+        .sl-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:7px; }
         .sl-dot.match { background:#FF0033; }
         .sl-dot.practice { background:#4AA3FF; }
         .sl-dot.none { background: rgba(180,180,180,0.45); }
 
-        /* buttons compacter */
+        /* Kalender knoppen compacter */
         div[data-testid="stButton"] button {
             width: 100%;
             border-radius: 10px;
-            padding: 10px 10px;
+            padding: 6px 8px !important;
+            min-height: 34px !important;
             border: 1px solid rgba(255,255,255,0.12);
-            background: rgba(255,255,255,0.04);
+            background: rgba(255,255,255,0.03);
+            font-weight: 700;
+            font-size: 13px;
         }
         div[data-testid="stButton"] button:hover {
             border: 1px solid rgba(255,255,255,0.22);
-            background: rgba(255,255,255,0.06);
+            background: rgba(255,255,255,0.05);
         }
+
+        /* Maak headers compacter */
+        .sl-dow { font-size: 12px; font-weight: 700; opacity: .85; margin-bottom: 4px; }
+
+        /* Compacte spacing tussen rijen */
+        .block-container { padding-top: 1rem; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _month_add(year: int, month: int, delta: int) -> tuple[int, int]:
-    m = month + delta
-    y = year + (m - 1) // 12
-    m = (m - 1) % 12 + 1
-    return y, m
-
-
 def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
-    """
-    Render maand-kalender met klikbare dagen (buttons).
-    Retourneert geselecteerde dag.
-    """
-    _calendar_css()
+    _calendar_css_compact()
 
     min_dt = df[COL_DATE].min()
     max_dt = df[COL_DATE].max()
     min_day = min_dt.date()
     max_day = max_dt.date()
 
-    # init state
     if f"{key_prefix}_selected" not in st.session_state:
         st.session_state[f"{key_prefix}_selected"] = max_day
 
     if f"{key_prefix}_ym" not in st.session_state:
-        st.session_state[f"{key_prefix}_ym"] = (st.session_state[f"{key_prefix}_selected"].year,
-                                                st.session_state[f"{key_prefix}_selected"].month)
+        st.session_state[f"{key_prefix}_ym"] = (
+            st.session_state[f"{key_prefix}_selected"].year,
+            st.session_state[f"{key_prefix}_selected"].month,
+        )
 
-    sel: date = st.session_state[f"{key_prefix}_selected"]
     y, m = st.session_state[f"{key_prefix}_ym"]
 
-    # top nav
-    c1, c2, c3 = st.columns([0.08, 0.08, 0.12])
-    with c1:
+    # NAV: <  [Maand Jaar]  >   + today
+    nav1, nav2, nav3, nav4 = st.columns([0.08, 0.72, 0.08, 0.12])
+    with nav1:
         if st.button("‹", key=f"{key_prefix}_prev"):
             y, m = _month_add(y, m, -1)
             st.session_state[f"{key_prefix}_ym"] = (y, m)
-    with c2:
+    with nav3:
         if st.button("›", key=f"{key_prefix}_next"):
             y, m = _month_add(y, m, +1)
             st.session_state[f"{key_prefix}_ym"] = (y, m)
-    with c3:
+    with nav4:
         if st.button("today", key=f"{key_prefix}_today"):
             st.session_state[f"{key_prefix}_selected"] = date.today()
             st.session_state[f"{key_prefix}_ym"] = (date.today().year, date.today().month)
-            sel = st.session_state[f"{key_prefix}_selected"]
             y, m = st.session_state[f"{key_prefix}_ym"]
 
-    month_title = f"{MONTHS_NL[m-1]} {y}"
-    st.markdown(
-        f"""
-        <div class="sl-cal-top">
-          <div class="sl-cal-title">{month_title}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with nav2:
+        st.markdown(
+            f"<div style='text-align:center; font-size:20px; font-weight:800; margin-top:6px;'>{MONTHS_NL_CAP[m-1]} {y}</div>",
+            unsafe_allow_html=True,
+        )
 
     st.markdown(
-        f"<div style='opacity:.75; font-size:12px; text-align:right;'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
+        f"<div style='opacity:.75; font-size:11px; text-align:right; margin-top:-2px;'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
         unsafe_allow_html=True,
     )
 
@@ -443,63 +443,50 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         unsafe_allow_html=True,
     )
 
-    # build month grid (Mon..Sun)
-    cal = calendar.Calendar(firstweekday=0)  # 0=ma
+    cal = calendar.Calendar(firstweekday=0)  # ma
     weeks = cal.monthdatescalendar(y, m)
 
     day_names = ["ma", "di", "wo", "do", "vr", "za", "zo"]
     header_cols = st.columns(7)
     for i, dn in enumerate(day_names):
-        header_cols[i].markdown(f"<div style='text-align:left; opacity:.85; font-weight:600;'>{dn}</div>", unsafe_allow_html=True)
+        header_cols[i].markdown(f"<div class='sl-dow'>{dn}</div>", unsafe_allow_html=True)
 
-    for wi, week in enumerate(weeks):
+    selected = st.session_state[f"{key_prefix}_selected"]
+
+    # Snelle status lookup: per dag in zichtbare maand (scheelt veel .dt.date filters)
+    # We bouwen een set van datums met data + set met match-dagen.
+    df_dates = df[COL_DATE].dt.date
+    days_with_data = set(df_dates.unique())
+
+    match_days: set[date] = set()
+    if COL_TYPE in df.columns:
+        tmp = df[df[COL_TYPE].map(_is_match_type)]
+        match_days = set(tmp[COL_DATE].dt.date.unique())
+
+    for week in weeks:
         cols = st.columns(7)
-        for di, d in enumerate(week):
-            status = _day_status(df, d)
-
-            dot_color = {
-                "match": MVV_RED,
-                "practice": PRACTICE_BLUE,
-                "none": "rgba(180,180,180,0.45)",
-            }[status]
-
+        for i, d in enumerate(week):
             in_month = (d.month == m)
             disabled = not in_month
 
-            # label met dag van de maand
-            label = f"{d.day}"
+            if d in match_days:
+                prefix = "🔴"
+            elif d in days_with_data:
+                prefix = "🔵"
+            else:
+                prefix = "⚪"
 
-            # visueel geselecteerd
-            is_selected = (d == st.session_state[f"{key_prefix}_selected"])
-            border = f"2px solid {MVV_RED}" if is_selected else "1px solid rgba(255,255,255,0.12)"
-            bg = "rgba(255,255,255,0.06)" if is_selected else "rgba(255,255,255,0.03)"
-            opacity = "1.0" if in_month else "0.35"
+            label = f"{prefix} {d.day}"
 
-            # per dag unieke key
+            # highlight selected (via label + hint, Streamlit knoppen niet per-knop te stylen)
+            if d == selected:
+                label = f"✅ {label}"
+
             bkey = f"{key_prefix}_d_{d.isoformat()}"
-
-            with cols[di]:
-                st.markdown(
-                    f"""
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; opacity:{opacity};">
-                      <span style="width:8px;height:8px;border-radius:50%;background:{dot_color};display:inline-block;"></span>
-                      <span style="font-weight:700;">{label}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                clicked = st.button(
-                    "select",
-                    key=bkey,
-                    disabled=disabled,
-                    use_container_width=True,
-                )
-                # custom border/background via extra wrapper is niet direct mogelijk per button,
-                # dus we tonen selected vooral via de rode rand in de Streamlit focus-state (en dot+caption).
-                if clicked and not disabled:
+            with cols[i]:
+                if st.button(label, key=bkey, disabled=disabled, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
-                    sel = d
 
     return st.session_state[f"{key_prefix}_selected"]
 
@@ -520,18 +507,16 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden (controleer Datum / Event='Summary').")
         return
 
-    # Kalender (enige dag-filter)
     selected_day = calendar_day_picker(df=df, key_prefix="slcal")
 
-    # Dag subset
+    # Sessie select (alleen als meerdere types op die dag)
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
-
     if df_day_all.empty:
         st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
         return
 
-    # Sessies op dag
     session_mode = "Alle sessies"
+    types_day = []
     if COL_TYPE in df_day_all.columns:
         types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
         if len(types_day) > 1:
@@ -544,17 +529,13 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         else:
             st.caption("Beschikbare sessie op deze dag: " + ", ".join(types_day))
 
-    df_day = _get_day_session_subset(df, selected_day, session_mode)
-    if df_day.empty:
+    # Cached dag-aggregatie (sneller)
+    df_agg, _types_day_cached = _cached_day_agg(df=df, day_iso=selected_day.isoformat(), session_mode=session_mode)
+
+    if df_agg.empty:
         st.warning("Geen data gevonden voor deze selectie (dag + sessie).")
         return
 
-    df_agg = _agg_by_player(df_day)
-    if df_agg.empty:
-        st.warning("Geen data om te aggregeren per speler.")
-        return
-
-    # 4 grafieken in 2×2 grid
     col_top1, col_top2 = st.columns(2)
     with col_top1:
         _plot_total_distance(df_agg)
