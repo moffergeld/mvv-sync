@@ -1,16 +1,14 @@
 # session_load_pages.py
 # ==========================================
 # Session Load dashboard
-# - Echte kalender (ma-zo grid) als ENIGE dag-filter
-# - Kleuren per dag:
-#     * rood  = Match / Practice Match (als er data is)
-#     * blauw = Practice/data (als er data is)
-#     * grijs = geen data
+# - ENIGE dag-filter = kalender (geen sliders)
+# - Kalender:
+#     * Maanden header + dagen als klikbare "chips"
+#     * Kleurcodering:
+#         - Rood: Match / Practice Match (op basis van Type)
+#         - Lichtblauw: Practice/data (alle overige Types met data)
+#         - Grijs: geen data
 # - Klik dag in kalender = selecteer dag
-# - Navigatie: vorige/volgende maand + today
-# - Data-selectie per dag:
-#     * Als er "Summary" bestaat op die dag -> gebruik alleen Summary (voorkomt dubbel tellen)
-#     * Anders -> gebruik alle events op die dag
 # - Kies sessie: Practice (1) / Practice (2) / beide (alleen als beide bestaan op die dag)
 # - 4 grafieken per speler:
 #   * Total Distance
@@ -21,8 +19,10 @@
 
 from __future__ import annotations
 
-import calendar
-from datetime import date
+from dataclasses import dataclass
+from datetime import date as dt_date
+from datetime import timedelta
+import calendar as pycal
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,10 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Kolomnamen (verwacht vanuit pages/07_GPS_Data.py mapping)
+
+# -----------------------------
+# Kolomnamen (verwacht in df_all vanuit 07_GPS_Data.py)
+# -----------------------------
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -47,42 +50,163 @@ COL_DEC_HI = "High Decelerations"
 HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
 TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
+# Type-categorieën voor kalenderkleuren
 MATCH_TYPES = {"Match", "Practice Match"}
+
+# MVV kleuren
 MVV_RED = "#FF0033"
+MVV_BLUE = "#5DAEFF"  # lichtblauw accent voor Practice/data
+MVV_GREY = "#6B7280"  # grijs "geen data"
 
 
 # -----------------------------
-# Helpers (data prep)
+# CSS
+# -----------------------------
+def _inject_calendar_css() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .sl-wrap {{
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 14px 14px 10px 14px;
+            background: rgba(255,255,255,0.02);
+            margin: 12px 0 14px 0;
+        }}
+        .sl-top {{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }}
+        .sl-title {{
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: 0.2px;
+        }}
+        .sl-legend {{
+            display:flex;
+            align-items:center;
+            gap: 14px;
+            margin: 4px 0 10px 0;
+            font-size: 12.5px;
+            opacity: 0.9;
+        }}
+        .sl-dot {{
+            display:inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            margin-right: 6px;
+        }}
+
+        /* Buttons - force compact */
+        div[data-testid="stButton"] > button {{
+            border-radius: 10px !important;
+            padding: 6px 10px !important;
+            height: 40px !important;
+            width: 100% !important;
+            border: 1px solid rgba(255,255,255,0.10) !important;
+            background: rgba(255,255,255,0.02) !important;
+        }}
+
+        /* Make the month title centered */
+        .sl-month {{
+            text-align:center;
+            font-weight: 800;
+            font-size: 22px;
+            margin: 8px 0 10px 0;
+        }}
+
+        /* Weekday header */
+        .sl-weekdays {{
+            display:grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin: 0 0 6px 0;
+            font-weight: 700;
+            font-size: 12.5px;
+            opacity: 0.9;
+            text-align:center;
+        }}
+        .sl-grid {{
+            display:grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }}
+        .sl-chip {{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap: 8px;
+            width: 100%;
+            height: 40px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.10);
+            background: rgba(255,255,255,0.02);
+        }}
+        .sl-daynum {{
+            font-weight: 800;
+            font-size: 14px;
+        }}
+        .sl-ind {{
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            opacity: 0.95;
+        }}
+
+        /* Selected day outline */
+        .sl-selected {{
+            outline: 2px solid {MVV_RED};
+            outline-offset: 1px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# -----------------------------
+# Helpers
 # -----------------------------
 def _normalize_event(e: str) -> str:
-    return str(e).strip().lower()
+    s = str(e).strip().lower()
+    if s == "summary":
+        return "summary"
+    return s
+
+
+def _ensure_datetime_series(s: pd.Series) -> pd.Series:
+    # If already datetime64, keep it. If object/string, parse with dayfirst True as fallback.
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return s
+    return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
 
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     """
-    - Datum naar datetime (tz-naive)
-    - Alleen rijen met datum + speler
-    - Event normaliseren (maar NIET meer hard filteren op Summary)
-    - TRIMP-naam normaliseren naar kolom 'TRIMP'
-    - Numerieke kolommen coerces
+    - Datum -> datetime
+    - Filter: datum + speler aanwezig
+    - Filter: Event == Summary (normalised)
+    - TRIMP alias -> 'TRIMP'
+    - Metrics -> numeric
     """
     df = df_gps.copy()
+
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
         return df.iloc[0:0].copy()
 
-    # datum -> datetime (en tz-naive)
-    df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce", dayfirst=True)
-    try:
-        df[COL_DATE] = df[COL_DATE].dt.tz_localize(None)
-    except Exception:
-        pass
-
+    df[COL_DATE] = _ensure_datetime_series(df[COL_DATE])
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
     if COL_EVENT in df.columns:
         df["EVENT_NORM"] = df[COL_EVENT].map(_normalize_event)
+        df = df[df["EVENT_NORM"] == "summary"].copy()
     else:
-        df["EVENT_NORM"] = ""
+        # Zonder Event-kolom kan Session Load niet betrouwbaar werken
+        return df.iloc[0:0].copy()
 
     # TRIMP alias → 'TRIMP'
     trimp_col = None
@@ -105,15 +229,15 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # Type opschonen
+    # Normalize Type strings
     if COL_TYPE in df.columns:
         df[COL_TYPE] = df[COL_TYPE].astype(str).str.strip()
 
     return df
 
 
-def _get_day_session_subset(df_day: pd.DataFrame, session_mode: str) -> pd.DataFrame:
-    """Filter binnen een dag op Practice(1)/(2) logica."""
+def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
+    df_day = df[df[COL_DATE].dt.date == dayday_to_date(day)].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
         return df_day
 
@@ -145,218 +269,110 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
 
-# -----------------------------
-# Calendar UI (click day)
-# -----------------------------
-def _calendar_css() -> None:
-    st.markdown(
-        f"""
-        <style>
-        .cal-toolbar {{
-            display:flex; align-items:center; gap:10px; margin: 6px 0 10px 0;
-        }}
-        .cal-legend {{
-            display:flex; gap:16px; align-items:center; margin: 6px 0 10px 0;
-            font-size: 13px; opacity: 0.9;
-        }}
-        .cal-dot {{
-            width:10px; height:10px; border-radius:3px; display:inline-block; margin-right:6px;
-        }}
-
-        /* Button sizing for day-cells */
-        .cal-day button {{
-            width: 100% !important;
-            height: 54px !important;
-            border-radius: 12px !important;
-            border: 1px solid rgba(255,255,255,0.10) !important;
-            font-weight: 700 !important;
-        }}
-        .cal-day button:hover {{
-            border-color: rgba(255,255,255,0.30) !important;
-        }}
-
-        /* Selected day outline */
-        .cal-selected button {{
-            outline: 2px solid {MVV_RED} !important;
-            outline-offset: 0px !important;
-        }}
-
-        /* Weekday header */
-        .cal-wd {{
-            text-align:center;
-            font-weight:700;
-            opacity:0.9;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            margin-bottom: 8px;
-        }}
-
-        /* Make buttons look cleaner */
-        div[data-testid="stButton"] > button {{
-            box-shadow: none !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+def day_to_timestamp(d: dt_date) -> pd.Timestamp:
+    return pd.Timestamp(d)
 
 
-def _month_start(d: date) -> date:
-    return date(d.year, d.month, 1)
+def T_to_date(ts: pd.Timestamp) -> dt_date:
+    return ts.date()
 
 
-def _add_months(d: date, delta: int) -> date:
-    y = d.year + (d.month - 1 + delta) // 12
-    m = (d.month - 1 + delta) % 12 + 1
-    return date(y, m, 1)
+def Rng_month_anchor(d: dt_date) -> dt_date:
+    return dt_date(d.year, d.month, 1)
 
 
-def calendar_day_picker(
-    df: pd.DataFrame,
-    key_prefix: str = "sl_cal",
-) -> date:
+def add_months(anchor: dt_date, delta: int) -> dt_date:
+    y = anchor.year + (anchor.month - 1 + delta) // 12
+    m = (anchor.month - 1 + delta) % 12 + 1
+    return dt_date(y, m, 1)
+
+
+def month_label(anchor: dt_date) -> str:
+    # NL labels
+    months_nl = [
+        "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december"
+    ]
+    return f"{months_nl[anchor.month - 1]} {anchor.year}"
+
+
+def weekday_headers_nl() -> list[str]:
+    # maandag .. zondag
+    return ["ma", "di", "wo", "do", "vr", "za", "zo"]
+
+
+def month_grid_dates(anchor: dt_date) -> list[dt_date]:
     """
-    Kalender toont altijd de "view month". Klik op een dag selecteert die dag.
-    Kleuren worden bepaald op basis van data in df.
+    Returns a 6-week grid (42 dates) starting on Monday.
+    Includes leading/trailing days from adjacent months.
     """
-    _calendar_css()
+    first = dt_date(anchor.year, anchor.month, 1)
+    # Python weekday: Monday=0 ... Sunday=6
+    start = first - timedelta(days=first.weekday())
+    return [start + timedelta(days=i) for i in range(42)]
 
-    # beschikbare datums in df
-    dts = pd.to_datetime(df[COL_DATE], errors="coerce").dropna()
-    if dts.empty:
-        raise ValueError("Geen geldige datums in de data.")
 
-    available_days = sorted(pd.Series(dts.dt.date.unique()).tolist())
-    min_day, max_day = available_days[0], available_days[-1]
+def classify_day(df: pd.DataFrame, d: dt_date) -> str:
+    """
+    Classification based on prepared df (Summary-only).
+    Returns: "match" | "practice" | "none"
+    """
+    if df.empty:
+        return "none"
+    day_mask = df[COL_DATE].dt.date == d
+    if not day_mask.any():
+        return "none"
 
-    # init state
-    view_key = f"{key_prefix}_view_month"
-    sel_key = f"{key_prefix}_selected_day"
-
-    if view_key not in st.session_state:
-        st.session_state[view_key] = _month_start(max_day)
-    if sel_key not in st.session_state:
-        st.session_state[sel_key] = max_day
-
-    view_month: date = st.session_state[view_key]
-    selected_day: date = st.session_state[sel_key]
-
-    # toolbar
-    cols = st.columns([0.6, 0.6, 1.2, 3.6])
-    with cols[0]:
-        if st.button("‹", key=f"{key_prefix}_prev", help="Vorige maand"):
-            st.session_state[view_key] = _add_months(view_month, -1)
-            st.rerun()
-    with cols[1]:
-        if st.button("›", key=f"{key_prefix}_next", help="Volgende maand"):
-            st.session_state[view_key] = _add_months(view_month, +1)
-            st.rerun()
-    with cols[2]:
-        if st.button("today", key=f"{key_prefix}_today", help="Ga naar huidige maand/dag"):
-            today = date.today()
-            st.session_state[view_key] = _month_start(today)
-            st.session_state[sel_key] = today
-            st.rerun()
-
-    # legend + title
-    st.markdown(
-        f"""
-        <div class="cal-legend">
-            <span><span class="cal-dot" style="background:{MVV_RED}"></span>Match/Practice Match</span>
-            <span><span class="cal-dot" style="background:#3B82F6"></span>Practice/data</span>
-            <span><span class="cal-dot" style="background:#6B7280"></span>Geen data</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    month_title = pd.Timestamp(view_month).strftime("%B %Y")
-    st.markdown(f"<h3 style='text-align:center; margin: 6px 0 12px 0;'>{month_title}</h3>", unsafe_allow_html=True)
-
-    # build status per day (within whole df)
-    # status: "match" | "data" | "none"
-    day_type = {}
     if COL_TYPE in df.columns:
-        g = df.groupby(df[COL_DATE].dt.date)[COL_TYPE].apply(lambda s: set(map(str, s.dropna().tolist())))
-        for d0, types in g.items():
-            if any(t in MATCH_TYPES for t in types):
-                day_type[d0] = "match"
-            else:
-                day_type[d0] = "data"
-    else:
-        for d0 in available_days:
-            day_type[d0] = "data"
+        types = set(df.loc[day_mask, COL_TYPE].dropna().astype(str).str.strip().tolist())
+        if any(t in MATCH_TYPES for t in types):
+            return "match"
 
-    # generate 6-week calendar grid (Mon..Sun)
-    cal = calendar.Calendar(firstweekday=0)  # Monday
-    month_days = list(cal.itermonthdates(view_month.year, view_month.month))
+    return "practice"
 
-    # weekday header
-    wd_cols = st.columns(7)
-    labels = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-    for i, lab in enumerate(labels):
-        with wd_cols[i]:
-            st.markdown(f"<div class='cal-wd'>{lab}</div>", unsafe_allow_html=True)
 
-    # per-day button styling via key classes
-    style_lines = []
-    for d0 in month_days:
-        status = day_type.get(d0, "none")
-        if status == "match":
-            bg = "rgba(255,0,51,0.35)"
-            bd = "rgba(255,0,51,0.55)"
-        elif status == "data":
-            bg = "rgba(59,130,246,0.25)"
-            bd = "rgba(59,130,246,0.45)"
-        else:
-            bg = "rgba(107,114,128,0.18)"
-            bd = "rgba(255,255,255,0.08)"
+def indicator_color(kind: str) -> str:
+    if kind == "match":
+        return MVV_RED
+    if kind == "practice":
+        return MVV_BLUE
+    return MVV_GREY
 
-        k = f"{key_prefix}_day_{d0.isoformat()}"
-        style_lines.append(
-            f""".st-key-{k} .cal-day button{{background:{bg} !important; border-color:{bd} !important;}}"""
-        )
 
-    st.markdown("<style>" + "\n".join(style_lines) + "</style>", unsafe_allow_html=True)
+def is_in_month(d: dt_date, anchor: dt_date) -> bool:
+    return d.month == anchor.month and d.year == anchor.year
 
-    # render weeks
-    for week_i in range(0, len(month_days), 7):
-        week = month_days[week_i : week_i + 7]
-        cols7 = st.columns(7)
-        for col_i, d0 in enumerate(week):
-            k = f"{key_prefix}_day_{d0.isoformat()}"
-            in_month = (d0.month == view_month.month)
 
-            # disable clicks outside month OR outside available range (optional)
-            disabled = (not in_month)
+def _set_selected_day(d: dt_date) -> None:
+    st.session_state["sl_selected_day"] = d.isoformat()
 
-            with cols7[col_i]:
-                outer_class = "cal-selected" if d0 == selected_day else ""
-                st.markdown(f"<div class='cal-day {outer_class}'>", unsafe_allow_html=True)
-                if st.button(
-                    str(d0.day),  # dag van de maand zichtbaar
-                    key=k,
-                    disabled=disabled,
-                ):
-                    st.session_state[sel_key] = d0
-                    # als je op een dag in deze maand klikt: view month blijft gelijk
-                    st.rerun()
-                st.markdown("</div>", unsafe_allow_html=True)
 
-    # clamp selected_day binnen min/max (als needed)
-    selected_day = st.session_state[sel_key]
-    if selected_day < min_day:
-        selected_day = min_day
-        st.session_state[sel_key] = selected_day
-    if selected_day > max_day:
-        selected_day = max_day
-        st.session_state[sel_key] = selected_day
+def _get_selected_day(default: dt_date) -> dt_date:
+    v = st.session_state.get("sl_selected_day")
+    if not v:
+        return default
+    try:
+        return dt_date.fromisoformat(str(v))
+    except Exception:
+        return default
 
-    return selected_day
+
+def _set_month_anchor(anchor: dt_date) -> None:
+    st.session_state["sl_month_anchor"] = anchor.isoformat()
+
+
+def _get_month_anchor(default: dt_date) -> dt_date:
+    v = st.session_state.get("sl_month_anchor")
+    if not v:
+        return default
+    try:
+        return dt_date.fromisoformat(str(v))
+    except Exception:
+        return default
 
 
 # -----------------------------
-# Plot helpers (4 grafieken)
+# Plots
 # -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
@@ -530,46 +546,270 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
 
 
 # -----------------------------
-# Hoofd entrypoint
+# Kalender UI
+# -----------------------------
+def _calendar_ui(df_prepared: pd.DataFrame, min_day: dt_date, max_day: dt_date) -> dt_date:
+    _inject_calendar_css()
+
+    # Default anchor: month of max_day (meest recente data)
+    default_anchor = Rng_month_anchor(max_day)
+    anchor = _get_month_anchor(default_anchor)
+
+    # Clamp anchor between min and max months
+    if anchor < Rng_month_anchor(min_day):
+        anchor = Rng_month_anchor(min_day)
+        _set_month_anchor(anchor)
+    if anchor > Rng_month_anchor(max_day):
+        anchor = Rng_month_anchor(max_day)
+        _set_month_anchor(anchor)
+
+    # Default selected day: max_day
+    selected = _get_selected_day(max_day)
+    if selected < min_day or selected > max_day:
+        selected = max_day
+        _set_selected_day(selected)
+
+    # Top navigation
+    cprev, cnext, ctoday, _spacer = st.columns([0.6, 0.6, 0.9, 6.0])
+    with cprev:
+        if st.button("‹", key="sl_cal_prev"):
+            _set_month_anchor(add_months(anchor, -1))
+            st.rerun()
+    with cnext:
+        if st.button("›", key="sl_cal_next"):
+            _set_month_anchor(add_months(anchor, +1))
+            st.rerun()
+    with ctoday:
+        if st.button("today", key="sl_cal_today"):
+            _set_month_anchor(Rng_month_anchor(dt_date.today()))
+            _set_selected_day(dt_date.today())
+            st.rerun()
+
+    st.markdown(f'<div class="sl-month">{month_label(anchor)}</div>', unsafe_allow_html=True)
+
+    # Legend
+    st.markdown(
+        f"""
+        <div class="sl-legend">
+          <span><span class="sl-dot" style="background:{MVV_RED}"></span>Match/Practice Match</span>
+          <span><span class="sl-dot" style="background:{MVV_BLUE}"></span>Practice/data</span>
+          <span><span class="sl-dot" style="background:{MVV_GREY}"></span>Geen data</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Weekday header
+    wh = weekday_headers_nl()
+    st.markdown(
+        '<div class="sl-weekdays">' + "".join([f"<div>{w}</div>" for w in wh]) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Render 6-week grid (42 days)
+    grid_days = month_grid_dates(anchor)
+
+    # We create 7 columns repeatedly
+    for week in range(6):
+        cols = st.columns(7, gap="small")
+        for i in range(7):
+            d = grid_days[week * 7 + i]
+            in_month = is_in_month(d, anchor)
+            within_data_bounds = (min_day <= d <= max_day)
+
+            kind = classify_day(df_prepared, d) if within_data_bounds else "none"
+            ind_col = indicator_color(kind)
+
+            # Disable days outside the displayed month OR outside data bounds
+            disabled = (not in_month) or (not within_data_bounds)
+
+            # Visual label: day number only (must be in)
+            label = str(d.day)
+
+            # Button key must be unique per cell
+            bkey = f"sl_daybtn_{d.isoformat()}"
+
+            # We simulate chip with button; selection is stored in session_state
+            with cols[i]:
+                # add a tiny colored indicator via markdown above button
+                sel_class = "sl-selected" if (d == selected and not disabled) else ""
+                st.markdown(
+                    f"""
+                    <div class="sl-chip {sel_class}">
+                      <div class="sl-daynum">{label}</div>
+                      <div class="sl-ind" style="background:{ind_col}"></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                # invisible click area: actual button
+                if st.button(" ", key=bkey, disabled=disabled):
+                    _set_selected_day(d)
+                    st.rerun()
+
+    return _get_selected_day(selected)
+
+
+def day_to_date(ts: pd.Timestamp) -> dt_date:
+    return ts.date()
+
+
+def Rng_to_date(d: dt_date) -> dt_date:
+    return d
+
+
+def month_grid_dates(anchor: dt_date) -> list[dt_date]:
+    first = dt_date(anchor.year, anchor.month, 1)
+    start = first - timedelta(days=first.weekday())
+    return [start + timedelta(days=i) for i in range(42)]
+
+
+def is_in_month(d: dt_date, anchor: dt_date) -> bool:
+    return d.month == anchor.month and d.year == anchor.year
+
+
+def day_to_date(ts: pd.Timestamp) -> dt_date:
+    return ts.date()
+
+
+def Tstamp(d: dt_date) -> pd.Timestamp:
+    return pd.Timestamp(d)
+
+
+def day_to_timestamp(d: dt_date) -> pd.Timestamp:
+    return pd.Timestamp(d)
+
+
+def T_to_date(ts: pd.Timestamp) -> dt_date:
+    return ts.date()
+
+
+def Rng_month_anchor(d: dt_date) -> dt_date:
+    return dt_date(d.year, d.month, 1)
+
+
+def add_months(anchor: dt_date, delta: int) -> dt_date:
+    y = anchor.year + (anchor.month - 1 + delta) // 12
+    m = (anchor.month - 1 + delta) % 12 + 1
+    return dt_date(y, m, 1)
+
+
+def month_label(anchor: dt_date) -> str:
+    months_nl = [
+        "januari", "februari", "maart", "april", "mei", "juni",
+        "juli", "augustus", "september", "oktober", "november", "december"
+    ]
+    return f"{months_nl[anchor.month - 1]} {anchor.year}"
+
+
+def weekday_headers_nl() -> list[str]:
+    return ["ma", "di", "wo", "do", "vr", "za", "zo"]
+
+
+def classify_day(df: pd.DataFrame, d: dt_date) -> str:
+    if df.empty:
+        return "none"
+    mask = df[COL_DATE].dt.date == d
+    if not mask.any():
+        return "none"
+    if COL_TYPE in df.columns:
+        types = set(df.loc[mask, COL_TYPE].dropna().astype(str).str.strip().tolist())
+        if any(t in MATCH_TYPES for t in types):
+            return "match"
+    return "practice"
+
+
+def indicator_color(kind: str) -> str:
+    if kind == "match":
+        return MVV_RED
+    if kind == "practice":
+        return MVV_BLUE
+    return MVV_GREY
+
+
+def _set_selected_day(d: dt_date) -> None:
+    st.session_state["sl_selected_day"] = d.isoformat()
+
+
+def _get_selected_day(default: dt_date) -> dt_date:
+    v = st.session_state.get("sl_selected_day")
+    if not v:
+        return default
+    try:
+        return dt_date.fromisoformat(str(v))
+    except Exception:
+        return default
+
+
+def _set_month_anchor(anchor: dt_date) -> None:
+    st.session_state["sl_month_anchor"] = anchor.isoformat()
+
+
+def _get_month_anchor(default: dt_date) -> dt_date:
+    v = st.session_state.get("sl_month_anchor")
+    if not v:
+        return default
+    try:
+        return dt_date.fromisoformat(str(v))
+    except Exception:
+        return default
+
+
+def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
+    df_day = df[df[COL_DATE].dt.date == day.date()].copy()
+    if df_day.empty or COL_TYPE not in df_day.columns:
+        return df_day
+
+    types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
+    has_p1 = "Practice (1)" in types_day
+    has_p2 = "Practice (2)" in types_day
+
+    if has_p1 and has_p2:
+        if session_mode == "Practice (1)":
+            return df_day[df_day[COL_TYPE].astype(str) == "Practice (1)"].copy()
+        if session_mode == "Practice (2)":
+            return df_day[df_day[COL_TYPE].astype(str) == "Practice (2)"].copy()
+        return df_day[df_day[COL_TYPE].astype(str).isin(["Practice (1)", "Practice (2)"])].copy()
+    return df_day
+
+
+# -----------------------------
+# Main entrypoint
 # -----------------------------
 def session_load_pages_main(df_gps: pd.DataFrame):
     st.header("Session Load")
 
-    missing = [c for c in [COL_DATE, COL_PLAYER] if c not in df_gps.columns]
+    missing = [c for c in [COL_DATE, COL_PLAYER, COL_EVENT] if c not in df_gps.columns]
     if missing:
         st.error(f"Ontbrekende kolommen in GPS-data: {missing}")
         return
 
     df = _prepare_gps(df_gps)
     if df.empty:
-        st.warning("Geen bruikbare GPS-data gevonden (controleer Datum / Speler).")
+        st.warning("Geen bruikbare GPS-data gevonden (controleer: Event='Summary', Datum, Speler).")
         return
 
-    # kalender = enige dagfilter
-    try:
-        selected_day = calendar_day_picker(df, key_prefix="sl_cal")
-    except Exception as e:
-        st.error(f"Kon kalender niet bouwen: {e}")
+    # min/max dag op basis van beschikbare data
+    all_days = sorted(df[COL_DATE].dt.date.unique().tolist())
+    if not all_days:
+        st.warning("Geen datums gevonden in de data.")
         return
+    min_day = all_days[0]
+    max_day = all_days[-1]
 
-    # filter op geselecteerde dag (stabiel)
-    sel_ts = pd.Timestamp(selected_day)
-    df_day_all = df[df[COL_DATE].dt.normalize() == sel_ts.normalize()].copy()
+    # Kalender = enige filter
+    selected_day = _calendar_ui(df, min_day=min_day, max_day=max_day)
+    selected_ts = pd.Timestamp(selected_day)
+
+    # Dagfilter
+    df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
 
     if df_day_all.empty:
-        st.info(f"Geen data op {sel_ts.strftime('%d-%m-%Y')}.")
+        st.info(f"Geen data op {selected_ts.strftime('%d-%m-%Y')}.")
         return
 
-    # Als Summary bestaat op die dag -> gebruik alleen Summary, anders alle events
-    if (df_day_all["EVENT_NORM"] == "summary").any():
-        df_day_all = df_day_all[df_day_all["EVENT_NORM"] == "summary"].copy()
-
-    # sessie-keuze (alleen als Practice (1) & Practice (2) beide bestaan)
-    types_day = (
-        sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
-        if COL_TYPE in df_day_all.columns
-        else []
-    )
+    # Beschikbare types op deze dag
+    types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist()) if COL_TYPE in df_day_all.columns else []
 
     session_mode = "Alle sessies"
     if "Practice (1)" in types_day and "Practice (2)" in types_day:
@@ -583,10 +823,12 @@ def session_load_pages_main(df_gps: pd.DataFrame):
     else:
         if types_day:
             st.caption("Beschikbare sessies op deze dag: " + ", ".join(types_day))
+        else:
+            st.caption("Geen sessie-types gevonden op deze dag.")
 
-    df_day = _get_day_session_subset(df_day_all, session_mode)
+    df_day = _get_day_session_subset(df, pd.Timestamp(selected_day), session_mode)
     if df_day.empty:
-        st.info("Geen data na sessie-filter.")
+        st.info(f"Geen data na sessiefilter op {selected_ts.strftime('%d-%m-%Y')}.")
         return
 
     df_agg = _agg_by_player(df_day)
