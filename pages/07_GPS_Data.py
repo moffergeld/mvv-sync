@@ -5,12 +5,12 @@
 # - Auto-load (geen knop nodig) + caching (st.cache_data)
 # - GEEN date range / limit UI meer (laadt alles)
 # - Session Load: kalender in session_load_pages.py is de enige dag-filter
-# - ACWR: forced Summary-only (zoals eerder)
-# - FFP: optionele Summary-only toggle (kan je ook weghalen als je alles wil)
+# - ACWR: forced Summary-only (robust: ook "Summary (2)" etc.)
+# - FFP: laadt alles (pas aan indien je Summary-only wil)
 #
 # Vereist:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] (JWT)
+#   st.session_state["access_token"] (JWT) óf st.session_state["sb_session"].access_token
 #
 # Gebruikt modules:
 #   session_load_pages.py  -> session_load_pages_main(df)
@@ -80,6 +80,16 @@ def _safe_q(v: str) -> str:
     return requests.utils.quote(str(v), safe="")
 
 
+def _event_is_summary(series: pd.Series) -> pd.Series:
+    """
+    Robust Summary-detectie:
+    - accepteert 'Summary'
+    - accepteert 'Summary (2)', 'Summary (3)' etc.
+    """
+    s = series.astype(str).str.strip().str.lower()
+    return s.str.startswith("summary")
+
+
 # -------------------------
 # Supabase fetch -> DataFrame voor dashboards
 # -------------------------
@@ -121,11 +131,16 @@ GPS_SELECT_COLS = [
 
 
 def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Mapt Supabase gps_records kolommen naar de kolomnamen die jouw dashboards verwachten.
+    """
     if df.empty:
         return df
 
     df = df.copy()
-    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
+
+    if "datum" in df.columns:
+        df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
 
     rename_map = {
         "datum": "Datum",
@@ -164,6 +179,7 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=rename_map)
 
+    # Numeriek coercen
     num_cols = [c for c in df.columns if c not in ["Datum", "Speler", "Type", "Event"]]
     for c in num_cols:
         if c in df.columns:
@@ -172,6 +188,9 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     if "Event" in df.columns:
         df["Event"] = df["Event"].astype(str).str.strip()
 
+    if "Type" in df.columns:
+        df["Type"] = df["Type"].astype(str).str.strip()
+
     return df
 
 
@@ -179,13 +198,17 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
     """
     Laadt ALLE gps_records (zonder datumfilter UI).
-    Let op: REST heeft een limiet; verhoog als je meer nodig hebt.
+    Let op:
+      - PostgREST heeft server-side limieten/performance afhankelijk van je dataset.
+      - limit verhoog je hier indien nodig.
+      - user_id zit in args zodat cache-key per gebruiker uniek kan zijn.
     """
     limit = 500000  # pas aan als nodig
+
     q = (
         f"select={','.join(GPS_SELECT_COLS)}"
         f"&order=datum.asc"
-        f"&limit={limit}"
+        f"&limit={int(limit)}"
     )
     raw = rest_get(access_token, "gps_records", q)
     return _supabase_to_dashboard_df(raw)
@@ -212,8 +235,17 @@ except Exception as e:
 with st.spinner("GPS data laden..."):
     df_all = fetch_gps_df_all_cached(access_token=access_token, user_id=user_id)
 
+# Basic sanity checks
+required_cols = ["Datum", "Speler", "Type", "Event"]
+missing = [c for c in required_cols if c not in df_all.columns]
+if missing:
+    st.error(f"GPS data mist kolommen na mapping: {missing}")
+    st.stop()
+
+# Drop rows zonder datum of speler om downstream issues te voorkomen
+df_all = df_all.dropna(subset=["Datum", "Speler"]).copy()
 if df_all.empty:
-    st.info("Geen GPS data gevonden in Supabase.")
+    st.info("Geen bruikbare GPS data gevonden (na opschonen).")
     st.stop()
 
 # Subpagina navigatie
@@ -233,6 +265,8 @@ st.divider()
 if sub_page == "Session Load":
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
+        # Session Load kalender gebruikt df_all (ALLE data) voor dagkleuren
+        # en haalt zelf Summary data eruit voor de grafieken.
         session_load_pages.session_load_pages_main(df_all)
     with tabs[1]:
         st.dataframe(df_all, use_container_width=True, height=520)
@@ -241,7 +275,7 @@ if sub_page == "Session Load":
 # ACWR (forced Summary-only)
 # =========================
 elif sub_page == "ACWR":
-    df_acwr = df_all[df_all["Event"].astype(str).str.strip().str.lower() == "summary"].copy() if "Event" in df_all.columns else df_all.iloc[0:0].copy()
+    df_acwr = df_all[_event_is_summary(df_all["Event"])].copy()
 
     if df_acwr.empty:
         st.info("Geen Summary GPS data gevonden.")
@@ -257,10 +291,16 @@ elif sub_page == "ACWR":
 # FFP
 # =========================
 elif sub_page == "FFP":
-    # Als je ook hier ALTIJD alles wil: laat dit blok staan.
-    # Wil je FFP ook forced Summary-only? filter net zoals ACWR.
+    # Alles (geen filters). Als je FFP ook Summary-only wil:
+    # df_ffp = df_all[_event_is_summary(df_all["Event"])].copy()
+    df_ffp = df_all
+
+    if df_ffp.empty:
+        st.info("Geen GPS data gevonden.")
+        st.stop()
+
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
-        ffp_pages.ffp_pages_main(df_all)
+        ffp_pages.ffp_pages_main(df_ffp)
     with tabs[1]:
-        st.dataframe(df_all, use_container_width=True, height=520)
+        st.dataframe(df_ffp, use_container_width=True, height=520)
