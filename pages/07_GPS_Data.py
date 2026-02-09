@@ -19,7 +19,6 @@
 #   ffp_pages.py           -> ffp_pages_main(df)
 # ==========================================================
 
-import io
 import re
 from datetime import date
 
@@ -97,6 +96,10 @@ def _safe_q(v: str) -> str:
     return requests.utils.quote(str(v), safe="")
 
 
+def _norm_event(v) -> str:
+    return str(v).strip().lower()
+
+
 # -------------------------
 # Supabase fetch -> DataFrame voor dashboards
 # -------------------------
@@ -167,7 +170,7 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         "max_speed": "Max Speed",
         "avg_speed": "Avg Speed",
         "playerload3d": "Playerload3D",
-        "playerload2d": "playerload2D",  # consistent met jouw defaults
+        "playerload2d": "playerload2D",
         "total_accelerations": "Total Accelerations",
         "high_accelerations": "High Accelerations",
         "total_decelerations": "Total Decelerations",
@@ -185,10 +188,9 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=rename_map)
 
     # Numeriek
-    num_cols = [c for c in df.columns if c not in ["Datum", "Speler", "Type", "Event"]]
-    for c in num_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+    skip = {"Datum", "Speler", "Type", "Event"}
+    for c in [c for c in df.columns if c not in skip]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
     if "Event" in df.columns:
         df["Event"] = df["Event"].astype(str).str.strip()
@@ -219,11 +221,20 @@ def fetch_gps_df_cached(
         f"&order=datum.asc"
         f"&limit={int(limit)}"
     )
+
+    # ✅ Summary filter: tolerant voor hoofdletters (we filteren server-side op "Summary" voor performance,
+    # en client-side nogmaals tolerant voor oude varianten)
     if only_summary:
         q += f"&event=eq.{_safe_q('Summary')}"
 
     raw = rest_get(access_token, "gps_records", q)
-    return _supabase_to_dashboard_df(raw)
+    df = _supabase_to_dashboard_df(raw)
+
+    # extra tolerant client-side
+    if only_summary and not df.empty and "Event" in df.columns:
+        df = df[df["Event"].map(_norm_event) == "summary"].copy()
+
+    return df
 
 
 def load_df_for(
@@ -331,7 +342,7 @@ if sub_page == "Session Load":
     with tabs[0]:
         session_load_pages.session_load_pages_main(df_sl)
     with tabs[1]:
-        st.dataframe(df_sl, width="stretch", height=520)
+        st.dataframe(df_sl, use_container_width=True, height=520)
 
 # =========================
 # ACWR (forced Summary-only)
@@ -370,7 +381,7 @@ elif sub_page == "ACWR":
     with tabs[0]:
         acwr_pages.acwr_pages_main(df_acwr)
     with tabs[1]:
-        st.dataframe(df_acwr, width="stretch", height=520)
+        st.dataframe(df_acwr, use_container_width=True, height=520)
 
 # =========================
 # FFP
@@ -409,4 +420,4 @@ elif sub_page == "FFP":
     with tabs[0]:
         ffp_pages.ffp_pages_main(df_ffp)
     with tabs[1]:
-        st.dataframe(df_ffp, width="stretch", height=520)
+        st.dataframe(df_ffp, use_container_width=True, height=520)
