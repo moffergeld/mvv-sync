@@ -1,13 +1,12 @@
 # pages/07_GPS_Data.py
 # ==========================================================
-# GPS Data pagina (AUTO-LOAD + per-subpagina filters)
+# GPS Data pagina (AUTO-LOAD + per-subpagina)
 # - Subpagina's: Session Load, ACWR, FFP
-# - Sub-subpagina's (tabs) per subpagina
 # - Auto-load (geen knop nodig) + caching (st.cache_data)
-# - Per subpagina eigen filters:
-#     * Session Load: eigen date range + (optioneel) Summary-only toggle
-#     * ACWR: ALWAYS Summary-only (forced)
-#     * FFP: eigen date range + (optioneel) Summary-only toggle
+# - GEEN date range / limit UI meer (laadt alles)
+# - Session Load: kalender in session_load_pages.py is de enige dag-filter
+# - ACWR: forced Summary-only (zoals eerder)
+# - FFP: optionele Summary-only toggle (kan je ook weghalen als je alles wil)
 #
 # Vereist:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
@@ -19,8 +18,7 @@
 #   ffp_pages.py           -> ffp_pages_main(df)
 # ==========================================================
 
-import re
-from datetime import date
+from __future__ import annotations
 
 import pandas as pd
 import requests
@@ -64,7 +62,7 @@ def rest_headers(access_token: str) -> dict:
 
 def rest_get(access_token: str, table: str, query: str) -> pd.DataFrame:
     url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
-    r = requests.get(url, headers=rest_headers(access_token), timeout=60)
+    r = requests.get(url, headers=rest_headers(access_token), timeout=120)
     if not r.ok:
         raise RuntimeError(f"GET {table} failed ({r.status_code}): {r.text}")
     return pd.DataFrame(r.json())
@@ -78,26 +76,8 @@ def auth_get_user(access_token: str) -> dict:
     return r.json()
 
 
-def toast_ok(msg: str) -> None:
-    try:
-        st.toast(msg, icon="✅")
-    except Exception:
-        st.success(msg)
-
-
-def toast_err(msg: str) -> None:
-    try:
-        st.toast(msg, icon="❌")
-    except Exception:
-        st.error(msg)
-
-
 def _safe_q(v: str) -> str:
     return requests.utils.quote(str(v), safe="")
-
-
-def _norm_event(v) -> str:
-    return str(v).strip().lower()
 
 
 # -------------------------
@@ -141,9 +121,6 @@ GPS_SELECT_COLS = [
 
 
 def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Mapt Supabase gps_records kolommen naar de kolomnamen die jouw dashboards verwachten.
-    """
     if df.empty:
         return df
 
@@ -187,10 +164,10 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=rename_map)
 
-    # Numeriek
-    skip = {"Datum", "Speler", "Type", "Event"}
-    for c in [c for c in df.columns if c not in skip]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    num_cols = [c for c in df.columns if c not in ["Datum", "Speler", "Type", "Event"]]
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
 
     if "Event" in df.columns:
         df["Event"] = df["Event"].astype(str).str.strip()
@@ -199,82 +176,19 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_gps_df_cached(
-    access_token: str,
-    user_id: str,
-    d_from_iso: str,
-    d_to_iso: str,
-    only_summary: bool,
-    limit: int,
-) -> pd.DataFrame:
+def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
     """
-    Cache key bevat user_id + params.
-    access_token zit in args omdat we hem nodig hebben voor headers; ttl maakt dit praktisch.
+    Laadt ALLE gps_records (zonder datumfilter UI).
+    Let op: REST heeft een limiet; verhoog als je meer nodig hebt.
     """
-    d_from = date.fromisoformat(d_from_iso)
-    d_to = date.fromisoformat(d_to_iso)
-
+    limit = 500000  # pas aan als nodig
     q = (
         f"select={','.join(GPS_SELECT_COLS)}"
-        f"&datum=gte.{d_from.isoformat()}"
-        f"&datum=lte.{d_to.isoformat()}"
         f"&order=datum.asc"
-        f"&limit={int(limit)}"
+        f"&limit={limit}"
     )
-
-    # ✅ Summary filter: tolerant voor hoofdletters (we filteren server-side op "Summary" voor performance,
-    # en client-side nogmaals tolerant voor oude varianten)
-    if only_summary:
-        q += f"&event=eq.{_safe_q('Summary')}"
-
     raw = rest_get(access_token, "gps_records", q)
-    df = _supabase_to_dashboard_df(raw)
-
-    # extra tolerant client-side
-    if only_summary and not df.empty and "Event" in df.columns:
-        df = df[df["Event"].map(_norm_event) == "summary"].copy()
-
-    return df
-
-
-def load_df_for(
-    access_token: str,
-    user_id: str,
-    d_from: date,
-    d_to: date,
-    only_summary: bool,
-    limit: int,
-    cache_key: str,
-) -> pd.DataFrame:
-    """
-    Houdt ook per-subpagina een session_state kopie bij zodat navigeren instant voelt.
-    """
-    params = {
-        "from": d_from.isoformat(),
-        "to": d_to.isoformat(),
-        "only_summary": bool(only_summary),
-        "limit": int(limit),
-    }
-
-    last = st.session_state.get(f"{cache_key}_params")
-    need_reload = last != params or f"{cache_key}_df" not in st.session_state
-
-    if need_reload:
-        with st.spinner("GPS data laden..."):
-            df = fetch_gps_df_cached(
-                access_token=access_token,
-                user_id=user_id,
-                d_from_iso=params["from"],
-                d_to_iso=params["to"],
-                only_summary=params["only_summary"],
-                limit=params["limit"],
-            )
-        st.session_state[f"{cache_key}_df"] = df
-        st.session_state[f"{cache_key}_params"] = params
-    else:
-        df = st.session_state.get(f"{cache_key}_df", pd.DataFrame())
-
-    return df
+    return _supabase_to_dashboard_df(raw)
 
 
 # -------------------------
@@ -294,7 +208,15 @@ except Exception as e:
     st.error(f"Kon user niet ophalen: {e}")
     st.stop()
 
-# Subpagina navigatie (blijft staan bij reruns)
+# Auto-load alles
+with st.spinner("GPS data laden..."):
+    df_all = fetch_gps_df_all_cached(access_token=access_token, user_id=user_id)
+
+if df_all.empty:
+    st.info("Geen GPS data gevonden in Supabase.")
+    st.stop()
+
+# Subpagina navigatie
 sub_page = st.radio(
     "Subpagina",
     options=["Session Load", "ACWR", "FFP"],
@@ -309,72 +231,20 @@ st.divider()
 # SESSION LOAD
 # =========================
 if sub_page == "Session Load":
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
-        with c1:
-            sl_from = st.date_input("Van", value=date.today().replace(day=1), key="sl_from")
-        with c2:
-            sl_to = st.date_input("Tot", value=date.today(), key="sl_to")
-        with c3:
-            sl_limit = st.number_input("Max rijen", 1000, 500000, 200000, 10000, key="sl_limit")
-        with c4:
-            sl_only_summary = st.toggle("Alleen Summary", value=False, key="sl_only_summary")
-
-        if sl_from > sl_to:
-            st.error("Van-datum kan niet na Tot-datum liggen.")
-            st.stop()
-
-    df_sl = load_df_for(
-        access_token=access_token,
-        user_id=user_id,
-        d_from=sl_from,
-        d_to=sl_to,
-        only_summary=sl_only_summary,
-        limit=int(sl_limit),
-        cache_key="sl",
-    )
-
-    if df_sl.empty:
-        st.info("Geen GPS data gevonden voor deze filters.")
-        st.stop()
-
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
-        session_load_pages.session_load_pages_main(df_sl)
+        session_load_pages.session_load_pages_main(df_all)
     with tabs[1]:
-        st.dataframe(df_sl, use_container_width=True, height=520)
+        st.dataframe(df_all, use_container_width=True, height=520)
 
 # =========================
 # ACWR (forced Summary-only)
 # =========================
 elif sub_page == "ACWR":
-    with st.container(border=True):
-        c1, c2, c3 = st.columns([1, 1, 1.4])
-        with c1:
-            acwr_from = st.date_input("Van", value=date.today().replace(day=1), key="acwr_from")
-        with c2:
-            acwr_to = st.date_input("Tot", value=date.today(), key="acwr_to")
-        with c3:
-            acwr_limit = st.number_input("Max rijen", 1000, 500000, 200000, 10000, key="acwr_limit")
-
-        st.caption("ACWR gebruikt altijd Event='Summary' (automatisch geforceerd).")
-
-        if acwr_from > acwr_to:
-            st.error("Van-datum kan niet na Tot-datum liggen.")
-            st.stop()
-
-    df_acwr = load_df_for(
-        access_token=access_token,
-        user_id=user_id,
-        d_from=acwr_from,
-        d_to=acwr_to,
-        only_summary=True,  # ✅ forced
-        limit=int(acwr_limit),
-        cache_key="acwr",
-    )
+    df_acwr = df_all[df_all["Event"].astype(str).str.strip().str.lower() == "summary"].copy() if "Event" in df_all.columns else df_all.iloc[0:0].copy()
 
     if df_acwr.empty:
-        st.info("Geen Summary GPS data gevonden voor deze periode.")
+        st.info("Geen Summary GPS data gevonden.")
         st.stop()
 
     tabs = st.tabs(["ACWR module", "Data preview"])
@@ -387,37 +257,10 @@ elif sub_page == "ACWR":
 # FFP
 # =========================
 elif sub_page == "FFP":
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
-        with c1:
-            ffp_from = st.date_input("Van", value=date.today().replace(day=1), key="ffp_from")
-        with c2:
-            ffp_to = st.date_input("Tot", value=date.today(), key="ffp_to")
-        with c3:
-            ffp_limit = st.number_input("Max rijen", 1000, 500000, 200000, 10000, key="ffp_limit")
-        with c4:
-            ffp_only_summary = st.toggle("Alleen Summary", value=False, key="ffp_only_summary")
-
-        if ffp_from > ffp_to:
-            st.error("Van-datum kan niet na Tot-datum liggen.")
-            st.stop()
-
-    df_ffp = load_df_for(
-        access_token=access_token,
-        user_id=user_id,
-        d_from=ffp_from,
-        d_to=ffp_to,
-        only_summary=ffp_only_summary,
-        limit=int(ffp_limit),
-        cache_key="ffp",
-    )
-
-    if df_ffp.empty:
-        st.info("Geen GPS data gevonden voor deze filters.")
-        st.stop()
-
+    # Als je ook hier ALTIJD alles wil: laat dit blok staan.
+    # Wil je FFP ook forced Summary-only? filter net zoals ACWR.
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
-        ffp_pages.ffp_pages_main(df_ffp)
+        ffp_pages.ffp_pages_main(df_all)
     with tabs[1]:
-        st.dataframe(df_ffp, use_container_width=True, height=520)
+        st.dataframe(df_all, use_container_width=True, height=520)
