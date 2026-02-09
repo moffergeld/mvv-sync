@@ -236,6 +236,31 @@ with st.expander("Debug (data)", expanded=False):
         st.write("Min/Max Datum:", df_all["Datum"].min(), df_all["Datum"].max())
     if "Event" in df_all.columns and not df_all.empty:
         st.write("Event counts:", df_all["Event"].astype(str).value_counts().head(10))
+with st.expander("Debug (coverage)", expanded=False):
+    dcol = "Datum"
+    if dcol in df_all.columns and not df_all.empty:
+        tmp = df_all.copy()
+        tmp[dcol] = pd.to_datetime(tmp[dcol], errors="coerce")
+        tmp = tmp.dropna(subset=[dcol])
+
+        st.write("Unique days:", tmp[dcol].dt.date.nunique())
+        st.write("Unique months:", tmp[dcol].dt.to_period("M").nunique())
+
+        # maand-overzicht (aantal rijen per maand)
+        by_month = (
+            tmp.assign(month=tmp[dcol].dt.to_period("M").astype(str))
+               .groupby("month")
+               .size()
+               .sort_index()
+        )
+        st.dataframe(by_month.reset_index(name="rows"), use_container_width=True, height=280)
+
+        # top gaten: welke datums ontbreken tussen min/max?
+        all_days = pd.date_range(tmp[dcol].min().normalize(), tmp[dcol].max().normalize(), freq="D")
+        have_days = pd.Index(tmp[dcol].dt.normalize().unique())
+        missing = all_days.difference(have_days)
+        st.write("Missing days between min/max:", len(missing))
+        st.write("First missing examples:", [d.date() for d in missing[:20]])
 
 if df_all.empty:
     st.info("Geen GPS data gevonden in Supabase.")
