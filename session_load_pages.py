@@ -165,8 +165,8 @@ def _calendar_css_compact() -> None:
         div[data-testid="stButton"] button {{
             width: 100% !important;
             border-radius: 9px !important;
-            padding: 0px 2px !important;
-            min-height: 18px !important;
+            padding: 2px 4px !important;
+            min-height: 28px !important;
             line-height: 1.0 !important;
             border: 1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
@@ -620,3 +620,4 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
