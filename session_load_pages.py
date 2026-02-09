@@ -1,301 +1,622 @@
-# pages/07_GPS_Data.py
-# ==========================================================
-# GPS Data pagina (AUTO-LOAD + per-subpagina)
-# - Subpagina's: Session Load, ACWR, FFP
-# - Auto-load + caching (st.cache_data)
-# - Laadt alles via paging (offset/limit chunks) zodat je niet vastloopt op 1000/2000 rijen
-# - Session Load: kalender in session_load_pages.py is de enige dag-filter
-# - ACWR: forced Summary-only
-#
-# Vereist:
-#   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] (JWT)
-#
-# Gebruikt modules:
-#   session_load_pages.py  -> session_load_pages_main(df)
-#   acwr_pages.py          -> acwr_pages_main(df)
-#   ffp_pages.py           -> ffp_pages_main(df)
-# ==========================================================
+# session_load_pages.py
+# ==========================================
+# Session Load dashboard
+# - Kalender als enige dag-filter (geen sliders)
+# - Kleurvulling op de HELE tile:
+#   * Rood  = Match/Practice Match (Type bevat "match")
+#   * Blauw = Practice/data (wel data, geen match)
+#   * Grijs = geen data
+# - Compacte kalender (kleine tiles, minimale gaps)
+# - Maand + jaar tussen pijlen, maanden met hoofdletter
+# - Grafieken:
+#   * Total Distance
+#   * Sprint & High Sprint
+#   * Accelerations / Decelerations
+#   * HR zones + TRIMP (✅ gegroepeerde balken i.p.v. stacked)
+# ==========================================
 
 from __future__ import annotations
 
+import calendar
+from datetime import date, timedelta
+
+import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-import session_load_pages
-import acwr_pages
-import ffp_pages
+# Kolomnamen
+COL_DATE = "Datum"
+COL_PLAYER = "Speler"
+COL_EVENT = "Event"
+COL_TYPE = "Type"
 
-st.set_page_config(page_title="GPS Data", layout="wide")
+COL_TD = "Total Distance"
+COL_SPRINT = "Sprint"
+COL_HS = "High Sprint"
+COL_ACC_TOT = "Total Accelerations"
+COL_ACC_HI = "High Accelerations"
+COL_DEC_TOT = "Total Decelerations"
+COL_DEC_HI = "High Decelerations"
 
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
-SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    st.error("Missing secrets: SUPABASE_URL / SUPABASE_ANON_KEY")
-    st.stop()
+HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
+TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
-
-# -------------------------
-# Auth / REST helpers
-# -------------------------
-def get_access_token() -> str | None:
-    tok = st.session_state.get("access_token")
-    if tok:
-        return tok
-    sess = st.session_state.get("sb_session")
-    if sess is not None:
-        token = getattr(sess, "access_token", None)
-        if token:
-            return token
-    return None
+MVV_RED = "#FF0033"
+PRACTICE_BLUE = "#4AA3FF"
 
 
-def rest_headers(access_token: str) -> dict:
-    return {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+# -----------------------------
+# Helpers (data prep)
+# -----------------------------
+def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
+    """
+    - Datum naar datetime
+    - Alleen rijen met datum + speler
+    - TRIMP alias → 'TRIMP'
+    - Numeriek cast
+    """
+    df = df_gps.copy()
 
+    if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
+        return df.iloc[0:0].copy()
 
-def rest_get(access_token: str, table: str, query: str, timeout: int = 120) -> pd.DataFrame:
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
-    r = requests.get(url, headers=rest_headers(access_token), timeout=timeout)
-    if not r.ok:
-        raise RuntimeError(f"GET {table} failed ({r.status_code}): {r.text}")
-    return pd.DataFrame(r.json())
+    df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
+    df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-
-def auth_get_user(access_token: str) -> dict:
-    url = f"{SUPABASE_URL}/auth/v1/user"
-    r = requests.get(url, headers=rest_headers(access_token), timeout=30)
-    if not r.ok:
-        raise RuntimeError(f"AUTH user fetch failed ({r.status_code}): {r.text}")
-    return r.json()
-
-
-def _safe_q(v: str) -> str:
-    return requests.utils.quote(str(v), safe="")
-
-
-# -------------------------
-# Supabase fetch -> DataFrame voor dashboards
-# -------------------------
-GPS_SELECT_COLS = [
-    "datum",
-    "week",
-    "year",
-    "player_name",
-    "type",
-    "event",
-    "duration",
-    "total_distance",
-    "walking",
-    "jogging",
-    "running",
-    "sprint",
-    "high_sprint",
-    "number_of_sprints",
-    "number_of_high_sprints",
-    "number_of_repeated_sprints",
-    "max_speed",
-    "avg_speed",
-    "playerload3d",
-    "playerload2d",
-    "total_accelerations",
-    "high_accelerations",
-    "total_decelerations",
-    "high_decelerations",
-    "hrzone1",
-    "hrzone2",
-    "hrzone3",
-    "hrzone4",
-    "hrzone5",
-    "hrtrimp",
-    "hrzoneanaerobic",
-    "avg_hr",
-    "max_hr",
-]
-
-
-def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-
-    df = df.copy()
-    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
-
-    rename_map = {
-        "datum": "Datum",
-        "player_name": "Speler",
-        "type": "Type",
-        "event": "Event",
-        "week": "Week",
-        "year": "Year",
-        "duration": "Duration",
-        "total_distance": "Total Distance",
-        "walking": "Walk Distance",
-        "jogging": "Jog Distance",
-        "running": "Run Distance",
-        "sprint": "Sprint",
-        "high_sprint": "High Sprint",
-        "number_of_sprints": "Number of Sprints",
-        "number_of_high_sprints": "Number of High Sprints",
-        "number_of_repeated_sprints": "Number of Repeated Sprints",
-        "max_speed": "Max Speed",
-        "avg_speed": "Avg Speed",
-        "playerload3d": "Playerload3D",
-        "playerload2d": "playerload2D",
-        "total_accelerations": "Total Accelerations",
-        "high_accelerations": "High Accelerations",
-        "total_decelerations": "Total Decelerations",
-        "high_decelerations": "High Decelerations",
-        "hrzone1": "HRzone1",
-        "hrzone2": "HRzone2",
-        "hrzone3": "HRzone3",
-        "hrzone4": "HRzone4",
-        "hrzone5": "HRzone5",
-        "hrtrimp": "HRTrimp",
-        "hrzoneanaerobic": "HRzoneAnaerobic",
-        "avg_hr": "Avg HR",
-        "max_hr": "Max HR",
-    }
-    df = df.rename(columns=rename_map)
-
-    # Numeriek
-    num_cols = [c for c in df.columns if c not in ["Datum", "Speler", "Type", "Event"]]
-    for c in num_cols:
+    # TRIMP alias → 'TRIMP'
+    trimp_col = None
+    for c in TRIMP_CANDIDATES:
         if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+            trimp_col = c
+            break
+    if trimp_col is not None:
+        df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0)
+    else:
+        df["TRIMP"] = 0.0
 
-    for c in ["Speler", "Type", "Event"]:
+    numeric_cols = [
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
+    ]
+    for c in numeric_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    for c in [COL_PLAYER, COL_EVENT, COL_TYPE]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
 
     return df
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_gps_df_all_paged_cached(
-    access_token: str,
-    user_id: str,
-    table: str = "gps_records",
-    chunk_size: int = 10000,
-    max_rows: int = 100000,  # ✅ match je Supabase fetch-limit instelling
-) -> pd.DataFrame:
+def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
     """
-    Laadt alles via paging (offset/limit) zodat je niet blijft hangen op 1000/2000 rijen.
-    max_rows = harde cap om performance in Streamlit te bewaren.
+    days_with_data: dagen met minstens 1 record
+    match_days: dagen die als match/practice match getagged zijn
     """
-    all_parts: list[pd.DataFrame] = []
-    offset = 0
+    if df.empty:
+        return set(), set()
 
-    select = ",".join(GPS_SELECT_COLS)
+    d = df.copy()
+    d["_d"] = pd.to_datetime(d[COL_DATE], errors="coerce").dt.date
+    days_with_data = set(d["_d"].dropna().unique().tolist())
 
-    while True:
-        limit = min(chunk_size, max_rows - offset)
-        if limit <= 0:
-            break
+    match_days: set[date] = set()
+    if COL_TYPE in d.columns:
+        t = d[COL_TYPE].astype(str).str.lower()
+        match_days = set(d.loc[t.str.contains("match", na=False), "_d"].dropna().unique().tolist())
 
-        q = (
-            f"select={select}"
-            f"&order=datum.asc"
-            f"&limit={int(limit)}"
-            f"&offset={int(offset)}"
-        )
-
-        part = rest_get(access_token, table, q, timeout=180)
-        if part.empty:
-            break
-
-        all_parts.append(part)
-        offset += len(part)
-
-        if len(part) < limit:
-            break
-
-    df_raw = pd.concat(all_parts, ignore_index=True) if all_parts else pd.DataFrame()
-    return _supabase_to_dashboard_df(df_raw)
+    return days_with_data, match_days
 
 
-# -------------------------
-# UI
-# -------------------------
-st.title("GPS Data")
+def _month_label_nl(y: int, m: int) -> str:
+    months = [
+        "", "Januari", "Februari", "Maart", "April", "Mei", "Juni",
+        "Juli", "Augustus", "September", "Oktober", "November", "December"
+    ]
+    return f"{months[m]} {y}"
 
-access_token = get_access_token()
-if not access_token:
-    st.error("Niet ingelogd (access_token ontbreekt).")
-    st.stop()
 
-try:
-    u = auth_get_user(access_token)
-    user_id = u.get("id") or "unknown"
-except Exception as e:
-    st.error(f"Kon user niet ophalen: {e}")
-    st.stop()
+# -----------------------------
+# Kalender UI
+# -----------------------------
+def _calendar_css_compact() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .sl-range {{
+            opacity: .7;
+            font-size: 12px;
+            white-space: nowrap;
+            margin-top:-6px;
+            text-align:right;
+        }}
 
-# Auto-load alles (paged)
-with st.spinner("GPS data laden..."):
-    df_all = fetch_gps_df_all_paged_cached(
-        access_token=access_token,
-        user_id=user_id,
-        table="gps_records",
-        chunk_size=10000,
-        max_rows=100000,  # ✅
+        .sl-legend {{
+            display:flex;
+            gap:16px;
+            align-items:center;
+            margin: 6px 0 10px 0;
+            font-size: 12px;
+            opacity:.9;
+        }}
+        .sl-dot {{
+            width:10px; height:10px;
+            border-radius:50%;
+            display:inline-block;
+            margin-right:7px;
+        }}
+        .sl-dot.match {{ background:{MVV_RED}; }}
+        .sl-dot.practice {{ background:{PRACTICE_BLUE}; }}
+        .sl-dot.none {{ background: rgba(180,180,180,0.45); }}
+
+        .sl-dow {{
+            font-size: 12px;
+            font-weight: 700;
+            opacity: .85;
+            margin-bottom: 2px;
+        }}
+
+        /* 🔻 Compact knoppen: minder breed + lagere hoogte */
+        div[data-testid="stButton"] button {{
+            width: 100% !important;
+            border-radius: 9px !important;
+            padding: 0px 2px !important;
+            min-height: 18px !important;
+            line-height: 1.0 !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            background: rgba(255,255,255,0.03) !important;
+            font-weight: 900 !important;
+            font-size: 11px !important;
+            white-space: nowrap !important;
+        }}
+        div[data-testid="stButton"] button:hover {{
+            border: 1px solid rgba(255,255,255,0.22) !important;
+            background: rgba(255,255,255,0.05) !important;
+        }}
+
+        /* 🔻 Minder gaps tussen columns/rows */
+        section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.06rem !important; }}
+        div[data-testid="stVerticalBlock"] > div {{ gap: 0.04rem; }}
+
+        /* 🔻 Zet container wat compacter */
+        .sl-wrap {{
+            margin-top: -6px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-if df_all.empty:
-    st.info("Geen GPS data gevonden in Supabase.")
-    st.stop()
 
-# Subpagina navigatie
-sub_page = st.radio(
-    "Subpagina",
-    options=["Session Load", "ACWR", "FFP"],
-    horizontal=True,
-    key="gpsdata_subpage",
-    label_visibility="collapsed",
-)
+def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
+    _calendar_css_compact()
 
-st.divider()
+    days_with_data, match_days = _compute_day_sets(df)
 
-# =========================
-# SESSION LOAD
-# =========================
-if sub_page == "Session Load":
-    tabs = st.tabs(["Dashboard", "Data preview"])
-    with tabs[0]:
-        session_load_pages.session_load_pages_main(df_all)
-    with tabs[1]:
-        st.dataframe(df_all, use_container_width=True, height=520)
+    min_day = min(days_with_data) if days_with_data else date.today()
+    max_day = max(days_with_data) if days_with_data else date.today()
 
-# =========================
-# ACWR (forced Summary-only)
-# =========================
-elif sub_page == "ACWR":
-    if "Event" in df_all.columns:
-        df_acwr = df_all[df_all["Event"].astype(str).str.strip().str.lower() == "summary"].copy()
-    else:
-        df_acwr = df_all.iloc[0:0].copy()
+    if f"{key_prefix}_selected" not in st.session_state:
+        st.session_state[f"{key_prefix}_selected"] = max_day
+    if f"{key_prefix}_ym" not in st.session_state:
+        sel0: date = st.session_state[f"{key_prefix}_selected"]
+        st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
 
-    if df_acwr.empty:
-        st.info("Geen Summary GPS data gevonden.")
-        st.stop()
+    y, m = st.session_state[f"{key_prefix}_ym"]
 
-    tabs = st.tabs(["ACWR module", "Data preview"])
-    with tabs[0]:
-        acwr_pages.acwr_pages_main(df_acwr)
-    with tabs[1]:
-        st.dataframe(df_acwr, use_container_width=True, height=520)
+    # Toolbar: ‹  [Maand Jaar]  ›   today
+    c1, c2, c3, c4 = st.columns([0.65, 3.0, 0.65, 0.9])
+    with c1:
+        if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
+            first = date(y, m, 1)
+            prev_last = first - timedelta(days=1)
+            st.session_state[f"{key_prefix}_ym"] = (prev_last.year, prev_last.month)
+            y, m = st.session_state[f"{key_prefix}_ym"]
+    with c2:
+        st.markdown(
+            f"<div style='text-align:center;font-weight:900;font-size:16px;'>{_month_label_nl(y,m)}</div>",
+            unsafe_allow_html=True,
+        )
+    with c3:
+        if st.button("›", key=f"{key_prefix}_next", use_container_width=True):
+            last_day = calendar.monthrange(y, m)[1]
+            nxt = date(y, m, last_day) + timedelta(days=1)
+            st.session_state[f"{key_prefix}_ym"] = (nxt.year, nxt.month)
+            y, m = st.session_state[f"{key_prefix}_ym"]
+    with c4:
+        if st.button("today", key=f"{key_prefix}_today", use_container_width=True):
+            t = date.today()
+            st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
+            st.session_state[f"{key_prefix}_selected"] = t
+            y, m = st.session_state[f"{key_prefix}_ym"]
 
-# =========================
-# FFP
-# =========================
-elif sub_page == "FFP":
-    tabs = st.tabs(["Dashboard", "Data preview"])
-    with tabs[0]:
-        ffp_pages.ffp_pages_main(df_all)
-    with tabs[1]:
-        st.dataframe(df_all, use_container_width=True, height=520)
+    st.markdown(
+        f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="sl-legend">
+          <span><span class="sl-dot match"></span>Match/Practice Match</span>
+          <span><span class="sl-dot practice"></span>Practice/data</span>
+          <span><span class="sl-dot none"></span>geen data</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cal = calendar.Calendar(firstweekday=0)  # Monday
+    month_days = list(cal.itermonthdates(y, m))
+    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
+
+    # CSS per dag: HELE tile opvullen
+    css_rules = []
+    for d in month_days:
+        if d.month != m:
+            continue
+
+        dkey = f"{key_prefix}_d_{d.isoformat()}"
+
+        if d in match_days:
+            bg = "rgba(255,0,51,0.55)"
+            bd = "rgba(255,0,51,0.85)"
+        elif d in days_with_data:
+            bg = "rgba(74,163,255,0.38)"
+            bd = "rgba(74,163,255,0.65)"
+        else:
+            bg = "rgba(180,180,180,0.14)"
+            bd = "rgba(180,180,180,0.22)"
+
+        css_rules.append(
+            f"""
+            button[id*="{dkey}"] {{
+                background: {bg} !important;
+                border: 1px solid {bd} !important;
+            }}
+            """
+        )
+
+    sel = st.session_state.get(f"{key_prefix}_selected")
+    if isinstance(sel, date):
+        selkey = f"{key_prefix}_d_{sel.isoformat()}"
+        css_rules.append(
+            f"""
+            button[id*="{selkey}"] {{
+                outline: 2px solid rgba(255,255,255,0.85) !important;
+                box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
+            }}
+            """
+        )
+
+    st.markdown(f"<style>{''.join(css_rules)}</style>", unsafe_allow_html=True)
+
+    # DOW headers
+    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+    header_cols = st.columns(7)
+    for i, name in enumerate(dows):
+        with header_cols[i]:
+            st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
+
+    # Grid: dagnummer in de knop (geen "select")
+    for week in weeks:
+        cols = st.columns(7)
+        for i, d in enumerate(week):
+            in_month = (d.month == m)
+            label = f"{d.day}"
+            bkey = f"{key_prefix}_d_{d.isoformat()}"
+            with cols[i]:
+                if st.button(label, key=bkey, disabled=not in_month, use_container_width=True):
+                    st.session_state[f"{key_prefix}_selected"] = d
+                    st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
+
+    return st.session_state[f"{key_prefix}_selected"]
+
+
+# -----------------------------
+# Data helpers
+# -----------------------------
+def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
+    df_day = df[df[COL_DATE].dt.date == day.date()].copy()
+    if df_day.empty or COL_TYPE not in df_day.columns:
+        return df_day
+
+    types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
+    if not types_day:
+        return df_day
+
+    if "Practice (1)" in types_day and "Practice (2)" in types_day:
+        if session_mode == "Practice (1)":
+            return df_day[df_day[COL_TYPE].astype(str) == "Practice (1)"].copy()
+        if session_mode == "Practice (2)":
+            return df_day[df_day[COL_TYPE].astype(str) == "Practice (2)"].copy()
+        if session_mode == "Beide (1+2)":
+            return df_day[df_day[COL_TYPE].astype(str).isin(["Practice (1)", "Practice (2)"])].copy()
+        return df_day
+
+    if session_mode in types_day:
+        return df_day[df_day[COL_TYPE].astype(str) == session_mode].copy()
+
+    return df_day
+
+
+def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    metric_cols = [
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
+    ]
+    metric_cols = [c for c in metric_cols if c in df.columns]
+    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
+
+
+# -----------------------------
+# Plot helpers (kleuren zoals voorheen)
+# -----------------------------
+def _plot_total_distance(df_agg: pd.DataFrame):
+    if COL_TD not in df_agg.columns:
+        st.info("Kolom 'Total Distance' niet gevonden in de data.")
+        return
+
+    data = df_agg.sort_values(COL_TD, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str).tolist()
+    vals = data[COL_TD].to_numpy()
+
+    fig = go.Figure()
+    fig.add_bar(
+        x=players,
+        y=vals,
+        marker_color="rgba(255,150,150,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in vals],
+        textposition="inside",
+        insidetextanchor="middle",
+        name="Total Distance",
+    )
+
+    mean_val = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
+    fig.add_hline(
+        y=mean_val,
+        line_dash="dot",
+        line_color="black",
+        annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
+        annotation_position="top left",
+        annotation_font_size=10,
+    )
+
+    fig.update_layout(
+        title="Total Distance",
+        yaxis_title="Total Distance (m)",
+        xaxis_title=None,
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
+    fig.update_xaxes(tickangle=90)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _plot_sprint_hs(df_agg: pd.DataFrame):
+    if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
+        st.info("Sprint / High Sprint kolommen niet compleet in de data.")
+        return
+
+    data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str).tolist()
+    sprint_vals = data[COL_SPRINT].to_numpy()
+    hs_vals = data[COL_HS].to_numpy()
+
+    fig = go.Figure()
+    x = np.arange(len(players))
+
+    fig.add_bar(
+        x=x - 0.2,
+        y=sprint_vals,
+        width=0.4,
+        name="Sprint",
+        marker_color="rgba(255,180,180,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
+        textposition="outside",
+    )
+    fig.add_bar(
+        x=x + 0.2,
+        y=hs_vals,
+        width=0.4,
+        name="High Sprint",
+        marker_color="rgba(150,0,0,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
+        textposition="outside",
+    )
+
+    fig.update_layout(
+        title="Sprint & High Sprint Distance",
+        yaxis_title="Distance (m)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
+    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _plot_acc_dec(df_agg: pd.DataFrame):
+    have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
+    if len(have_cols) == 0:
+        st.info("Geen Acceleration/Deceleration kolommen gevonden.")
+        return
+
+    sort_col = COL_ACC_TOT if COL_ACC_TOT in df_agg.columns else have_cols[0]
+    data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str).tolist()
+    x = np.arange(len(players))
+
+    fig = go.Figure()
+    width = 0.18
+
+    if COL_ACC_TOT in data.columns:
+        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
+                    marker_color="rgba(255,180,180,0.9)")
+    if COL_ACC_HI in data.columns:
+        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations",
+                    marker_color="rgba(200,0,0,0.9)")
+    if COL_DEC_TOT in data.columns:
+        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations",
+                    marker_color="rgba(180,210,255,0.9)")
+    if COL_DEC_HI in data.columns:
+        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
+                    marker_color="rgba(0,60,180,0.9)")
+
+    fig.update_layout(
+        title="Accelerations / Decelerations",
+        yaxis_title="Aantal (N)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
+    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _plot_hr_trimp(df_agg: pd.DataFrame):
+    have_hr = [c for c in HR_COLS if c in df_agg.columns]
+    has_trimp = "TRIMP" in df_agg.columns
+
+    if not have_hr and not has_trimp:
+        st.info("Geen HR-zone kolommen of TRIMP-kolom gevonden.")
+        return
+
+    players = df_agg[COL_PLAYER].astype(str).tolist()
+    base_x = np.arange(len(players))
+
+    fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
+
+    color_map = {
+        "HRzone1": "rgba(180,180,180,0.9)",
+        "HRzone2": "rgba(150,200,255,0.9)",
+        "HRzone3": "rgba(0,150,0,0.9)",
+        "HRzone4": "rgba(220,220,50,0.9)",
+        "HRzone5": "rgba(255,0,0,0.9)",
+    }
+
+    # ✅ gegroepeerde balken
+    if have_hr:
+        n = len(have_hr)
+        group_w = 0.80
+        bar_w = group_w / max(n, 1)
+        start = -group_w / 2 + bar_w / 2
+
+        for idx, z in enumerate(have_hr):
+            x = base_x + (start + idx * bar_w)
+            fig.add_bar(
+                x=x,
+                y=df_agg[z],
+                name=z,
+                marker_color=color_map.get(z, "gray"),
+                width=bar_w * 0.95,
+                secondary_y=False,
+            )
+
+    if has_trimp:
+        fig.add_trace(
+            go.Scatter(
+                x=base_x,
+                y=df_agg["TRIMP"],
+                mode="lines+markers",
+                name="HR Trimp",
+                line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_layout(
+        title="Time in HR zone",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+        bargap=0.15,
+    )
+    fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
+    fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
+    if has_trimp:
+        fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -----------------------------
+# Hoofd entrypoint
+# -----------------------------
+def session_load_pages_main(df_gps: pd.DataFrame):
+    st.header("Session Load")
+
+    missing = [c for c in [COL_DATE, COL_PLAYER] if c not in df_gps.columns]
+    if missing:
+        st.error(f"Ontbrekende kolommen in GPS-data: {missing}")
+        return
+
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _prep_cached(dfin: pd.DataFrame) -> pd.DataFrame:
+        return _prepare_gps(dfin)
+
+    df = _prep_cached(df_gps)
+    if df.empty:
+        st.warning("Geen bruikbare GPS-data gevonden.")
+        return
+
+    selected_d = calendar_day_picker(df, key_prefix="slcal")
+    selected_day = pd.Timestamp(selected_d)
+
+    df_day_all = df[df[COL_DATE].dt.date == selected_day.date()].copy()
+    if df_day_all.empty:
+        st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
+        return
+
+    # Type/sessie keuze
+    session_mode = "Alles"
+    if COL_TYPE in df_day_all.columns:
+        types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
+        if types_day:
+            if "Practice (1)" in types_day and "Practice (2)" in types_day:
+                session_mode = st.radio(
+                    "Sessie",
+                    options=["Practice (1)", "Practice (2)", "Beide (1+2)"],
+                    index=2,
+                    key="session_load_session_mode",
+                )
+            elif len(types_day) > 1:
+                session_mode = st.selectbox(
+                    "Sessie/Type",
+                    options=["Alles"] + types_day,
+                    index=0,
+                    key="session_load_type_mode",
+                )
+            else:
+                st.caption("Beschikbare sessie op deze dag: " + types_day[0])
+
+    df_day = df_day_all if session_mode == "Alles" else _get_day_session_subset(df, selected_day, session_mode)
+    if df_day.empty:
+        st.warning("Geen data gevonden voor deze selectie (dag + sessie/type).")
+        return
+
+    df_agg = _agg_by_player(df_day)
+    if df_agg.empty:
+        st.warning("Geen data om te aggregeren per speler.")
+        return
+
+    col_top1, col_top2 = st.columns(2)
+    with col_top1:
+        _plot_total_distance(df_agg)
+    with col_top2:
+        _plot_sprint_hs(df_agg)
+
+    col_bot1, col_bot2 = st.columns(2)
+    with col_bot1:
+        _plot_acc_dec(df_agg)
+    with col_bot2:
+        _plot_hr_trimp(df_agg)
