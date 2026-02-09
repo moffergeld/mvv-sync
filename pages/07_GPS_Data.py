@@ -2,19 +2,10 @@
 # ==========================================================
 # GPS Data pagina (AUTO-LOAD + per-subpagina)
 # - Subpagina's: Session Load, ACWR, FFP
-# - Auto-load (geen knop) + caching (st.cache_data)
-# - Laadt ALLE gps_records via pagination (Range headers) -> geen "eerste 1000" probleem
+# - Auto-load + caching
+# - Laadt ALLE gps_records via limit+offset pagination (robust)
 # - Session Load: kalender in session_load_pages.py is de enige dag-filter
 # - ACWR: forced Summary-only
-#
-# Vereist:
-#   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] (JWT)
-#
-# Gebruikt modules:
-#   session_load_pages.py  -> session_load_pages_main(df)
-#   acwr_pages.py          -> acwr_pages_main(df)
-#   ffp_pages.py           -> ffp_pages_main(df)
 # ==========================================================
 
 from __future__ import annotations
@@ -67,47 +58,26 @@ def auth_get_user(access_token: str) -> dict:
     return r.json()
 
 
-def rest_get_paged(
+def rest_get_limit_offset(
     access_token: str,
     table: str,
-    query: str,
-    page_size: int = 10000,
-    max_rows: int = 600000,
-    timeout: int = 120,
-) -> pd.DataFrame:
+    base_query: str,
+    limit: int,
+    offset: int,
+    timeout: int = 180,
+) -> list[dict]:
     """
-    Supabase PostgREST pagination via Range header.
-    - query must NOT include limit/offset; we will apply Range.
+    Supabase PostgREST pagination via limit+offset (robust).
+    base_query: query WITHOUT limit/offset.
     """
-    url = f"{SUPABASE_URL}/rest/v1/{table}?{query}"
-
-    out: list[dict] = []
-    start = 0
-
-    while True:
-        end = start + page_size - 1
-        headers = rest_headers(access_token)
-        headers["Range"] = f"{start}-{end}"
-
-        r = requests.get(url, headers=headers, timeout=timeout)
-        if not r.ok:
-            raise RuntimeError(f"GET {table} failed ({r.status_code}): {r.text}")
-
-        batch = r.json()
-        if not isinstance(batch, list):
-            raise RuntimeError("Unexpected response (expected list).")
-
-        out.extend(batch)
-
-        if len(batch) < page_size:
-            break
-
-        if len(out) >= max_rows:
-            break
-
-        start += page_size
-
-    return pd.DataFrame(out)
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{base_query}&limit={int(limit)}&offset={int(offset)}"
+    r = requests.get(url, headers=rest_headers(access_token), timeout=timeout)
+    if not r.ok:
+        raise RuntimeError(f"GET {table} failed ({r.status_code}): {r.text}")
+    data = r.json()
+    if not isinstance(data, list):
+        raise RuntimeError("Unexpected response (expected list).")
+    return data
 
 
 # -------------------------
@@ -194,7 +164,6 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=rename_map)
 
-    # numeriek
     num_cols = [c for c in df.columns if c not in ["Datum", "Speler", "Type", "Event"]]
     for c in num_cols:
         if c in df.columns:
@@ -202,7 +171,6 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 
     if "Event" in df.columns:
         df["Event"] = df["Event"].astype(str).str.strip()
-
     if "Type" in df.columns:
         df["Type"] = df["Type"].astype(str).str.strip()
 
@@ -212,18 +180,34 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
     """
-    Laadt ALLE gps_records met pagination (Range header).
+    Laadt ALLE gps_records via limit+offset tot batch leeg is.
     """
-    query = f"select={','.join(GPS_SELECT_COLS)}&order=datum.asc"
-    raw = rest_get_paged(
-        access_token=access_token,
-        table="gps_records",
-        query=query,
-        page_size=10000,
-        max_rows=800000,
-        timeout=180,
-    )
-    return _supabase_to_dashboard_df(raw)
+    page_size = 10000
+    max_rows = 1000000  # safety
+    base_query = f"select={','.join(GPS_SELECT_COLS)}&order=datum.asc"
+
+    all_rows: list[dict] = []
+    offset = 0
+
+    while True:
+        batch = rest_get_limit_offset(
+            access_token=access_token,
+            table="gps_records",
+            base_query=base_query,
+            limit=page_size,
+            offset=offset,
+            timeout=180,
+        )
+        if not batch:
+            break
+
+        all_rows.extend(batch)
+        offset += page_size
+
+        if len(all_rows) >= max_rows:
+            break
+
+    return _supabase_to_dashboard_df(pd.DataFrame(all_rows))
 
 
 # -------------------------
@@ -246,13 +230,12 @@ except Exception as e:
 with st.spinner("GPS data laden..."):
     df_all = fetch_gps_df_all_cached(access_token=access_token, user_id=user_id)
 
-# Debug (handig bij issues)
 with st.expander("Debug (data)", expanded=False):
     st.write("Rows:", len(df_all))
-    if "Datum" in df_all.columns:
+    if "Datum" in df_all.columns and not df_all.empty:
         st.write("Min/Max Datum:", df_all["Datum"].min(), df_all["Datum"].max())
-    if "Event" in df_all.columns:
-        st.write("Event unique (top 10):", df_all["Event"].astype(str).value_counts().head(10))
+    if "Event" in df_all.columns and not df_all.empty:
+        st.write("Event counts:", df_all["Event"].astype(str).value_counts().head(10))
 
 if df_all.empty:
     st.info("Geen GPS data gevonden in Supabase.")
@@ -268,9 +251,6 @@ sub_page = st.radio(
 
 st.divider()
 
-# =========================
-# SESSION LOAD
-# =========================
 if sub_page == "Session Load":
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
@@ -278,16 +258,12 @@ if sub_page == "Session Load":
     with tabs[1]:
         st.dataframe(df_all, use_container_width=True, height=520)
 
-# =========================
-# ACWR (forced Summary-only)
-# =========================
 elif sub_page == "ACWR":
     if "Event" not in df_all.columns:
         st.info("Geen Event-kolom beschikbaar; ACWR vereist Summary.")
         st.stop()
 
     df_acwr = df_all[df_all["Event"].astype(str).str.strip().str.lower() == "summary"].copy()
-
     if df_acwr.empty:
         st.info("Geen Summary GPS data gevonden.")
         st.stop()
@@ -298,9 +274,6 @@ elif sub_page == "ACWR":
     with tabs[1]:
         st.dataframe(df_acwr, use_container_width=True, height=520)
 
-# =========================
-# FFP
-# =========================
 elif sub_page == "FFP":
     tabs = st.tabs(["Dashboard", "Data preview"])
     with tabs[0]:
