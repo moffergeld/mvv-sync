@@ -33,14 +33,7 @@ try:
 except Exception:
     create_client = None
 
-STAFF_ROLES = {
-    "staff",
-    "performance_coach",
-    "data_scientist",
-    "technical_director",
-    "physio",
-}
-
+is_staff = (role == "staff")
 
 # -----------------------------
 # Supabase helpers
