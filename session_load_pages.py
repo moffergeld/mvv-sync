@@ -1,10 +1,17 @@
 # session_load_pages.py
 # ==========================================
-# Session Load dashboard
-# - Kalender met bolletjes (zoals je eerder had, werkt stabiel)
-# - Alleen Summary (Event == "Summary")
-# - Geen "gap columns" meer + tiles compact via CSS
-# - HR-zone chart: gegroepeerde balken (naast elkaar) i.p.v. stacked
+# Session Load dashboard (MVV)
+# - Gebruikt ALLEEN Event == "Summary" (dus niet alles optellen)
+# - Kalender:
+#   * compacte tiles (lager + minder padding)
+#   * half zo breed (14 columns: [button][spacer] x 7)
+#   * dot + dagnummer in de knop (🔴 match, 🔵 data, ⚪ geen data)
+#   * maandnaam met hoofdletter + jaar tussen de pijlen
+# - Grafieken:
+#   * Total Distance
+#   * Sprint & High Sprint (grouped)
+#   * Accelerations / Decelerations (grouped)
+#   * HR zones (GROUPED naast elkaar) + TRIMP lijn (2e y-as)
 # ==========================================
 
 from __future__ import annotations
@@ -18,7 +25,9 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Kolomnamen
+# -----------------------------
+# Kolomnamen (zoals in jouw data)
+# -----------------------------
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -38,16 +47,11 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
-NL_MONTHS = [
-    "Januari", "Februari", "Maart", "April", "Mei", "Juni",
-    "Juli", "Augustus", "September", "Oktober", "November", "December"
-]
-
 
 # -----------------------------
-# UI / CSS (compact calendar)
+# CSS (compact kalender + dot niet in de hoek)
 # -----------------------------
-def _calendar_css_compact():
+def _calendar_css_compact() -> None:
     st.markdown(
         """
         <style>
@@ -64,66 +68,80 @@ def _calendar_css_compact():
         /* Compact buttons */
         div[data-testid="stButton"] button {
             width: 100% !important;
-            border-radius: 12px !important;
-            padding: 1px 6px !important;
-            min-height: 22px !important;
-            line-height: 1.0 !important;
+            border-radius: 10px !important;
+            padding: 3px 6px !important;
+            min-height: 26px !important;
+            line-height: 1 !important;
             border: 1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
             font-weight: 800 !important;
-            font-size: 11px !important;
+            font-size: 12px !important;
             white-space: nowrap !important;
-            text-align: left !important;
+
+            /* center inhoud zodat de dot niet "in de hoek" lijkt */
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 6px !important;
         }
         div[data-testid="stButton"] button:hover {
             border: 1px solid rgba(255,255,255,0.22) !important;
             background: rgba(255,255,255,0.05) !important;
         }
 
-        /* Minder ruimte tussen columns/rows */
-        section.main div[data-testid="stHorizontalBlock"] { gap: 0.10rem !important; }
-        div[data-testid="stVerticalBlock"] > div { gap: 0.06rem; }
+        /* Minder ruimte tussen rows/cols */
+        div[data-testid="stVerticalBlock"] > div { gap: 0.12rem; }
+        section.main div[data-testid="stHorizontalBlock"] { gap: 0.30rem !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
+NL_MONTHS = [
+    "Januari", "Februari", "Maart", "April", "Mei", "Juni",
+    "Juli", "Augustus", "September", "Oktober", "November", "December"
+]
+
+
 def _month_label_nl(y: int, m: int) -> str:
-    return f"{NL_MONTHS[m-1]} {y}"
+    return f"{NL_MONTHS[m - 1]} {y}"
 
 
 # -----------------------------
-# Data prep
+# Data prep (ALLEEN Summary)
 # -----------------------------
 def _normalize_event(e: str) -> str:
     s = str(e).strip().lower()
-    return s
+    return "summary" if s == "summary" else s
+
+
+def _is_match_type(t: str) -> bool:
+    s = str(t).strip().lower()
+    return "match" in s
 
 
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df = df_gps.copy()
+
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
         return df.iloc[0:0].copy()
 
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-    # ✅ Session Load: alleen Summary
+    # ✅ Session Load moet op Summary draaien
     if COL_EVENT in df.columns:
-        df["EVENT_NORM"] = df[COL_EVENT].map(_normalize_event)
-        df = df[df["EVENT_NORM"] == "summary"].copy()
+        df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
+        df = df[df["_event_norm"] == "summary"].copy()
 
-    # TRIMP alias -> TRIMP
+    # TRIMP alias -> "TRIMP"
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
             trimp_col = c
             break
-    if trimp_col is not None:
-        df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0)
-    else:
-        df["TRIMP"] = 0.0
+    df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
 
     numeric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
@@ -141,66 +159,29 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _is_match_type(t: str) -> bool:
-    s = str(t).strip().lower()
-    return "match" in s
-
-
-@st.cache_data(ttl=300, show_spinner=False)
 def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
+    """
+    Belangrijk: NIET cachen hier, zodat je nooit "oude" lege sets terugkrijgt.
+    """
     if df.empty:
         return set(), set()
 
     d = df.copy()
-    d["DAY"] = d[COL_DATE].dt.date
+    d["_day"] = d[COL_DATE].dt.date  # python date objects
+    days_with_data = set(d["_day"].dropna().tolist())
 
-    days_with_data = set(d["DAY"].dropna().unique().tolist())
-
-    match_days = set()
+    match_days: set[date] = set()
     if COL_TYPE in d.columns:
         mask = d[COL_TYPE].map(_is_match_type)
-        match_days = set(d.loc[mask, "DAY"].dropna().unique().tolist())
+        match_days = set(d.loc[mask, "_day"].dropna().tolist())
 
     return days_with_data, match_days
 
 
-def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-
-    metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
-    ]
-    metric_cols = [c for c in metric_cols if c in df.columns]
-    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
-
-
-def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> pd.DataFrame:
-    df_day = df[df[COL_DATE].dt.date == day].copy()
-    if df_day.empty or COL_TYPE not in df_day.columns:
-        return df_day
-
-    types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
-
-    has_p1 = "Practice (1)" in types_day
-    has_p2 = "Practice (2)" in types_day
-
-    if has_p1 and has_p2:
-        if session_mode == "Practice (1)":
-            return df_day[df_day[COL_TYPE] == "Practice (1)"].copy()
-        if session_mode == "Practice (2)":
-            return df_day[df_day[COL_TYPE] == "Practice (2)"].copy()
-        return df_day[df_day[COL_TYPE].isin(["Practice (1)", "Practice (2)"])].copy()
-
-    return df_day
-
-
 # -----------------------------
-# Calendar renderer (bolletjes)
+# Calendar picker (half width)
 # -----------------------------
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
+def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "sl") -> date:
     _calendar_css_compact()
 
     days_with_data, match_days = _compute_day_sets(df)
@@ -215,9 +196,10 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
 
     y, m = st.session_state[f"{key_prefix}_ym"]
+    selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    # Toolbar: prev | title | next | today
-    c1, c2, c3, c4 = st.columns([0.7, 2.6, 0.7, 0.9])
+    # Toolbar: ‹  [Maand Jaar]  ›   today
+    c1, c2, c3, c4 = st.columns([0.9, 2.8, 0.9, 1.0])
     with c1:
         if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
             first = date(y, m, 1)
@@ -226,7 +208,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             y, m = st.session_state[f"{key_prefix}_ym"]
     with c2:
         st.markdown(
-            f"<div style='text-align:center;font-weight:800;font-size:18px;'>{_month_label_nl(y,m)}</div>",
+            f"<div style='text-align:center;font-weight:800;font-size:16px;'>{_month_label_nl(y, m)}</div>",
             unsafe_allow_html=True,
         )
     with c3:
@@ -241,6 +223,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
             st.session_state[f"{key_prefix}_selected"] = t
             y, m = st.session_state[f"{key_prefix}_ym"]
+            selected = t
 
     st.markdown(
         f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
@@ -262,16 +245,16 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # DOW headers
+    # DOW headers (7 cols)
     dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
     header_cols = st.columns(7)
     for i, name in enumerate(dows):
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Buttons
+    # ✅ 14 columns: (button, spacer) x 7 => ~50% breed
     for week in weeks:
-        cols = st.columns(7)
+        cols = st.columns([1, 1] * 7)
         for i, d in enumerate(week):
             in_month = (d.month == m)
             disabled = not in_month
@@ -283,25 +266,66 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             else:
                 dot = "⚪"
 
-            # ✅ Zorg dat het label niet "verspringt":
-            # altijd exact: "<dot> <day>"
             label = f"{dot} {d.day}"
+            if d == selected:
+                label = f"✅ {dot} {d.day}"
 
             bkey = f"{key_prefix}_d_{d.isoformat()}"
-            with cols[i]:
+
+            with cols[i * 2]:
                 if st.button(label, key=bkey, disabled=disabled, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
+                    selected = d
+
+            with cols[i * 2 + 1]:
+                st.write("")
 
     return st.session_state[f"{key_prefix}_selected"]
 
 
 # -----------------------------
-# Plot helpers
+# Aggregatie + filtering per dag/type
+# -----------------------------
+def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    metric_cols = [
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
+    ]
+    metric_cols = [c for c in metric_cols if c in df.columns]
+    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
+
+
+def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> pd.DataFrame:
+    df_day = df[df[COL_DATE].dt.date == day].copy()
+    if df_day.empty or COL_TYPE not in df_day.columns:
+        return df_day
+
+    types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
+    has_p1 = "Practice (1)" in types_day
+    has_p2 = "Practice (2)" in types_day
+
+    if has_p1 and has_p2:
+        if session_mode == "Practice (1)":
+            return df_day[df_day[COL_TYPE] == "Practice (1)"].copy()
+        if session_mode == "Practice (2)":
+            return df_day[df_day[COL_TYPE] == "Practice (2)"].copy()
+        return df_day[df_day[COL_TYPE].isin(["Practice (1)", "Practice (2)"])].copy()
+
+    # anders: toon alles voor die dag
+    return df_day
+
+
+# -----------------------------
+# Plots (kleuren zoals je eerder had)
 # -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
-        st.info("Kolom 'Total Distance' niet gevonden in de data.")
+        st.info("Kolom 'Total Distance' niet gevonden.")
         return
 
     data = df_agg.sort_values(COL_TD, ascending=False).reset_index(drop=True)
@@ -319,7 +343,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
         name="Total Distance",
     )
 
-    mean_val = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
+    mean_val = float(np.nanmean(vals)) if len(vals) else 0.0
     fig.add_hline(
         y=mean_val,
         line_dash="dot",
@@ -341,7 +365,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
 def _plot_sprint_hs(df_agg: pd.DataFrame):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
-        st.info("Sprint / High Sprint kolommen niet compleet in de data.")
+        st.info("Sprint / High Sprint kolommen niet compleet.")
         return
 
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
@@ -349,8 +373,8 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     sprint_vals = data[COL_SPRINT].to_numpy()
     hs_vals = data[COL_HS].to_numpy()
 
-    fig = go.Figure()
     x = np.arange(len(players))
+    fig = go.Figure()
 
     fig.add_bar(
         x=x - 0.2,
@@ -384,7 +408,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
 
 def _plot_acc_dec(df_agg: pd.DataFrame):
     have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
-    if len(have_cols) == 0:
+    if not have_cols:
         st.info("Geen Acceleration/Deceleration kolommen gevonden.")
         return
 
@@ -392,9 +416,9 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
     data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
     x = np.arange(len(players))
+    width = 0.18
 
     fig = go.Figure()
-    width = 0.18
 
     if COL_ACC_TOT in data.columns:
         fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
@@ -425,11 +449,11 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     has_trimp = "TRIMP" in df_agg.columns
 
     if not have_hr and not has_trimp:
-        st.info("Geen HR-zone kolommen of TRIMP-kolom gevonden.")
+        st.info("Geen HR-zone kolommen of TRIMP gevonden.")
         return
 
     players = df_agg[COL_PLAYER].astype(str).tolist()
-    x = np.arange(len(players))
+    base_x = np.arange(len(players))
 
     fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
     color_map = {
@@ -440,7 +464,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
-    # ✅ gegroepeerde balken (naast elkaar)
+    # ✅ GROUPED: naast elkaar
     if have_hr:
         n = len(have_hr)
         group_w = 0.80
@@ -448,20 +472,20 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         start = -group_w / 2 + bar_w / 2
 
         for idx, z in enumerate(have_hr):
-            xx = x + (start + idx * bar_w)
+            x = base_x + (start + idx * bar_w)
             fig.add_bar(
-                x=xx,
+                x=x,
                 y=df_agg[z],
-                width=bar_w * 0.95,
                 name=z,
                 marker_color=color_map.get(z, "gray"),
+                width=bar_w * 0.95,
                 secondary_y=False,
             )
 
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=x,
+                x=base_x,
                 y=df_agg["TRIMP"],
                 mode="lines+markers",
                 name="HR Trimp",
@@ -474,10 +498,10 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         title="Time in HR zone",
         xaxis_title=None,
         barmode="group",
-        bargap=0.2,
+        bargap=0.15,
         margin=dict(l=10, r=10, t=40, b=80),
     )
-    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
+    fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
     fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
     if has_trimp:
         fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
@@ -498,10 +522,10 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     df = _prepare_gps(df_gps)
     if df.empty:
-        st.warning("Geen bruikbare GPS-data gevonden (controleer Datum / Event='Summary').")
+        st.warning("Geen bruikbare GPS-data gevonden (controleer Event='Summary' en Datum/Speler).")
         return
 
-    selected_day = calendar_day_picker(df, key_prefix="sl")
+    selected_day = calendar_day_picker(df, key_prefix="sl")  # python date
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
     if df_day_all.empty:
