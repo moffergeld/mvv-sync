@@ -33,6 +33,8 @@ try:
 except Exception:
     create_client = None
 
+sb_auth(sb)
+st.write("auth uid:", sb.auth.get_user().user.id)
 
 STAFF_ROLES = {
     "staff",
