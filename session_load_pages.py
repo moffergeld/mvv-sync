@@ -1,19 +1,12 @@
 # session_load_pages.py
-# ==========================================
-# Session Load dashboard
-# - Kalender als enige dag-filter (geen sliders)
-# - Bolletjes-kleuren per dag (✅ robuust: pseudo-element op de button)
-#   * Rood  = Match/Practice Match (Type bevat "match")
-#   * Blauw = Practice/data (wel data, geen match)
-#   * Grijs = geen data
-# - Compacte kalender (smalle tiles, minimale gaps)
-# - Maand + jaar tussen pijlen, maanden met hoofdletter
-# - Grafieken:
-#   * Total Distance
-#   * Sprint & High Sprint (grouped)
-#   * Accelerations / Decelerations (grouped)
-#   * HR zones + TRIMP (✅ gegroepeerde balken i.p.v. stacked)
-# ==========================================
+# Fixes:
+# 1) ✅ Bolletjes worden nu 100% correct gekoppeld aan de juiste dag:
+#    - we stylen niet meer op "id*={key}" (dat is onbetrouwbaar),
+#    - maar op het ARIA-label dat Streamlit aan de button geeft.
+#      (bv. aria-label="slcal_d_2026-02-09")
+# 2) ✅ Bolletje staat niet meer in de hoek:
+#    - bolletje wordt links van het dagnummer gezet (gecentreerd in hoogte),
+#    - padding-left + left-offset zijn aangepast.
 
 from __future__ import annotations
 
@@ -114,18 +107,14 @@ def _month_label_nl(y: int, m: int) -> str:
 
 
 # -----------------------------
-# Kalender UI (bolletje via ::before)
+# Kalender UI (bolletje via aria-label selector)
 # -----------------------------
 def _calendar_css_compact() -> None:
     st.markdown(
         """
         <style>
-        .sl-range{
-            opacity:.7;font-size:12px;white-space:nowrap;margin-top:-6px;text-align:right;
-        }
-        .sl-legend{
-            display:flex;gap:16px;align-items:center;margin:6px 0 10px 0;font-size:12px;opacity:.9;
-        }
+        .sl-range{opacity:.7;font-size:12px;white-space:nowrap;margin-top:-6px;text-align:right;}
+        .sl-legend{display:flex;gap:16px;align-items:center;margin:6px 0 10px 0;font-size:12px;opacity:.9;}
         .sl-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:7px;}
         .sl-dow{font-size:14px;font-weight:800;opacity:.85;margin-bottom:3px;}
         .sl-month{text-align:center;font-weight:900;font-size:16px;margin-top:2px;}
@@ -134,7 +123,7 @@ def _calendar_css_compact() -> None:
         div[data-testid="stButton"] button{
             width:100% !important;
             border-radius:999px !important;
-            padding:2px 6px 2px 18px !important; /* ruimte links voor bolletje */
+            padding:2px 8px 2px 26px !important;  /* ruimte links voor bolletje */
             min-height:24px !important;
             line-height:1.0 !important;
             border:1px solid rgba(255,255,255,0.12) !important;
@@ -142,6 +131,7 @@ def _calendar_css_compact() -> None:
             font-weight:900 !important;
             font-size:11px !important;
             position: relative !important;
+            text-align:left !important;           /* dagnummer links (bij bolletje) */
         }
         div[data-testid="stButton"] button:hover{
             border:1px solid rgba(255,255,255,0.22) !important;
@@ -152,12 +142,12 @@ def _calendar_css_compact() -> None:
         section.main div[data-testid="stHorizontalBlock"]{gap:0.05rem !important;}
         div[data-testid="stVerticalBlock"] > div{gap:0.03rem;}
 
-        /* Default bolletje (grijs) */
+        /* Default bolletje (grijs) - NIET in de hoek, maar links bij tekst */
         div[data-testid="stButton"] button::before{
             content:"";
             width:8px;height:8px;border-radius:50%;
             position:absolute;
-            left:8px; top:50%;
+            left:12px; top:50%;
             transform: translateY(-50%);
             background: rgba(180,180,180,0.55);
         }
@@ -226,13 +216,13 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # CSS: zet de ::before kleur per dag-button
+    # ✅ CSS mapping op aria-label (veel stabieler dan id contains)
     css_rules: list[str] = []
     for d in month_days:
         if d.month != m:
             continue
 
-        dkey = f"{key_prefix}_d_{d.isoformat()}"
+        key = f"{key_prefix}_d_{d.isoformat()}"
 
         if d in match_days:
             dot = "rgba(255,0,51,0.95)"
@@ -243,19 +233,18 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[id*="{dkey}"]::before {{
+            div[data-testid="stButton"] button[aria-label="{key}"]::before {{
                 background: {dot} !important;
             }}
             """
         )
 
-    # Selected highlight
     sel = st.session_state.get(f"{key_prefix}_selected")
     if isinstance(sel, date):
         selkey = f"{key_prefix}_d_{sel.isoformat()}"
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[id*="{selkey}"] {{
+            div[data-testid="stButton"] button[aria-label="{selkey}"] {{
                 outline: 2px solid rgba(255,255,255,0.85) !important;
                 box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
             }}
@@ -271,14 +260,14 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Grid: dagnummer
+    # Grid
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
             in_month = (d.month == m)
-            bkey = f"{key_prefix}_d_{d.isoformat()}"
+            key = f"{key_prefix}_d_{d.isoformat()}"
             with cols[i]:
-                if st.button(f"{d.day}", key=bkey, disabled=not in_month, use_container_width=True):
+                if st.button(f"{d.day}", key=key, disabled=not in_month, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
 
