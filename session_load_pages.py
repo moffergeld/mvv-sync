@@ -2,7 +2,7 @@
 # ==========================================
 # Session Load dashboard
 # - Kalender als enige dag-filter (geen sliders)
-# - Kleuren als bolletjes (✅ stabiel in Streamlit; geen HTML component)
+# - Kleuren als bolletjes (✅ stabiel: CSS dot via radial-gradient op de button)
 #   * Rood  = Match/Practice Match (Type bevat "match")
 #   * Blauw = Practice/data (wel data, geen match)
 #   * Grijs = geen data
@@ -27,7 +27,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # -----------------------------
-# Kolomnamen (verwacht uit 07_GPS_Data mapping)
+# Kolomnamen
 # -----------------------------
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
@@ -53,12 +53,6 @@ PRACTICE_BLUE = "#4AA3FF"
 # Helpers (data prep)
 # -----------------------------
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
-    """
-    - Datum -> datetime
-    - Alleen rijen met datum + speler
-    - TRIMP alias -> 'TRIMP'
-    - Numeriek cast (NaN -> 0)
-    """
     df = df_gps.copy()
 
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -73,7 +67,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             trimp_col = c
             break
-
     if trimp_col is not None:
         df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0)
     else:
@@ -97,10 +90,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
-    """
-    days_with_data: dagen met minstens 1 record
-    match_days: dagen waar Type 'match' bevat
-    """
     if df.empty:
         return set(), set()
 
@@ -126,89 +115,45 @@ def _month_label_nl(y: int, m: int) -> str:
 
 
 # -----------------------------
-# Kalender UI (bolletjes)
+# Kalender UI (bolletjes via CSS op button)
 # -----------------------------
 def _calendar_css_compact() -> None:
     st.markdown(
-        f"""
+        """
         <style>
-        .sl-range {{
-            opacity: .7;
-            font-size: 12px;
-            white-space: nowrap;
-            margin-top:-6px;
-            text-align:right;
-        }}
+        .sl-range{
+            opacity:.7;font-size:12px;white-space:nowrap;margin-top:-6px;text-align:right;
+        }
+        .sl-legend{
+            display:flex;gap:16px;align-items:center;margin:6px 0 10px 0;font-size:12px;opacity:.9;
+        }
+        .sl-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:7px;}
+        .sl-dow{font-size:14px;font-weight:800;opacity:.85;margin-bottom:3px;}
 
-        .sl-legend {{
-            display:flex;
-            gap:16px;
-            align-items:center;
-            margin: 6px 0 10px 0;
-            font-size: 12px;
-            opacity:.9;
-        }}
-        .sl-dot {{
-            width:10px; height:10px;
-            border-radius:50%;
-            display:inline-block;
-            margin-right:7px;
-        }}
-        .sl-dot.match {{ background:{MVV_RED}; }}
-        .sl-dot.practice {{ background:{PRACTICE_BLUE}; }}
-        .sl-dot.none {{ background: rgba(180,180,180,0.45); }}
-
-        .sl-dow {{
-            font-size: 14px;
-            font-weight: 800;
-            opacity: .85;
-            margin-bottom: 3px;
-        }}
-
-        /* Buttons compacter + minder breedte (halveren effect) */
-        div[data-testid="stButton"] button {{
-            width: 100% !important;
-            border-radius: 999px !important;
-            padding: 2px 6px !important;
-            min-height: 24px !important;   /* hoger/lager hier aanpassen */
-            line-height: 1.0 !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
+        /* Compacte buttons */
+        div[data-testid="stButton"] button{
+            width:100% !important;
+            border-radius:999px !important;
+            padding:2px 6px !important;
+            min-height:24px !important;
+            line-height:1.0 !important;
+            border:1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
-            font-weight: 900 !important;
-            font-size: 11px !important;
-            white-space: nowrap !important;
-        }}
-        div[data-testid="stButton"] button:hover {{
-            border: 1px solid rgba(255,255,255,0.22) !important;
+            font-weight:900 !important;
+            font-size:11px !important;
+        }
+        div[data-testid="stButton"] button:hover{
+            border:1px solid rgba(255,255,255,0.22) !important;
             background: rgba(255,255,255,0.05) !important;
-        }}
+        }
 
-        /* Minder gaps tussen columns/rows */
-        section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.05rem !important; }}
-        div[data-testid="stVerticalBlock"] > div {{ gap: 0.03rem; }}
+        /* Minder gaps */
+        section.main div[data-testid="stHorizontalBlock"]{gap:0.05rem !important;}
+        div[data-testid="stVerticalBlock"] > div{gap:0.03rem;}
 
-        /* Dot in button */
-        .sl-btn-inner {{
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            gap: 8px;
-        }}
-        .sl-btn-dot {{
-            width:10px; height:10px; border-radius:50%;
-            display:inline-block;
-        }}
-        .sl-dot-match {{ background:{MVV_RED}; }}
-        .sl-dot-practice {{ background:{PRACTICE_BLUE}; }}
-        .sl-dot-none {{ background: rgba(180,180,180,0.45); }}
-
-        /* Maand header center */
-        .sl-month {{
-            text-align:center;
-            font-weight: 900;
-            font-size: 16px;
-            margin-top: 2px;
-        }}
+        .sl-month{
+            text-align:center;font-weight:900;font-size:16px;margin-top:2px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -260,20 +205,63 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     )
 
     st.markdown(
-        """
+        f"""
         <div class="sl-legend">
-          <span><span class="sl-dot match"></span>Match/Practice Match</span>
-          <span><span class="sl-dot practice"></span>Practice/data</span>
-          <span><span class="sl-dot none"></span>geen data</span>
+          <span><span class="sl-dot" style="background:{MVV_RED};"></span>Match/Practice Match</span>
+          <span><span class="sl-dot" style="background:{PRACTICE_BLUE};"></span>Practice/data</span>
+          <span><span class="sl-dot" style="background:rgba(180,180,180,0.45);"></span>geen data</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # month days
     cal = calendar.Calendar(firstweekday=0)  # Monday
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
+
+    # CSS rules: dot + padding voor ALLE dag-buttons van deze maand
+    css_rules: list[str] = []
+    for d in month_days:
+        if d.month != m:
+            continue
+
+        dkey = f"{key_prefix}_d_{d.isoformat()}"
+
+        if d in match_days:
+            dot = "rgba(255,0,51,0.95)"
+        elif d in days_with_data:
+            dot = "rgba(74,163,255,0.95)"
+        else:
+            dot = "rgba(180,180,180,0.55)"
+
+        # Dot links in de button, netjes gecentreerd (geen overlay/markdown hacks)
+        css_rules.append(
+            f"""
+            div[data-testid="stButton"] button[id*="{dkey}"],
+            div[id*="{dkey}"][data-testid="stButton"] button {{
+                padding-left: 18px !important; /* ruimte voor bolletje */
+                position: relative !important;
+                background-image: radial-gradient(circle at 10px 50%, {dot} 0 4px, transparent 5px) !important;
+                background-repeat: no-repeat !important;
+            }}
+            """
+        )
+
+    # Selected highlight
+    sel = st.session_state.get(f"{key_prefix}_selected")
+    if isinstance(sel, date):
+        selkey = f"{key_prefix}_d_{sel.isoformat()}"
+        css_rules.append(
+            f"""
+            div[data-testid="stButton"] button[id*="{selkey}"],
+            div[id*="{selkey}"][data-testid="stButton"] button {{
+                outline: 2px solid rgba(255,255,255,0.85) !important;
+                box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
+            }}
+            """
+        )
+
+    st.markdown(f"<style>{''.join(css_rules)}</style>", unsafe_allow_html=True)
 
     # DOW headers
     dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
@@ -282,37 +270,14 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Grid
+    # Grid: button label = dagnummer (zonder rare prefix/overlay)
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
             in_month = (d.month == m)
-
-            if d in match_days:
-                dot_class = "sl-btn-dot sl-dot-match"
-            elif d in days_with_data:
-                dot_class = "sl-btn-dot sl-dot-practice"
-            else:
-                dot_class = "sl-btn-dot sl-dot-none"
-
-            label_html = f"<span class='{dot_class}'></span><span>{d.day}</span>"
-            btn_label = f"{d.day}"  # Streamlit label must be plain text
-
             bkey = f"{key_prefix}_d_{d.isoformat()}"
             with cols[i]:
-                # Render dot + day number using HTML above the button to avoid label hacks
-                st.markdown(
-                    f"""
-                    <div style="margin-bottom:-26px; position:relative; z-index:2; pointer-events:none;">
-                      <div class="sl-btn-inner" style="height:24px;">
-                        {label_html}
-                      </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                if st.button(btn_label, key=bkey, disabled=not in_month, use_container_width=True):
+                if st.button(f"{d.day}", key=bkey, disabled=not in_month, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
 
@@ -505,7 +470,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
-    # gegroepeerde balken
     if have_hr:
         n = len(have_hr)
         group_w = 0.80
@@ -578,7 +542,6 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
         return
 
-    # Type/sessie keuze
     session_mode = "Alles"
     if COL_TYPE in df_day_all.columns:
         types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
