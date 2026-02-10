@@ -1,12 +1,19 @@
 # session_load_pages.py
-# Fixes:
-# 1) ✅ Bolletjes worden nu 100% correct gekoppeld aan de juiste dag:
-#    - we stylen niet meer op "id*={key}" (dat is onbetrouwbaar),
-#    - maar op het ARIA-label dat Streamlit aan de button geeft.
-#      (bv. aria-label="slcal_d_2026-02-09")
-# 2) ✅ Bolletje staat niet meer in de hoek:
-#    - bolletje wordt links van het dagnummer gezet (gecentreerd in hoogte),
-#    - padding-left + left-offset zijn aangepast.
+# ==========================================
+# FIXES:
+# 1) ✅ Kalender-bolletjes worden NU correct gekoppeld:
+#    - Streamlit zet aria-label op de BUTTON-LABEL (niet op de key).
+#    - Daarom gebruiken we als button-label de ISO-datum (uniek),
+#      en renderen we het dagnummer via CSS ::after.
+#    - Bolletje-kleur wordt óók via aria-label (ISO-datum) gezet.
+#
+# 2) ✅ Session Load telt nu NIET alles bij elkaar op:
+#    - We filteren expliciet op Event == "Summary" (zoals je wilt).
+#    - Dus alle grafieken + kalender coverage zijn op Summary-only.
+#
+# 3) ✅ Bolletje niet meer in de hoek:
+#    - Bolletje staat links van het dagnummer (verticaal gecentreerd).
+# ==========================================
 
 from __future__ import annotations
 
@@ -27,6 +34,8 @@ COL_PLAYER = "Speler"
 COL_EVENT = "Event"
 COL_TYPE = "Type"
 
+EVENT_SUMMARY = "Summary"  # ✅ Session Load wil alleen Summary
+
 COL_TD = "Total Distance"
 COL_SPRINT = "Sprint"
 COL_HS = "High Sprint"
@@ -40,12 +49,19 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
+NO_DATA_DOT = "rgba(180,180,180,0.55)"
 
 
 # -----------------------------
 # Helpers (data prep)
 # -----------------------------
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
+    """
+    - Datum naar datetime
+    - Alleen rijen met datum + speler
+    - TRIMP alias → 'TRIMP'
+    - Numeriek cast
+    """
     df = df_gps.copy()
 
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -54,6 +70,12 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
+    # Strings
+    for c in [COL_PLAYER, COL_EVENT, COL_TYPE]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+
+    # TRIMP alias → 'TRIMP'
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -74,18 +96,25 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    for c in [COL_PLAYER, COL_EVENT, COL_TYPE]:
-        if c in df.columns:
-            df[c] = df[c].astype(str).str.strip()
-
     return df
 
 
-def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
-    if df.empty:
+def _summary_only(df: pd.DataFrame) -> pd.DataFrame:
+    """✅ Session Load: alleen Summary"""
+    if df.empty or COL_EVENT not in df.columns:
+        return df
+    return df[df[COL_EVENT].astype(str).str.strip() == EVENT_SUMMARY].copy()
+
+
+def _compute_day_sets(df_summary: pd.DataFrame) -> tuple[set[date], set[date]]:
+    """
+    days_with_data: dagen met minstens 1 Summary record
+    match_days: dagen waar Type 'match' bevat (op Summary records)
+    """
+    if df_summary.empty:
         return set(), set()
 
-    d = df.copy()
+    d = df_summary.copy()
     d["_d"] = pd.to_datetime(d[COL_DATE], errors="coerce").dt.date
     days_with_data = set(d["_d"].dropna().unique().tolist())
 
@@ -107,9 +136,9 @@ def _month_label_nl(y: int, m: int) -> str:
 
 
 # -----------------------------
-# Kalender UI (bolletje via aria-label selector)
+# Kalender UI (aria-label == label => label=ISO, dagnummer via CSS)
 # -----------------------------
-def _calendar_css_compact() -> None:
+def _calendar_css() -> None:
     st.markdown(
         """
         <style>
@@ -119,30 +148,27 @@ def _calendar_css_compact() -> None:
         .sl-dow{font-size:14px;font-weight:800;opacity:.85;margin-bottom:3px;}
         .sl-month{text-align:center;font-weight:900;font-size:16px;margin-top:2px;}
 
-        /* Compacte buttons */
+        /* Buttons */
         div[data-testid="stButton"] button{
             width:100% !important;
             border-radius:999px !important;
-            padding:2px 8px 2px 26px !important;  /* ruimte links voor bolletje */
+            padding:2px 8px 2px 28px !important; /* ruimte links voor bolletje */
             min-height:24px !important;
             line-height:1.0 !important;
             border:1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
-            font-weight:900 !important;
-            font-size:11px !important;
-            position: relative !important;
-            text-align:left !important;           /* dagnummer links (bij bolletje) */
+            position:relative !important;
+            text-align:left !important;
         }
         div[data-testid="stButton"] button:hover{
             border:1px solid rgba(255,255,255,0.22) !important;
             background: rgba(255,255,255,0.05) !important;
         }
 
-        /* Minder gaps */
-        section.main div[data-testid="stHorizontalBlock"]{gap:0.05rem !important;}
-        div[data-testid="stVerticalBlock"] > div{gap:0.03rem;}
+        /* We verbergen de echte label-tekst (ISO datum) */
+        div[data-testid="stButton"] button{ font-size:0 !important; }
 
-        /* Default bolletje (grijs) - NIET in de hoek, maar links bij tekst */
+        /* Default bolletje (grijs) */
         div[data-testid="stButton"] button::before{
             content:"";
             width:8px;height:8px;border-radius:50%;
@@ -151,16 +177,28 @@ def _calendar_css_compact() -> None:
             transform: translateY(-50%);
             background: rgba(180,180,180,0.55);
         }
+
+        /* Dagnummer tonen via ::after (wordt per knop overschreven) */
+        div[data-testid="stButton"] button::after{
+            content:"";
+            font-size:11px;
+            font-weight:900;
+            color: rgba(255,255,255,0.95);
+        }
+
+        /* Minder gaps */
+        section.main div[data-testid="stHorizontalBlock"]{gap:0.05rem !important;}
+        div[data-testid="stVerticalBlock"] > div{gap:0.03rem;}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
-    _calendar_css_compact()
+def calendar_day_picker(df_summary: pd.DataFrame, key_prefix: str = "slcal") -> date:
+    _calendar_css()
 
-    days_with_data, match_days = _compute_day_sets(df)
+    days_with_data, match_days = _compute_day_sets(df_summary)
 
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
@@ -206,7 +244,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         <div class="sl-legend">
           <span><span class="sl-dot" style="background:{MVV_RED};"></span>Match/Practice Match</span>
           <span><span class="sl-dot" style="background:{PRACTICE_BLUE};"></span>Practice/data</span>
-          <span><span class="sl-dot" style="background:rgba(180,180,180,0.45);"></span>geen data</span>
+          <span><span class="sl-dot" style="background:{NO_DATA_DOT};"></span>geen data</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -216,35 +254,39 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # ✅ CSS mapping op aria-label (veel stabieler dan id contains)
+    # ✅ CSS per dag op aria-label (= label = ISO)
     css_rules: list[str] = []
     for d in month_days:
         if d.month != m:
             continue
 
-        key = f"{key_prefix}_d_{d.isoformat()}"
+        iso = d.isoformat()
 
         if d in match_days:
             dot = "rgba(255,0,51,0.95)"
         elif d in days_with_data:
             dot = "rgba(74,163,255,0.95)"
         else:
-            dot = "rgba(180,180,180,0.55)"
+            dot = NO_DATA_DOT
 
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[aria-label="{key}"]::before {{
+            div[data-testid="stButton"] button[aria-label="{iso}"]::before {{
                 background: {dot} !important;
+            }}
+            div[data-testid="stButton"] button[aria-label="{iso}"]::after {{
+                content: "{d.day}" !important;
             }}
             """
         )
 
+    # Selected highlight
     sel = st.session_state.get(f"{key_prefix}_selected")
     if isinstance(sel, date):
-        selkey = f"{key_prefix}_d_{sel.isoformat()}"
+        sel_iso = sel.isoformat()
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[aria-label="{selkey}"] {{
+            div[data-testid="stButton"] button[aria-label="{sel_iso}"] {{
                 outline: 2px solid rgba(255,255,255,0.85) !important;
                 box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
             }}
@@ -260,14 +302,14 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Grid
+    # Grid (label = ISO datum => uniek, dagnummer via CSS)
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
             in_month = (d.month == m)
-            key = f"{key_prefix}_d_{d.isoformat()}"
+            iso = d.isoformat()
             with cols[i]:
-                if st.button(f"{d.day}", key=key, disabled=not in_month, use_container_width=True):
+                if st.button(iso, key=f"{key_prefix}_{iso}", disabled=not in_month, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
 
@@ -277,8 +319,8 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 # -----------------------------
 # Data helpers
 # -----------------------------
-def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
-    df_day = df[df[COL_DATE].dt.date == day.date()].copy()
+def _get_day_session_subset(df_summary: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
+    df_day = df_summary[df_summary[COL_DATE].dt.date == day.date()].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
         return df_day
 
@@ -301,9 +343,9 @@ def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: s
     return df_day
 
 
-def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
+def _agg_by_player(df_summary_day: pd.DataFrame) -> pd.DataFrame:
+    if df_summary_day.empty:
+        return df_summary_day
 
     metric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
@@ -311,12 +353,12 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
         *HR_COLS,
         "TRIMP",
     ]
-    metric_cols = [c for c in metric_cols if c in df.columns]
-    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
+    metric_cols = [c for c in metric_cols if c in df_summary_day.columns]
+    return df_summary_day.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
 
 # -----------------------------
-# Plots
+# Plot helpers
 # -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
@@ -372,19 +414,13 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     fig = go.Figure()
 
     fig.add_bar(
-        x=x - 0.2,
-        y=sprint_vals,
-        width=0.4,
-        name="Sprint",
+        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
         marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
     fig.add_bar(
-        x=x + 0.2,
-        y=hs_vals,
-        width=0.4,
-        name="High Sprint",
+        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
         marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
@@ -519,9 +555,15 @@ def session_load_pages_main(df_gps: pd.DataFrame):
     def _prep_cached(dfin: pd.DataFrame) -> pd.DataFrame:
         return _prepare_gps(dfin)
 
-    df = _prep_cached(df_gps)
-    if df.empty:
+    df_all = _prep_cached(df_gps)
+    if df_all.empty:
         st.warning("Geen bruikbare GPS-data gevonden.")
+        return
+
+    # ✅ Alleen Summary voor Session Load (kalender + grafieken)
+    df = _summary_only(df_all)
+    if df.empty:
+        st.warning("Geen Summary-data gevonden (Event == 'Summary').")
         return
 
     selected_d = calendar_day_picker(df, key_prefix="slcal")
@@ -529,9 +571,10 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day.date()].copy()
     if df_day_all.empty:
-        st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
+        st.info(f"Geen Summary-data op {selected_day.strftime('%d-%m-%Y')}.")
         return
 
+    # Type/sessie keuze (binnen Summary)
     session_mode = "Alles"
     if COL_TYPE in df_day_all.columns:
         types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
@@ -555,7 +598,7 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     df_day = df_day_all if session_mode == "Alles" else _get_day_session_subset(df, selected_day, session_mode)
     if df_day.empty:
-        st.warning("Geen data gevonden voor deze selectie (dag + sessie/type).")
+        st.warning("Geen Summary-data voor deze selectie (dag + sessie/type).")
         return
 
     df_agg = _agg_by_player(df_day)
