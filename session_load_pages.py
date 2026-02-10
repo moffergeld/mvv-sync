@@ -1,20 +1,4 @@
 # session_load_pages.py
-# ==========================================
-# Session Load dashboard
-# - Kalender als enige dag-filter (geen sliders)
-# - Kleurvulling op de HELE tile:
-#   * Rood  = Match/Practice Match (Type bevat "match")
-#   * Blauw = Practice/data (wel data, geen match)
-#   * Grijs = geen data
-# - Compacte kalender (kleine tiles, minimale gaps)
-# - Maand + jaar tussen pijlen, maanden met hoofdletter
-# - Grafieken:
-#   * Total Distance
-#   * Sprint & High Sprint
-#   * Accelerations / Decelerations
-#   * HR zones + TRIMP (✅ gegroepeerde balken i.p.v. stacked)
-# ==========================================
-
 from __future__ import annotations
 
 import calendar
@@ -26,7 +10,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Kolomnamen
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -47,16 +30,7 @@ MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
 
-# -----------------------------
-# Helpers (data prep)
-# -----------------------------
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
-    """
-    - Datum naar datetime
-    - Alleen rijen met datum + speler
-    - TRIMP alias → 'TRIMP'
-    - Numeriek cast
-    """
     df = df_gps.copy()
 
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -65,7 +39,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-    # TRIMP alias → 'TRIMP'
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -77,15 +50,9 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["TRIMP"] = 0.0
 
     numeric_cols = [
-        COL_TD,
-        COL_SPRINT,
-        COL_HS,
-        COL_ACC_TOT,
-        COL_ACC_HI,
-        COL_DEC_TOT,
-        COL_DEC_HI,
-        *HR_COLS,
-        "TRIMP",
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -99,10 +66,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
-    """
-    days_with_data: dagen met minstens 1 record
-    match_days: dagen die als match/practice match getagged zijn (Type bevat "match")
-    """
     if df.empty:
         return set(), set()
 
@@ -119,27 +82,11 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
 
 
 def _month_label_nl(y: int, m: int) -> str:
-    months = [
-        "",
-        "Januari",
-        "Februari",
-        "Maart",
-        "April",
-        "Mei",
-        "Juni",
-        "Juli",
-        "Augustus",
-        "September",
-        "Oktober",
-        "November",
-        "December",
-    ]
+    months = ["", "Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli",
+              "Augustus", "September", "Oktober", "November", "December"]
     return f"{months[m]} {y}"
 
 
-# -----------------------------
-# Kalender UI
-# -----------------------------
 def _calendar_css_compact() -> None:
     st.markdown(
         f"""
@@ -151,7 +98,6 @@ def _calendar_css_compact() -> None:
             margin-top:-6px;
             text-align:right;
         }}
-
         .sl-legend {{
             display:flex;
             gap:16px;
@@ -177,7 +123,6 @@ def _calendar_css_compact() -> None:
             margin-bottom: 2px;
         }}
 
-        /* Compacte buttons */
         div[data-testid="stButton"] button {{
             width: 100% !important;
             border-radius: 18px !important;
@@ -195,13 +140,8 @@ def _calendar_css_compact() -> None:
             background: rgba(255,255,255,0.05) !important;
         }}
 
-        /* Minder gaps tussen columns/rows */
         section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.06rem !important; }}
         div[data-testid="stVerticalBlock"] > div {{ gap: 0.04rem; }}
-
-        .sl-wrap {{
-            margin-top: -6px;
-        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -224,7 +164,6 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
     y, m = st.session_state[f"{key_prefix}_ym"]
 
-    # Toolbar: ‹  [Maand Jaar]  ›   today
     c1, c2, c3, c4 = st.columns([0.65, 3.0, 0.65, 0.9])
     with c1:
         if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
@@ -268,15 +207,13 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
     cal = calendar.Calendar(firstweekday=0)  # Monday
     month_days = list(cal.itermonthdates(y, m))
-    weeks = [month_days[i : i + 7] for i in range(0, len(month_days), 7)]
+    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # CSS per dag: HELE tile opvullen
-    css_rules: list[str] = []
+    # ✅ ROBUUST: marker-span + adjacent selector naar de button wrapper
+    css_rules2 = []
     for d in month_days:
         if d.month != m:
             continue
-
-        dkey = f"{key_prefix}_d_{d.isoformat()}"
 
         if d in match_days:
             bg = "rgba(255,0,51,0.55)"
@@ -288,14 +225,12 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             bg = "rgba(180,180,180,0.14)"
             bd = "rgba(180,180,180,0.22)"
 
-        # ✅ Streamlit key zit soms op wrapper, soms op button → meerdere selectors
-        css_rules.append(
+        marker = f'{key_prefix}_{d.isoformat()}'
+        css_rules2.append(
             f"""
-            div[data-testid="stButton"][id*="{dkey}"] button,
-            div[data-testid="stButton"] button[id*="{dkey}"],
-            div[id*="{dkey}"][data-testid="stButton"] button {{
-                background-color: {bg} !important;
+            span[data-sl="{marker}"] + div[data-testid="stButton"] button {{
                 background: {bg} !important;
+                background-color: {bg} !important;
                 border: 1px solid {bd} !important;
             }}
             """
@@ -303,45 +238,38 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
     sel = st.session_state.get(f"{key_prefix}_selected")
     if isinstance(sel, date):
-        selkey = f"{key_prefix}_d_{sel.isoformat()}"
-        css_rules.append(
+        marker = f'{key_prefix}_{sel.isoformat()}'
+        css_rules2.append(
             f"""
-            div[data-testid="stButton"][id*="{selkey}"] button,
-            div[data-testid="stButton"] button[id*="{selkey}"],
-            div[id*="{selkey}"][data-testid="stButton"] button {{
+            span[data-sl="{marker}"] + div[data-testid="stButton"] button {{
                 outline: 2px solid rgba(255,255,255,0.85) !important;
                 box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
             }}
             """
         )
 
-    st.markdown(f"<style>{''.join(css_rules)}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{''.join(css_rules2)}</style>", unsafe_allow_html=True)
 
-    # DOW headers
     dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
     header_cols = st.columns(7)
     for i, name in enumerate(dows):
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Grid: dagnummer in de knop (geen "select")
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
             in_month = d.month == m
-            label = f"{d.day}"
-            bkey = f"{key_prefix}_d_{d.isoformat()}"
+            marker = f'{key_prefix}_{d.isoformat()}'
             with cols[i]:
-                if st.button(label, key=bkey, disabled=not in_month, use_container_width=True):
+                st.markdown(f'<span data-sl="{marker}"></span>', unsafe_allow_html=True)
+                if st.button(str(d.day), key=f"{key_prefix}_btn_{d.isoformat()}", disabled=not in_month, use_container_width=True):
                     st.session_state[f"{key_prefix}_selected"] = d
                     st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
 
     return st.session_state[f"{key_prefix}_selected"]
 
 
-# -----------------------------
-# Data helpers
-# -----------------------------
 def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
     df_day = df[df[COL_DATE].dt.date == day.date()].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
@@ -371,23 +299,14 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     metric_cols = [
-        COL_TD,
-        COL_SPRINT,
-        COL_HS,
-        COL_ACC_TOT,
-        COL_ACC_HI,
-        COL_DEC_TOT,
-        COL_DEC_HI,
-        *HR_COLS,
-        "TRIMP",
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
 
-# -----------------------------
-# Plot helpers (kleuren zoals voorheen)
-# -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden in de data.")
@@ -399,8 +318,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     fig.add_bar(
-        x=players,
-        y=vals,
+        x=players, y=vals,
         marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
@@ -410,9 +328,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     mean_val = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
     fig.add_hline(
-        y=mean_val,
-        line_dash="dot",
-        line_color="black",
+        y=mean_val, line_dash="dot", line_color="black",
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
         annotation_position="top left",
         annotation_font_size=10,
@@ -442,19 +358,13 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     x = np.arange(len(players))
 
     fig.add_bar(
-        x=x - 0.2,
-        y=sprint_vals,
-        width=0.4,
-        name="Sprint",
+        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
         marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
     fig.add_bar(
-        x=x + 0.2,
-        y=hs_vals,
-        width=0.4,
-        name="High Sprint",
+        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
         marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
@@ -473,7 +383,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
 
 def _plot_acc_dec(df_agg: pd.DataFrame):
     have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
-    if len(have_cols) == 0:
+    if not have_cols:
         st.info("Geen Acceleration/Deceleration kolommen gevonden.")
         return
 
@@ -486,37 +396,17 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
     width = 0.18
 
     if COL_ACC_TOT in data.columns:
-        fig.add_bar(
-            x=x - 1.5 * width,
-            y=data[COL_ACC_TOT],
-            width=width,
-            name="Total Accelerations",
-            marker_color="rgba(255,180,180,0.9)",
-        )
+        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
+                    marker_color="rgba(255,180,180,0.9)")
     if COL_ACC_HI in data.columns:
-        fig.add_bar(
-            x=x - 0.5 * width,
-            y=data[COL_ACC_HI],
-            width=width,
-            name="High Accelerations",
-            marker_color="rgba(200,0,0,0.9)",
-        )
+        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations",
+                    marker_color="rgba(200,0,0,0.9)")
     if COL_DEC_TOT in data.columns:
-        fig.add_bar(
-            x=x + 0.5 * width,
-            y=data[COL_DEC_TOT],
-            width=width,
-            name="Total Decelerations",
-            marker_color="rgba(180,210,255,0.9)",
-        )
+        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations",
+                    marker_color="rgba(180,210,255,0.9)")
     if COL_DEC_HI in data.columns:
-        fig.add_bar(
-            x=x + 1.5 * width,
-            y=data[COL_DEC_HI],
-            width=width,
-            name="High Decelerations",
-            marker_color="rgba(0,60,180,0.9)",
-        )
+        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
+                    marker_color="rgba(0,60,180,0.9)")
 
     fig.update_layout(
         title="Accelerations / Decelerations",
@@ -550,31 +440,21 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
-    # gegroepeerde balken
     if have_hr:
         n = len(have_hr)
         group_w = 0.80
         bar_w = group_w / max(n, 1)
         start = -group_w / 2 + bar_w / 2
-
         for idx, z in enumerate(have_hr):
             x = base_x + (start + idx * bar_w)
-            fig.add_bar(
-                x=x,
-                y=df_agg[z],
-                name=z,
-                marker_color=color_map.get(z, "gray"),
-                width=bar_w * 0.95,
-                secondary_y=False,
-            )
+            fig.add_bar(x=x, y=df_agg[z], name=z, marker_color=color_map.get(z, "gray"),
+                        width=bar_w * 0.95, secondary_y=False)
 
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=base_x,
-                y=df_agg["TRIMP"],
-                mode="lines+markers",
-                name="HR Trimp",
+                x=base_x, y=df_agg["TRIMP"],
+                mode="lines+markers", name="HR Trimp",
                 line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
             ),
             secondary_y=True,
@@ -595,9 +475,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# -----------------------------
-# Hoofd entrypoint
-# -----------------------------
 def session_load_pages_main(df_gps: pd.DataFrame):
     st.header("Session Load")
 
@@ -623,7 +500,6 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
         return
 
-    # Type/sessie keuze
     session_mode = "Alles"
     if COL_TYPE in df_day_all.columns:
         types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
