@@ -2,7 +2,7 @@
 # ==========================================
 # Session Load dashboard
 # - Kalender als enige dag-filter (geen sliders)
-# - Kleuren als bolletjes (✅ stabiel: CSS dot via radial-gradient op de button)
+# - Bolletjes-kleuren per dag (✅ robuust: pseudo-element op de button)
 #   * Rood  = Match/Practice Match (Type bevat "match")
 #   * Blauw = Practice/data (wel data, geen match)
 #   * Grijs = geen data
@@ -61,7 +61,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
-    # TRIMP alias -> TRIMP
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -115,7 +114,7 @@ def _month_label_nl(y: int, m: int) -> str:
 
 
 # -----------------------------
-# Kalender UI (bolletjes via CSS op button)
+# Kalender UI (bolletje via ::before)
 # -----------------------------
 def _calendar_css_compact() -> None:
     st.markdown(
@@ -129,18 +128,20 @@ def _calendar_css_compact() -> None:
         }
         .sl-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:7px;}
         .sl-dow{font-size:14px;font-weight:800;opacity:.85;margin-bottom:3px;}
+        .sl-month{text-align:center;font-weight:900;font-size:16px;margin-top:2px;}
 
         /* Compacte buttons */
         div[data-testid="stButton"] button{
             width:100% !important;
             border-radius:999px !important;
-            padding:2px 6px !important;
+            padding:2px 6px 2px 18px !important; /* ruimte links voor bolletje */
             min-height:24px !important;
             line-height:1.0 !important;
             border:1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
             font-weight:900 !important;
             font-size:11px !important;
+            position: relative !important;
         }
         div[data-testid="stButton"] button:hover{
             border:1px solid rgba(255,255,255,0.22) !important;
@@ -151,8 +152,14 @@ def _calendar_css_compact() -> None:
         section.main div[data-testid="stHorizontalBlock"]{gap:0.05rem !important;}
         div[data-testid="stVerticalBlock"] > div{gap:0.03rem;}
 
-        .sl-month{
-            text-align:center;font-weight:900;font-size:16px;margin-top:2px;
+        /* Default bolletje (grijs) */
+        div[data-testid="stButton"] button::before{
+            content:"";
+            width:8px;height:8px;border-radius:50%;
+            position:absolute;
+            left:8px; top:50%;
+            transform: translateY(-50%);
+            background: rgba(180,180,180,0.55);
         }
         </style>
         """,
@@ -176,7 +183,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
 
     y, m = st.session_state[f"{key_prefix}_ym"]
 
-    # Toolbar: ‹ [Maand Jaar] › today
+    # Toolbar
     c1, c2, c3, c4 = st.columns([0.9, 3.2, 0.9, 1.2])
     with c1:
         if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
@@ -219,7 +226,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
     month_days = list(cal.itermonthdates(y, m))
     weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # CSS rules: dot + padding voor ALLE dag-buttons van deze maand
+    # CSS: zet de ::before kleur per dag-button
     css_rules: list[str] = []
     for d in month_days:
         if d.month != m:
@@ -234,15 +241,10 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         else:
             dot = "rgba(180,180,180,0.55)"
 
-        # Dot links in de button, netjes gecentreerd (geen overlay/markdown hacks)
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[id*="{dkey}"],
-            div[id*="{dkey}"][data-testid="stButton"] button {{
-                padding-left: 18px !important; /* ruimte voor bolletje */
-                position: relative !important;
-                background-image: radial-gradient(circle at 10px 50%, {dot} 0 4px, transparent 5px) !important;
-                background-repeat: no-repeat !important;
+            div[data-testid="stButton"] button[id*="{dkey}"]::before {{
+                background: {dot} !important;
             }}
             """
         )
@@ -253,8 +255,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         selkey = f"{key_prefix}_d_{sel.isoformat()}"
         css_rules.append(
             f"""
-            div[data-testid="stButton"] button[id*="{selkey}"],
-            div[id*="{selkey}"][data-testid="stButton"] button {{
+            div[data-testid="stButton"] button[id*="{selkey}"] {{
                 outline: 2px solid rgba(255,255,255,0.85) !important;
                 box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
             }}
@@ -270,7 +271,7 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         with header_cols[i]:
             st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-    # Grid: button label = dagnummer (zonder rare prefix/overlay)
+    # Grid: dagnummer
     for week in weeks:
         cols = st.columns(7)
         for i, d in enumerate(week):
