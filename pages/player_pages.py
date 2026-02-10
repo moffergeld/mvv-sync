@@ -2,15 +2,14 @@
 # ============================================================
 # Player pagina: tabs Data + Forms
 # - Speler ziet alleen eigen pagina (via profiles.player_id)
-# - Staff/roles: staff, performance_coach, data_scientist, technical_director, physio
-#   kunnen tussen spelers switchen
+# - Staff (role == 'staff') kan tussen spelers switchen
 #
 # Vereisten:
 # - In jouw app is login al gedaan en staat:
 #     st.session_state["access_token"]
 # - Supabase tables:
 #   public.profiles (user_id, role, team, player_id)
-#   public.players  (player_id, full_name, ...)
+#   public.players  (player_id, full_name, is_active, ...)
 #   public.asrm_entries (player_id, entry_date, ...)
 #   public.rpe_entries (player_id, entry_date, ...)
 #   public.rpe_sessions (rpe_entry_id, session_index, duration_min, rpe)
@@ -25,7 +24,6 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import streamlit as st
 
 try:
@@ -33,7 +31,6 @@ try:
 except Exception:
     create_client = None
 
-is_staff = (role == "staff")
 
 # -----------------------------
 # Supabase helpers
@@ -42,10 +39,7 @@ is_staff = (role == "staff")
 def get_sb():
     if create_client is None:
         return None
-    try:
-        return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
-    except Exception:
-        return None
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
 
 
 def sb_auth(sb):
@@ -67,25 +61,24 @@ def get_my_profile(sb) -> Optional[Dict[str, Any]]:
     sb_auth(sb)
     try:
         uid = sb.auth.get_user().user.id
-        resp = sb.table("profiles").select("user_id,role,team,player_id").eq("user_id", uid).single().execute()
+        resp = (
+            sb.table("profiles")
+            .select("user_id,role,team,player_id")
+            .eq("user_id", uid)
+            .maybe_single()
+            .execute()
+        )
         return resp.data
     except Exception:
         return None
 
 
-def list_players(sb, team: Optional[str]) -> List[Dict[str, Any]]:
+def list_players(sb) -> List[Dict[str, Any]]:
     sb_auth(sb)
-    q = sb.table("players").select("player_id,full_name,is_active").order("full_name")
-    if team:
-        # jouw players tabel heeft geen team kolom in schema; daarom geen team filter hier
-        # als je wél team in players hebt, voeg toe:
-        # q = q.eq("team", team)
-        pass
     try:
-        resp = q.execute()
+        resp = sb.table("players").select("player_id,full_name,is_active").order("full_name").execute()
         rows = resp.data or []
-        # alleen actieve spelers (als kolom bestaat)
-        out = []
+        out: List[Dict[str, Any]] = []
         for r in rows:
             if "is_active" in r and r["is_active"] is False:
                 continue
@@ -125,7 +118,7 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
 
 def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     sb_auth(sb)
-    header = None
+    header: Optional[Dict[str, Any]] = None
     sessions: List[Dict[str, Any]] = []
     try:
         r = (
@@ -198,7 +191,6 @@ def save_rpe(
         "notes": notes.strip() if notes else None,
     }
 
-    # upsert header en pak id terug
     resp = (
         sb.table("rpe_entries")
         .upsert(header_payload, on_conflict="player_id,entry_date")
@@ -209,8 +201,7 @@ def save_rpe(
         raise RuntimeError("Kon rpe_entries niet opslaan.")
     rpe_entry_id = resp.data[0]["id"]
 
-    # upsert sessions (index uniek)
-    payload = []
+    payload: List[Dict[str, Any]] = []
     for s in sessions:
         payload.append(
             {
@@ -229,6 +220,7 @@ def save_rpe(
 # -----------------------------
 def player_pages_main():
     require_auth()
+
     sb = get_sb()
     if sb is None:
         st.error("Supabase client niet beschikbaar. Controleer secrets + supabase package.")
@@ -240,16 +232,16 @@ def player_pages_main():
         st.stop()
 
     role = str(profile.get("role", "player"))
-    team = profile.get("team")
     my_player_id = profile.get("player_id")
 
-    is_staff = role in STAFF_ROLES
+    # Alleen staff mag switchen
+    is_staff = (role == "staff")
 
     # -------------------------
     # Target player bepalen
     # -------------------------
     if is_staff:
-        players = list_players(sb, team)
+        players = list_players(sb)
         if not players:
             st.error("Geen spelers gevonden in public.players.")
             st.stop()
@@ -286,9 +278,21 @@ def player_pages_main():
 
             existing = load_asrm(sb, target_player_id, entry_date) or {}
 
-            ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
+            ms = st.slider(
+                "Muscle soreness (1–10)",
+                1,
+                10,
+                value=int(existing.get("muscle_soreness", 5)),
+                key="asrm_ms",
+            )
             fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
-            sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing.get("sleep_quality", 5)), key="asrm_sleep")
+            sleep = st.slider(
+                "Sleep quality (1–10)",
+                1,
+                10,
+                value=int(existing.get("sleep_quality", 5)),
+                key="asrm_sleep",
+            )
             stress = st.slider("Stress (1–10)", 1, 10, value=int(existing.get("stress", 5)), key="asrm_stress")
             mood = st.slider("Mood (1–10)", 1, 10, value=int(existing.get("mood", 5)), key="asrm_mood")
 
@@ -377,6 +381,7 @@ def player_pages_main():
                     st.success("RPE opgeslagen.")
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
+
 
 # Als je dit bestand direct runt:
 # streamlit run player_pages.py
