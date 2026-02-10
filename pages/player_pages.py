@@ -2,7 +2,7 @@
 # ============================================================
 # Player pagina: tabs Data + Forms
 # - Speler ziet alleen eigen pagina (via profiles.player_id)
-# - Staff (role == 'staff') kan tussen spelers switchen
+# - Staff (of OPEN_MODE) kan tussen spelers switchen
 #
 # Vereisten:
 # - In jouw app is login al gedaan en staat:
@@ -13,10 +13,6 @@
 #   public.asrm_entries (player_id, entry_date, ...)
 #   public.rpe_entries (player_id, entry_date, ...)
 #   public.rpe_sessions (rpe_entry_id, session_index, duration_min, rpe)
-#
-# Secrets:
-# - SUPABASE_URL
-# - SUPABASE_ANON_KEY
 # ============================================================
 
 from __future__ import annotations
@@ -26,82 +22,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 
-try:
-    from supabase import create_client  # type: ignore
-except Exception:
-    create_client = None
-
-
-# -----------------------------
-# Supabase helpers
-# -----------------------------
-@st.cache_resource(show_spinner=False)
-def get_sb():
-    if create_client is None:
-        return None
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
-
-
-def sb_auth(sb):
-    token = st.session_state.get("access_token")
-    if sb is not None and token:
-        try:
-            sb.postgrest.auth(token)
-        except Exception:
-            pass
-
-
-def require_auth():
-    if "access_token" not in st.session_state:
-        st.error("Niet ingelogd.")
-        st.stop()
-
-
-def get_my_profile(sb) -> Optional[Dict[str, Any]]:
-    sb_auth(sb)
-    try:
-        uid = sb.auth.get_user().user.id
-        resp = (
-            sb.table("profiles")
-            .select("user_id,role,team,player_id")
-            .eq("user_id", uid)
-            .maybe_single()
-            .execute()
-        )
-        return resp.data
-    except Exception:
-        return None
-
-
-def list_players(sb) -> List[Dict[str, Any]]:
-    sb_auth(sb)
-    try:
-        resp = sb.table("players").select("player_id,full_name,is_active").order("full_name").execute()
-        rows = resp.data or []
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            if "is_active" in r and r["is_active"] is False:
-                continue
-            out.append(r)
-        return out
-    except Exception:
-        return []
-
-
-def get_player_name(sb, player_id: str) -> str:
-    sb_auth(sb)
-    try:
-        resp = sb.table("players").select("full_name").eq("player_id", player_id).single().execute()
-        return resp.data["full_name"]
-    except Exception:
-        return "Onbekend"
-
+from roles import (
+    get_sb,
+    require_auth,
+    get_profile,
+    ensure_profile_exists_minimal,
+    pick_target_player,
+)
 
 # -----------------------------
 # Load existing entries
 # -----------------------------
 def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
-    sb_auth(sb)
     try:
         resp = (
             sb.table("asrm_entries")
@@ -117,7 +49,6 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
 
 
 def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-    sb_auth(sb)
     header: Optional[Dict[str, Any]] = None
     sessions: List[Dict[str, Any]] = []
     try:
@@ -157,7 +88,6 @@ def save_asrm(
     stress: int,
     mood: int,
 ):
-    sb_auth(sb)
     payload = {
         "player_id": player_id,
         "entry_date": entry_date.isoformat(),
@@ -180,8 +110,6 @@ def save_rpe(
     notes: str,
     sessions: List[Dict[str, int]],
 ):
-    sb_auth(sb)
-
     header_payload = {
         "player_id": player_id,
         "entry_date": entry_date.isoformat(),
@@ -220,42 +148,31 @@ def save_rpe(
 # -----------------------------
 def player_pages_main():
     require_auth()
-
     sb = get_sb()
     if sb is None:
         st.error("Supabase client niet beschikbaar. Controleer secrets + supabase package.")
         st.stop()
 
-    profile = get_my_profile(sb)
+    # Profile ophalen; als ontbreekt, maak minimale (handig tijdens setup)
+    profile = get_profile(sb)
     if not profile:
-        st.error("Geen profiel gevonden in public.profiles voor jouw user.")
+        ok = ensure_profile_exists_minimal(sb, role="player", team="MVV")
+        profile = get_profile(sb) if ok else None
+
+    if not profile:
+        st.error("Geen profiel gevonden/aan te maken in public.profiles voor jouw user.")
         st.stop()
 
-    role = str(profile.get("role", "player"))
-    my_player_id = profile.get("player_id")
+    target_player_id, target_player_name, is_staff = pick_target_player(
+        sb, profile, label="Speler", key="pp_player_select"
+    )
 
-    # Alleen staff mag switchen
-    is_staff = (role == "staff")
-
-    # -------------------------
-    # Target player bepalen
-    # -------------------------
-    if is_staff:
-        players = list_players(sb)
-        if not players:
-            st.error("Geen spelers gevonden in public.players.")
-            st.stop()
-
-        name_to_id = {p["full_name"]: p["player_id"] for p in players}
-        sel_name = st.selectbox("Speler", options=list(name_to_id.keys()), key="pp_player_select")
-        target_player_id = name_to_id[sel_name]
-        target_player_name = sel_name
-    else:
-        if not my_player_id:
+    if not target_player_id:
+        if is_staff:
+            st.error("Geen spelers gevonden in public.players (of geen toegang via RLS).")
+        else:
             st.error("Jouw profile.player_id is leeg. Koppel deze user aan een speler in public.profiles.")
-            st.stop()
-        target_player_id = my_player_id
-        target_player_name = get_player_name(sb, target_player_id)
+        st.stop()
 
     st.title(f"Player: {target_player_name}")
 
@@ -275,24 +192,11 @@ def player_pages_main():
         # =========================
         with col_asrm:
             st.markdown("### ASRM (Wellbeing)")
-
             existing = load_asrm(sb, target_player_id, entry_date) or {}
 
-            ms = st.slider(
-                "Muscle soreness (1–10)",
-                1,
-                10,
-                value=int(existing.get("muscle_soreness", 5)),
-                key="asrm_ms",
-            )
+            ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
             fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
-            sleep = st.slider(
-                "Sleep quality (1–10)",
-                1,
-                10,
-                value=int(existing.get("sleep_quality", 5)),
-                key="asrm_sleep",
-            )
+            sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing.get("sleep_quality", 5)), key="asrm_sleep")
             stress = st.slider("Stress (1–10)", 1, 10, value=int(existing.get("stress", 5)), key="asrm_stress")
             mood = st.slider("Mood (1–10)", 1, 10, value=int(existing.get("mood", 5)), key="asrm_mood")
 
@@ -308,7 +212,6 @@ def player_pages_main():
         # =========================
         with col_rpe:
             st.markdown("### RPE (Session)")
-
             header, sessions = load_rpe(sb, target_player_id, entry_date)
             header = header or {}
             sessions = sessions or []
@@ -342,22 +245,10 @@ def player_pages_main():
                 v = hit.get(key)
                 return int(v) if v is not None else default
 
-            s1_dur = st.number_input(
-                "[1] Duration (min)",
-                min_value=0,
-                max_value=600,
-                value=_sess(1, "duration_min", 0),
-                key="rpe_s1_dur",
-            )
+            s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
             s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
-            s2_dur = st.number_input(
-                "[2] Duration (min)",
-                min_value=0,
-                max_value=600,
-                value=_sess(2, "duration_min", 0),
-                key="rpe_s2_dur",
-            )
+            s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
             s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
 
             sessions_payload: List[Dict[str, int]] = []
@@ -383,7 +274,5 @@ def player_pages_main():
                     st.error(f"Opslaan faalde: {e}")
 
 
-# Als je dit bestand direct runt:
-# streamlit run player_pages.py
 if __name__ == "__main__":
     player_pages_main()
