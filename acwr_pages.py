@@ -794,67 +794,76 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # ========================================================
     with tab_targets:
         st.header("Targets vs Workload")
-
+    
         if sb is None:
             st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
             st.stop()
-
-        team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="tvw_team")
-
+    
+        # =============== RIJ 1 ===============
+        r1c1, r1c2, r1c3 = st.columns([1.2, 1.0, 1.8])
+        with r1c1:
+            team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="tvw_team")
+        with r1c2:
+            target_level = st.radio("Niveau", ["Per speler", "Team (globaal)"], key="tvw_level")
+        with r1c3:
+            if target_level == "Per speler":
+                target_player = st.selectbox("Speler", ["Alle spelers"] + players_sorted, key="tvw_player")
+            else:
+                target_player = "Team"
+                st.selectbox("Speler", ["Team"], index=0, disabled=True, key="tvw_player_disabled")
+    
+        # saved weeks status (✅/⬜ in week dropdown)
         saved_keys = sb_saved_week_keys_cached(team)
         options, opt_to_key, key_to_label = build_week_options(df_weeks, saved_keys)
         if not options:
             st.warning("Geen weken gevonden.")
             st.stop()
-
-        c1, c2 = st.columns([1.2, 1.2])
-        with c1:
-            target_level = st.radio("Niveau", ["Per speler", "Team (globaal)"], key="tvw_level")
-        with c2:
-            if target_level == "Per speler":
-                target_player = st.selectbox("Speler", ["Alle spelers"] + players_sorted, key="tvw_player")
-            else:
-                target_player = "Team"
-
-        # Week dropdown with ✅/⬜
-        sel_opt = st.selectbox("Week (✅ = thresholds aanwezig)", options=options, index=len(options) - 1, key="tvw_week_opt")
-        selected_week_key = int(opt_to_key[sel_opt])
-        selected_week_label = key_to_label.get(selected_week_key, sel_opt.split(" ")[0])
-
-        params_target = st.multiselect("Parameters (max 4)", options=metrics, default=default_metrics, key="tvw_metrics")[:4]
-        if not params_target:
-            st.warning("Kies minimaal 1 parameter.")
-            st.stop()
-
-        # Fallback only for missing metrics in that week
-        cA, cB = st.columns(2)
-        with cA:
+    
+        # =============== RIJ 2 ===============
+        r2c1, r2c2, r2c3, r2c4 = st.columns([1.0, 1.0, 1.1, 2.2])
+        with r2c1:
             fallback_low = st.number_input("Fallback ratio low", value=0.80, step=0.05, key="tvw_low")
-        with cB:
+        with r2c2:
             fallback_high = st.number_input("Fallback ratio high", value=1.00, step=0.05, key="tvw_high")
-
+        with r2c3:
+            sel_opt = st.selectbox("Week (✅ = thresholds)", options=options, index=len(options) - 1, key="tvw_week_opt")
+            selected_week_key = int(opt_to_key[sel_opt])
+            selected_week_label = key_to_label.get(selected_week_key, sel_opt.split(" ")[0])
+        with r2c4:
+            params_target = st.multiselect(
+                "Parameters (max 4)",
+                options=metrics,
+                default=default_metrics,
+                key="tvw_metrics",
+            )[:4]
+    
+        # -------- validations ----------
         if fallback_low <= 0 or fallback_high <= 0:
             st.error("Fallback ratio's moeten > 0 zijn.")
             st.stop()
         if fallback_low > fallback_high:
             st.error("Fallback low mag niet groter zijn dan fallback high.")
             st.stop()
-
-        # AUTO: fetch thresholds for selected week
+        if not params_target:
+            st.warning("Kies minimaal 1 parameter.")
+            st.stop()
+    
+        # -------- AUTO thresholds voor gekozen week ----------
         df_thr_week = sb_get_thresholds_cached(team=team, week_key=selected_week_key)
         ratios_by_metric = ratios_from_threshold_df(df_thr_week, params_target, fallback_low, fallback_high)
-
-        # compute targets (from chronic last4w)
+    
+        # -------- targets berekenen ----------
         targets_players = _compute_player_targets(df_weekly, params_target, ratios_by_metric)
         targets_team = _compute_team_targets(df_weekly, params_target, ratios_by_metric)
-
+    
         if targets_players.empty and targets_team.empty:
             st.warning("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
             st.stop()
-
+    
+        # -------- grafieken ----------
         cols = st.columns(2)
         dfs_for_table: List[Tuple[str, pd.DataFrame]] = []
-
+    
         for i, m in enumerate(params_target):
             df_bar = _compute_target_bar_data(
                 weekly_df=df_weekly,
@@ -866,7 +875,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 target_player=target_player,
             )
             dfs_for_table.append((m, df_bar))
-
+    
             with cols[i % 2]:
                 if df_bar.empty:
                     st.info(f"Geen data voor {m} in {selected_week_label}.")
@@ -879,7 +888,8 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                         title_prefix=f"Week target (ratio {rlow:.2f}–{rhigh:.2f})",
                     )
                     st.plotly_chart(fig, use_container_width=True)
-
+    
+        # -------- tabel ----------
         st.subheader("Absolute waardes t.o.v. targets")
         table_df = _build_target_table(dfs_for_table)
         if table_df.empty:
@@ -887,7 +897,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         else:
             def highlight_remaining_to_min(col):
                 return ["background-color: #FF3333; color: white;" if v > 0 else "" for v in col]
-
+    
             styled = (
                 table_df.style
                 .format({
