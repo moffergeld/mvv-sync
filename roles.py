@@ -26,7 +26,7 @@ except Exception:
 # ================
 # Zet op True om tijdelijk alle roles/RLS checks te omzeilen in je UI-logica
 # (Let op: RLS in Supabase blijft dan nog steeds leidend!)
-OPEN_MODE = False
+OPEN_MODE = True
 
 # Als je nog meerdere staff-rollen wil supporten: voeg hier toe.
 # Als je later weer strict wilt, gebruik je deze set.
