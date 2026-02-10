@@ -33,9 +33,6 @@ try:
 except Exception:
     create_client = None
 
-sb_auth(sb)
-st.write("auth uid:", sb.auth.get_user().user.id)
-
 STAFF_ROLES = {
     "staff",
     "performance_coach",
@@ -388,6 +385,8 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
+sb_auth(sb)
+st.write("auth uid:", sb.auth.get_user().user.id)
 
 # Als je dit bestand direct runt:
 # streamlit run player_pages.py
