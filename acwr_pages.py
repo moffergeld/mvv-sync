@@ -680,70 +680,81 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # ========================================================
     with tab_thresholds:
         st.header("Threshold planner")
-
+    
         if sb is None:
             st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
             st.stop()
-
-        team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="thr_team")
-
+    
+        # =============== RIJ 1: TEAM | PARAMETERS ===============
+        r1c1, r1c2 = st.columns([1.2, 2.8])
+        with r1c1:
+            team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="thr_team")
+        with r1c2:
+            params_thr = st.multiselect(
+                "Parameters",
+                options=metrics,
+                default=default_metrics,
+                key="thr_metrics",
+            )
+            if params_thr:
+                params_thr = params_thr[:4]
+    
+        if not params_thr:
+            st.warning("Kies minimaal 1 parameter.")
+            st.stop()
+    
         # saved status
         saved_keys = sb_saved_week_keys_cached(team)
-
-        # include "next week" option as well (always ⬜)
-        max_wk = int(max(weeks_keys_sorted)) if weeks_keys_sorted else None
+    
+        # include next week option
+        max_wk = int(df_weeks["week_key"].astype(int).max()) if not df_weeks.empty else None
         if max_wk is not None:
             next_wk_key, next_wk_label = _compute_next_week_from_weekkey(max_wk)
             df_next = pd.DataFrame([{"week_key": next_wk_key, "week_label": next_wk_label}])
             df_weeks_all = pd.concat([df_weeks, df_next], ignore_index=True)
         else:
             df_weeks_all = df_weeks.copy()
-
+    
         options, opt_to_key, key_to_label = build_week_options(df_weeks_all, saved_keys)
-
         if not options:
             st.warning("Geen weken gevonden.")
             st.stop()
-
-        # default = next week if present else last
+    
+        # default = next week (als aanwezig), anders laatste
         default_idx = len(options) - 1
         if max_wk is not None:
             next_opt = f"{next_wk_label} {'✅' if next_wk_key in saved_keys else '⬜'}"
             if next_opt in opt_to_key:
                 default_idx = options.index(next_opt)
-
-        sel_opt = st.selectbox("Week (✅ = gesaved)", options=options, index=default_idx, key="thr_week_opt")
-        plan_week_key = int(opt_to_key[sel_opt])
-        plan_week_label = key_to_label.get(plan_week_key, sel_opt.split(" ")[0])
-
-        params_thr = st.multiselect("Parameters", options=metrics, default=default_metrics, key="thr_metrics")
-        if not params_thr:
-            st.warning("Kies minimaal 1 parameter.")
-            st.stop()
-
-        cA, cB = st.columns(2)
-        with cA:
-            fallback_low = st.number_input("Default ratio low (fallback)", value=0.80, step=0.05, key="thr_low")
-        with cB:
-            fallback_high = st.number_input("Default ratio high (fallback)", value=1.00, step=0.05, key="thr_high")
-
+    
+        # =============== RIJ 2: LOW | HIGH | WEEK ===============
+        r2c1, r2c2, r2c3 = st.columns([1.0, 1.0, 1.2])
+        with r2c1:
+            fallback_low = st.number_input("Default ratio low", value=0.80, step=0.05, key="thr_low")
+        with r2c2:
+            fallback_high = st.number_input("Default ratio high", value=1.00, step=0.05, key="thr_high")
+        with r2c3:
+            sel_opt = st.selectbox("Week (✅ = gesaved)", options=options, index=default_idx, key="thr_week_opt")
+            plan_week_key = int(opt_to_key[sel_opt])
+            plan_week_label = key_to_label.get(plan_week_key, sel_opt.split(" ")[0])
+    
         if fallback_low <= 0 or fallback_high <= 0:
             st.error("Ratio's moeten > 0 zijn.")
             st.stop()
         if fallback_low > fallback_high:
             st.error("ratio_low mag niet groter zijn dan ratio_high.")
             st.stop()
-
-        # load existing for selected week -> editor values
+    
+        # bestaande thresholds -> editor startwaarden
         df_thr_existing = sb_get_thresholds_cached(team=team, week_key=plan_week_key)
-        ratios_existing = ratios_from_threshold_df(df_thr_existing, params_thr, fallback_low, fallback_high)
-
+        ratios_existing = ratios_from_threshold_df(df_thr_existing, params_thr, float(fallback_low), float(fallback_high))
+    
         df_edit = pd.DataFrame([{
             "metric": m,
             "ratio_low": ratios_existing[m][0],
             "ratio_high": ratios_existing[m][1],
         } for m in params_thr])
-
+    
         df_edit = st.data_editor(
             df_edit,
             hide_index=True,
@@ -756,7 +767,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
             },
             key="thr_editor",
         )
-
+    
         bad = df_edit[
             (pd.to_numeric(df_edit["ratio_low"], errors="coerce") <= 0)
             | (pd.to_numeric(df_edit["ratio_high"], errors="coerce") <= 0)
@@ -765,9 +776,9 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         if not bad.empty:
             st.error("Ongeldige waarden: ratio_low en ratio_high > 0 en ratio_low <= ratio_high.")
             st.stop()
-
+    
         note = st.text_input("Notitie (optioneel)", value="", key="thr_note")
-
+    
         if st.button("Opslaan", type="primary", use_container_width=True):
             ok, msg = sb_upsert_thresholds(
                 team=team,
@@ -781,14 +792,49 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 st.rerun()
             else:
                 st.error(msg)
-
-        st.caption("Bestaande thresholds voor deze week (Supabase):")
-        df_show = sb_get_thresholds_cached(team=team, week_key=plan_week_key)
-        if df_show.empty:
-            st.info("Geen thresholds opgeslagen voor deze week.")
-        else:
-            st.dataframe(df_show.sort_values("metric"), use_container_width=True)
-
+    
+        # =============== TABEL: ABSOLUTE TARGETS PER SPELER (LOW/HIGH) ===============
+        st.subheader("Targets per speler (absolute waarden)")
+    
+        # chronic mean last 4 weeks per player (op basis van df_weekly)
+        chronic_players = compute_chronic_last4weeks(
+            df=df_weekly,
+            metrics=params_thr,
+            group_col="player",
+            week_col="week_key",
+        )
+        if chronic_players.empty:
+            st.info("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
+            st.stop()
+    
+        # bouw long tabel: player, parameter, chronic, target_low_abs, target_high_abs
+        rows = []
+        for _, r in chronic_players.iterrows():
+            player = r["player"]
+            for m in params_thr:
+                chronic_val = float(r[m])
+                ratio_low = float(df_edit.loc[df_edit["metric"] == m, "ratio_low"].iloc[0])
+                ratio_high = float(df_edit.loc[df_edit["metric"] == m, "ratio_high"].iloc[0])
+                rows.append({
+                    "Speler": player,
+                    "Parameter": m,
+                    "Chronic (mean last4w)": chronic_val,
+                    "Target low": chronic_val * ratio_low,
+                    "Target high": chronic_val * ratio_high,
+                })
+    
+        df_targets = pd.DataFrame(rows)
+        df_targets = df_targets.sort_values(["Speler", "Parameter"]).reset_index(drop=True)
+    
+        st.dataframe(
+            df_targets.style.format({
+                "Chronic (mean last4w)": "{:.2f}",
+                "Target low": "{:.2f}",
+                "Target high": "{:.2f}",
+            }),
+            use_container_width=True,
+            height=520,
+        )
     # ========================================================
     # TAB 3: Targets vs Workload (auto uses thresholds for selected week)
     # ========================================================
@@ -910,3 +956,4 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, use_container_width=True)
+
