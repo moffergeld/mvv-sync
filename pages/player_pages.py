@@ -1,18 +1,6 @@
 # player_pages.py
 # ============================================================
 # Player pagina: tabs Data + Forms
-# - Speler ziet alleen eigen pagina (via profiles.player_id)
-# - Staff (of OPEN_MODE) kan tussen spelers switchen
-#
-# Vereisten:
-# - In jouw app is login al gedaan en staat:
-#     st.session_state["access_token"]
-# - Supabase tables:
-#   public.profiles (user_id, role, team, player_id)
-#   public.players  (player_id, full_name, is_active, ...)
-#   public.asrm_entries (player_id, entry_date, ...)
-#   public.rpe_entries (player_id, entry_date, ...)
-#   public.rpe_sessions (rpe_entry_id, session_index, duration_min, rpe)
 # ============================================================
 
 from __future__ import annotations
@@ -22,17 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 
-from roles import (
-    get_sb,
-    require_auth,
-    get_profile,
-    ensure_profile_exists_minimal,
-    pick_target_player,
-)
+from roles import get_sb, require_auth, get_profile, pick_target_player
 
-# -----------------------------
-# Load existing entries
-# -----------------------------
+
 def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
     try:
         resp = (
@@ -75,9 +55,6 @@ def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, A
     return header, sessions
 
 
-# -----------------------------
-# Save / Upsert
-# -----------------------------
 def save_asrm(
     sb,
     player_id: str,
@@ -143,9 +120,6 @@ def save_rpe(
         sb.table("rpe_sessions").upsert(payload, on_conflict="rpe_entry_id,session_index").execute()
 
 
-# -----------------------------
-# UI
-# -----------------------------
 def player_pages_main():
     require_auth()
     sb = get_sb()
@@ -153,25 +127,13 @@ def player_pages_main():
         st.error("Supabase client niet beschikbaar. Controleer secrets + supabase package.")
         st.stop()
 
-    # Profile ophalen; als ontbreekt, maak minimale (handig tijdens setup)
-    profile = get_profile(sb)
-    if not profile:
-        ok = ensure_profile_exists_minimal(sb, role="player", team="MVV")
-        profile = get_profile(sb) if ok else None
-
-    if not profile:
-        st.error("Geen profiel gevonden/aan te maken in public.profiles voor jouw user.")
-        st.stop()
-
-    target_player_id, target_player_name, is_staff = pick_target_player(
+    profile = get_profile(sb)  # werkt nu, want uid komt uit get_user(token)
+    target_player_id, target_player_name, _ = pick_target_player(
         sb, profile, label="Speler", key="pp_player_select"
     )
 
     if not target_player_id:
-        if is_staff:
-            st.error("Geen spelers gevonden in public.players (of geen toegang via RLS).")
-        else:
-            st.error("Jouw profile.player_id is leeg. Koppel deze user aan een speler in public.profiles.")
+        st.error("Geen speler beschikbaar (players leeg of geen toegang).")
         st.stop()
 
     st.title(f"Player: {target_player_name}")
@@ -187,9 +149,6 @@ def player_pages_main():
 
         col_asrm, col_rpe = st.columns(2)
 
-        # =========================
-        # ASRM (Wellbeing)
-        # =========================
         with col_asrm:
             st.markdown("### ASRM (Wellbeing)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
@@ -207,9 +166,6 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-        # =========================
-        # RPE (Sessions)
-        # =========================
         with col_rpe:
             st.markdown("### RPE (Session)")
             header, sessions = load_rpe(sb, target_player_id, entry_date)
