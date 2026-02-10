@@ -10,6 +10,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Kolomnamen
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -30,6 +31,9 @@ MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
 
+# -----------------------------
+# Helpers (data prep)
+# -----------------------------
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df = df_gps.copy()
 
@@ -39,6 +43,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
+    # TRIMP alias → 'TRIMP'
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -87,17 +92,54 @@ def _month_label_nl(y: int, m: int) -> str:
     return f"{months[m]} {y}"
 
 
-def _calendar_css_compact() -> None:
+# -----------------------------
+# HTML Kalender (robust)
+# -----------------------------
+def _calendar_css_html() -> None:
     st.markdown(
         f"""
         <style>
+        .sl-toolbar {{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:12px;
+            margin: 2px 0 6px 0;
+        }}
+        .sl-toolbar .sl-title {{
+            flex: 1;
+            text-align:center;
+            font-weight: 900;
+            font-size: 16px;
+        }}
+        .sl-btn {{
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            height: 30px;
+            padding: 0 12px;
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.03);
+            color: rgba(255,255,255,0.9);
+            text-decoration:none;
+            font-weight: 800;
+            font-size: 12px;
+            white-space:nowrap;
+        }}
+        .sl-btn:hover {{
+            border: 1px solid rgba(255,255,255,0.24);
+            background: rgba(255,255,255,0.05);
+        }}
+
         .sl-range {{
             opacity: .7;
             font-size: 12px;
             white-space: nowrap;
-            margin-top:-6px;
+            margin-top:-4px;
             text-align:right;
         }}
+
         .sl-legend {{
             display:flex;
             gap:16px;
@@ -116,86 +158,106 @@ def _calendar_css_compact() -> None:
         .sl-dot.practice {{ background:{PRACTICE_BLUE}; }}
         .sl-dot.none {{ background: rgba(180,180,180,0.45); }}
 
+        /* Grid */
+        .sl-grid {{
+            display:grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px 10px; /* row-gap, col-gap */
+        }}
         .sl-dow {{
             font-size: 16px;
             font-weight: 700;
             opacity: .85;
-            margin-bottom: 2px;
+            margin-bottom: -2px;
         }}
-
-        div[data-testid="stButton"] button {{
-            width: 100% !important;
-            border-radius: 18px !important;
-            padding: 2px 4px !important;
-            min-height: 28px !important;
-            line-height: 1.0 !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
-            background: rgba(255,255,255,0.03) !important;
-            font-weight: 900 !important;
-            font-size: 11px !important;
-            white-space: nowrap !important;
+        .sl-tile {{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            height: 28px;                 /* hoger/lager: pas dit aan */
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.12);
+            text-decoration:none;
+            font-weight: 900;
+            font-size: 12px;
+            color: rgba(255,255,255,0.95);
+            user-select:none;
         }}
-        div[data-testid="stButton"] button:hover {{
-            border: 1px solid rgba(255,255,255,0.22) !important;
-            background: rgba(255,255,255,0.05) !important;
+        .sl-tile:hover {{
+            filter: brightness(1.07);
         }}
-
-        section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.06rem !important; }}
-        div[data-testid="stVerticalBlock"] > div {{ gap: 0.04rem; }}
+        .sl-muted {{
+            opacity: .38;
+            pointer-events:none;
+        }}
+        .sl-selected {{
+            outline: 2px solid rgba(255,255,255,0.85);
+            box-shadow: 0 0 0 2px rgba(255,0,51,0.55);
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
-    _calendar_css_compact()
+def calendar_day_picker_html(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
+    """
+    Selectie via query params:
+      ?day=YYYY-MM-DD&y=2026&m=2
+    """
+    _calendar_css_html()
 
     days_with_data, match_days = _compute_day_sets(df)
-
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
 
-    if f"{key_prefix}_selected" not in st.session_state:
-        st.session_state[f"{key_prefix}_selected"] = max_day
-    if f"{key_prefix}_ym" not in st.session_state:
-        sel0: date = st.session_state[f"{key_prefix}_selected"]
-        st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
+    qp = st.query_params
 
-    y, m = st.session_state[f"{key_prefix}_ym"]
+    # selected day
+    day_str = qp.get("day", None)
+    if day_str:
+        try:
+            selected = date.fromisoformat(str(day_str))
+        except Exception:
+            selected = max_day
+    else:
+        selected = max_day
 
-    c1, c2, c3, c4 = st.columns([0.65, 3.0, 0.65, 0.9])
-    with c1:
-        if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
-            first = date(y, m, 1)
-            prev_last = first - timedelta(days=1)
-            st.session_state[f"{key_prefix}_ym"] = (prev_last.year, prev_last.month)
-            y, m = st.session_state[f"{key_prefix}_ym"]
-    with c2:
-        st.markdown(
-            f"<div style='text-align:center;font-weight:900;font-size:16px;'>{_month_label_nl(y,m)}</div>",
-            unsafe_allow_html=True,
-        )
-    with c3:
-        if st.button("›", key=f"{key_prefix}_next", use_container_width=True):
-            last_day = calendar.monthrange(y, m)[1]
-            nxt = date(y, m, last_day) + timedelta(days=1)
-            st.session_state[f"{key_prefix}_ym"] = (nxt.year, nxt.month)
-            y, m = st.session_state[f"{key_prefix}_ym"]
-    with c4:
-        if st.button("today", key=f"{key_prefix}_today", use_container_width=True):
-            t = date.today()
-            st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
-            st.session_state[f"{key_prefix}_selected"] = t
-            y, m = st.session_state[f"{key_prefix}_ym"]
+    # current month view
+    y = qp.get("y", None)
+    m = qp.get("m", None)
+    if y and m:
+        try:
+            y = int(y)
+            m = int(m)
+        except Exception:
+            y, m = selected.year, selected.month
+    else:
+        y, m = selected.year, selected.month
 
-    st.markdown(
-        f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
-        unsafe_allow_html=True,
-    )
+    # Prev/Next month calc
+    first = date(y, m, 1)
+    prev_last = first - timedelta(days=1)
+    last_day = calendar.monthrange(y, m)[1]
+    nxt = date(y, m, last_day) + timedelta(days=1)
+
+    # Toolbar links
+    prev_href = f"?y={prev_last.year}&m={prev_last.month}&day={selected.isoformat()}"
+    next_href = f"?y={nxt.year}&m={nxt.month}&day={selected.isoformat()}"
+    today_d = date.today()
+    today_href = f"?y={today_d.year}&m={today_d.month}&day={today_d.isoformat()}"
 
     st.markdown(
-        """
+        f"""
+        <div class="sl-toolbar">
+          <a class="sl-btn" href="{prev_href}">‹</a>
+          <div class="sl-title">{_month_label_nl(y,m)}</div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <a class="sl-btn" href="{next_href}">›</a>
+            <a class="sl-btn" href="{today_href}">today</a>
+          </div>
+        </div>
+        <div class="sl-range">Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>
         <div class="sl-legend">
           <span><span class="sl-dot match"></span>Match/Practice Match</span>
           <span><span class="sl-dot practice"></span>Practice/data</span>
@@ -205,15 +267,16 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
         unsafe_allow_html=True,
     )
 
+    # DOW headers + grid
+    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+    header_html = "".join([f'<div class="sl-dow">{d}</div>' for d in dows])
+
     cal = calendar.Calendar(firstweekday=0)  # Monday
     month_days = list(cal.itermonthdates(y, m))
-    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-    # ✅ ROBUUST: marker-span + adjacent selector naar de button wrapper
-    css_rules2 = []
+    tiles_html = []
     for d in month_days:
-        if d.month != m:
-            continue
+        in_month = (d.month == m)
 
         if d in match_days:
             bg = "rgba(255,0,51,0.55)"
@@ -225,51 +288,35 @@ def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
             bg = "rgba(180,180,180,0.14)"
             bd = "rgba(180,180,180,0.22)"
 
-        marker = f'{key_prefix}_{d.isoformat()}'
-        css_rules2.append(
-            f"""
-            span[data-sl="{marker}"] + div[data-testid="stButton"] button {{
-                background: {bg} !important;
-                background-color: {bg} !important;
-                border: 1px solid {bd} !important;
-            }}
-            """
+        cls = "sl-tile"
+        if not in_month:
+            cls += " sl-muted"
+        if d == selected:
+            cls += " sl-selected"
+
+        href = f"?y={y}&m={m}&day={d.isoformat()}"
+        style = f"background:{bg}; border:1px solid {bd};"
+
+        tiles_html.append(
+            f'<a class="{cls}" href="{href}" style="{style}">{d.day}</a>'
         )
 
-    sel = st.session_state.get(f"{key_prefix}_selected")
-    if isinstance(sel, date):
-        marker = f'{key_prefix}_{sel.isoformat()}'
-        css_rules2.append(
-            f"""
-            span[data-sl="{marker}"] + div[data-testid="stButton"] button {{
-                outline: 2px solid rgba(255,255,255,0.85) !important;
-                box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
-            }}
-            """
-        )
+    st.markdown(
+        f"""
+        <div class="sl-grid">
+            {header_html}
+            {''.join(tiles_html)}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown(f"<style>{''.join(css_rules2)}</style>", unsafe_allow_html=True)
-
-    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-    header_cols = st.columns(7)
-    for i, name in enumerate(dows):
-        with header_cols[i]:
-            st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
-
-    for week in weeks:
-        cols = st.columns(7)
-        for i, d in enumerate(week):
-            in_month = d.month == m
-            marker = f'{key_prefix}_{d.isoformat()}'
-            with cols[i]:
-                st.markdown(f'<span data-sl="{marker}"></span>', unsafe_allow_html=True)
-                if st.button(str(d.day), key=f"{key_prefix}_btn_{d.isoformat()}", disabled=not in_month, use_container_width=True):
-                    st.session_state[f"{key_prefix}_selected"] = d
-                    st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
-
-    return st.session_state[f"{key_prefix}_selected"]
+    return selected
 
 
+# -----------------------------
+# Data helpers
+# -----------------------------
 def _get_day_session_subset(df: pd.DataFrame, day: pd.Timestamp, session_mode: str) -> pd.DataFrame:
     df_day = df[df[COL_DATE].dt.date == day.date()].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
@@ -307,6 +354,9 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
 
+# -----------------------------
+# Plots (zoals voorheen)
+# -----------------------------
 def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden in de data.")
@@ -318,7 +368,8 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     fig.add_bar(
-        x=players, y=vals,
+        x=players,
+        y=vals,
         marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
@@ -328,7 +379,9 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     mean_val = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
     fig.add_hline(
-        y=mean_val, line_dash="dot", line_color="black",
+        y=mean_val,
+        line_dash="dot",
+        line_color="black",
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
         annotation_position="top left",
         annotation_font_size=10,
@@ -358,13 +411,19 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     x = np.arange(len(players))
 
     fig.add_bar(
-        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
+        x=x - 0.2,
+        y=sprint_vals,
+        width=0.4,
+        name="Sprint",
         marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
     fig.add_bar(
-        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
+        x=x + 0.2,
+        y=hs_vals,
+        width=0.4,
+        name="High Sprint",
         marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
@@ -383,7 +442,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
 
 def _plot_acc_dec(df_agg: pd.DataFrame):
     have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
-    if not have_cols:
+    if len(have_cols) == 0:
         st.info("Geen Acceleration/Deceleration kolommen gevonden.")
         return
 
@@ -431,7 +490,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     base_x = np.arange(len(players))
 
     fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
-
     color_map = {
         "HRzone1": "rgba(180,180,180,0.9)",
         "HRzone2": "rgba(150,200,255,0.9)",
@@ -453,8 +511,10 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=base_x, y=df_agg["TRIMP"],
-                mode="lines+markers", name="HR Trimp",
+                x=base_x,
+                y=df_agg["TRIMP"],
+                mode="lines+markers",
+                name="HR Trimp",
                 line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
             ),
             secondary_y=True,
@@ -475,6 +535,9 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
+# -----------------------------
+# Main
+# -----------------------------
 def session_load_pages_main(df_gps: pd.DataFrame):
     st.header("Session Load")
 
@@ -492,7 +555,7 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden.")
         return
 
-    selected_d = calendar_day_picker(df, key_prefix="slcal")
+    selected_d = calendar_day_picker_html(df, key_prefix="slcal")
     selected_day = pd.Timestamp(selected_d)
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day.date()].copy()
