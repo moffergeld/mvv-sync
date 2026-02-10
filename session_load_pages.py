@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, timedelta
-
+import json
+import streamlit.components.v1 as components
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -160,161 +161,318 @@ def _calendar_css_compact() -> None:
     )
 
 
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
-    _calendar_css_compact()
-
+def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal", height: int = 240) -> date:
     days_with_data, match_days = _compute_day_sets(df)
 
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
 
+    # default selected
     if f"{key_prefix}_selected" not in st.session_state:
         st.session_state[f"{key_prefix}_selected"] = max_day
-    if f"{key_prefix}_ym" not in st.session_state:
-        sel0: date = st.session_state[f"{key_prefix}_selected"]
-        st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
 
-    y, m = st.session_state[f"{key_prefix}_ym"]
+    selected: date = st.session_state[f"{key_prefix}_selected"]
+    start_y, start_m = selected.year, selected.month
 
-    # Toolbar: ‹  [Maand Jaar]  ›   today
-    with st.container():
-        st.markdown('<div class="sl-nav">', unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns([0.9, 3.2, 0.9, 1.2])
-        with c1:
-            if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
-                first = date(y, m, 1)
-                prev_last = first - timedelta(days=1)
-                st.session_state[f"{key_prefix}_ym"] = (prev_last.year, prev_last.month)
-                y, m = st.session_state[f"{key_prefix}_ym"]
-        with c2:
-            st.markdown(
-                f"<div style='text-align:center;font-weight:900;font-size:16px;'>{_month_label_nl(y,m)}</div>",
-                unsafe_allow_html=True,
-            )
-        with c3:
-            if st.button("›", key=f"{key_prefix}_next", use_container_width=True):
-                last_day = calendar.monthrange(y, m)[1]
-                nxt = date(y, m, last_day) + timedelta(days=1)
-                st.session_state[f"{key_prefix}_ym"] = (nxt.year, nxt.month)
-                y, m = st.session_state[f"{key_prefix}_ym"]
-        with c4:
-            if st.button("today", key=f"{key_prefix}_today", use_container_width=True):
-                t = date.today()
-                st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
-                st.session_state[f"{key_prefix}_selected"] = t
-                y, m = st.session_state[f"{key_prefix}_ym"]
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown(
-        f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        """
-        <div class="sl-legend">
-          <span><span class="sl-dot match"></span>Match/Practice Match</span>
-          <span><span class="sl-dot practice"></span>Practice/data</span>
-          <span><span class="sl-dot none"></span>geen data</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Kalender matrix
-    cal = calendar.Calendar(firstweekday=0)  # Monday
-    month_days = list(cal.itermonthdates(y, m))
-    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
-
-    # ---- KLEUR APPLY VIA aria-label (stabieler dan id) ----
-    # Streamlit zet vaak aria-label="X" op de button, waar X de visible label is.
-    # Daarom maken we labels uniek: "D|YYYY-MM-DD|daynum"
-    css = []
-    for d in month_days:
-        if d.month != m:
-            continue
-
-        if d in match_days:
-            bg = "rgba(255,0,51,0.55)"
-            bd = "rgba(255,0,51,0.85)"
-        elif d in days_with_data:
-            bg = "rgba(74,163,255,0.38)"
-            bd = "rgba(74,163,255,0.65)"
-        else:
-            bg = "rgba(180,180,180,0.14)"
-            bd = "rgba(180,180,180,0.22)"
-
-        label = f"D|{d.isoformat()}|{d.day}"
-        css.append(
-            f"""
-            button[aria-label="{label}"] {{
-                background: {bg} !important;
-                border: 1px solid {bd} !important;
-            }}
-            """
-        )
-
-    sel = st.session_state.get(f"{key_prefix}_selected")
-    if isinstance(sel, date):
-        sel_label = f"D|{sel.isoformat()}|{sel.day}"
-        css.append(
-            f"""
-            button[aria-label="{sel_label}"] {{
-                outline: 2px solid rgba(255,255,255,0.85) !important;
-                box-shadow: 0 0 0 2px rgba(255,0,51,0.55) !important;
-            }}
-            """
-        )
-
-    st.markdown(f"<style>{''.join(css)}</style>", unsafe_allow_html=True)
-
-    # DOW headers
-    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-    header_cols = st.columns(7)
-    for i, name in enumerate(dows):
-        with header_cols[i]:
-            st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
-
-    # Grid
-    for week in weeks:
-        cols = st.columns(7)
-        for i, d in enumerate(week):
-            in_month = (d.month == m)
-            # unieke label voor aria-label
-            label = f"D|{d.isoformat()}|{d.day}"
-            with cols[i]:
-                if st.button(label, key=f"{key_prefix}_{d.isoformat()}", disabled=not in_month, use_container_width=True):
-                    st.session_state[f"{key_prefix}_selected"] = d
-                    st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
-
-    # zichtbare tekst fix: toon alleen dagnummer (we verbergen label via CSS)
-    st.markdown(
-        """
-        <style>
-        /* Verberg de "D|YYYY-MM-DD|" prefix, laat alleen laatste stuk (dag) zien */
-        button[aria-label^="D|"] { font-size: 0 !important; }
-        button[aria-label^="D|"]::after {
-            content: attr(aria-label);
-            font-size: 12px;
-            font-weight: 900;
+    # serialize sets
+    payload = {
+        "days_with_data": sorted([d.isoformat() for d in days_with_data]),
+        "match_days": sorted([d.isoformat() for d in match_days]),
+        "min_day": min_day.isoformat(),
+        "max_day": max_day.isoformat(),
+        "init_year": start_y,
+        "init_month": start_m,
+        "selected": selected.isoformat(),
+        "labels": {
+            "legend_match": "Match/Practice Match",
+            "legend_practice": "Practice/data",
+            "legend_none": "geen data",
+            "range": "Bereik",
+            "today": "today",
+            "dows": ["ma", "di", "wo", "do", "vr", "za", "zo"],
+            "months": ["", "Januari","Februari","Maart","April","Mei","Juni","Juli","Augustus","September","Oktober","November","December"],
+        },
+        # styling knobs
+        "colors": {
+            "match": "rgba(255,0,51,0.60)",
+            "practice": "rgba(74,163,255,0.42)",
+            "none": "rgba(180,180,180,0.16)",
+            "border_match": "rgba(255,0,51,0.90)",
+            "border_practice": "rgba(74,163,255,0.70)",
+            "border_none": "rgba(180,180,180,0.25)",
         }
-        /* Extracten kan CSS niet; daarom tonen we volledige aria-label niet.
-           Fallback: we tonen dagnummer via data-attr is niet mogelijk in pure st.button.
-           => oplossing: we zetten aria-label zelf al als alleen dagnummer, maar dan niet uniek.
-           Daarom houden we deze simple fix: we tonen dagnummer los met overlay */
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    # ^ Let op: CSS kan niet substringen; dus bovenstaande maakt label niet netjes.
-    # Daarom: we doen het correct door label gewoon dagnummer te tonen en key uniek te houden.
-    # Die aanpak hieronder is de definitieve return.
+    }
 
-    # Definitieve aanpak: dagnummer als label, key uniek, kleuren via aria-label niet mogelijk.
-    # Daarom returnen we selected; de kleur-regels hierboven werken alleen als aria-label gelijk is aan label.
-    # -> Als je Streamlit aria-label exact = visible label zet, werkt het.
+    html = f"""
+    <div id="slcal-root"></div>
+
+    <script>
+      const DATA = {json.dumps(payload)};
+      const root = document.getElementById("slcal-root");
+
+      const daysWithData = new Set(DATA.days_with_data);
+      const matchDays = new Set(DATA.match_days);
+
+      let viewYear = DATA.init_year;
+      let viewMonth = DATA.init_month;
+      let selected = DATA.selected;
+
+      function monthLabel(y, m) {{
+        return DATA.labels.months[m] + " " + y;
+      }}
+
+      function ymd(y, m, d) {{
+        const mm = String(m).padStart(2,"0");
+        const dd = String(d).padStart(2,"0");
+        return `${{y}}-${{mm}}-${{dd}}`;
+      }}
+
+      function daysInMonth(y, m) {{
+        return new Date(y, m, 0).getDate();
+      }}
+
+      function firstDowMondayBased(y, m) {{
+        // JS: 0=Sun..6=Sat
+        const jsDow = new Date(y, m-1, 1).getDay();
+        // convert to Monday=0..Sunday=6
+        return (jsDow + 6) % 7;
+      }}
+
+      function postValue(val) {{
+        // Streamlit "unofficial" postMessage bridge used by components.html
+        window.parent.postMessage({{
+          isStreamlitMessage: true,
+          type: "streamlit:setComponentValue",
+          value: val
+        }}, "*");
+      }}
+
+      function setHeight(h) {{
+        window.parent.postMessage({{
+          isStreamlitMessage: true,
+          type: "streamlit:setFrameHeight",
+          height: h
+        }}, "*");
+      }}
+
+      function render() {{
+        const minDay = DATA.min_day;
+        const maxDay = DATA.max_day;
+
+        root.innerHTML = `
+          <style>
+            :root {{
+              --bg: rgba(255,255,255,0.03);
+              --bd: rgba(255,255,255,0.12);
+              --txt: rgba(255,255,255,0.92);
+              --muted: rgba(255,255,255,0.65);
+            }}
+
+            .sl-wrap {{
+              font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+              color: var(--txt);
+            }}
+
+            .sl-toolbar {{
+              display: grid;
+              grid-template-columns: 120px 1fr 120px 140px;
+              gap: 10px;
+              align-items: center;
+              margin-bottom: 6px;
+            }}
+
+            .sl-btn {{
+              background: var(--bg);
+              border: 1px solid var(--bd);
+              color: var(--txt);
+              border-radius: 18px;
+              height: 30px;
+              cursor: pointer;
+              font-weight: 800;
+              font-size: 12px;
+            }}
+            .sl-btn:hover {{
+              border-color: rgba(255,255,255,0.22);
+              background: rgba(255,255,255,0.05);
+            }}
+
+            .sl-title {{
+              text-align: center;
+              font-weight: 900;
+              font-size: 16px;
+            }}
+
+            .sl-range {{
+              text-align: right;
+              font-size: 12px;
+              opacity: .7;
+              margin-top: -2px;
+            }}
+
+            .sl-legend {{
+              display:flex;
+              gap:16px;
+              align-items:center;
+              font-size:12px;
+              margin: 6px 0 10px 0;
+              opacity:.9;
+            }}
+            .dot {{
+              width:10px;height:10px;border-radius:50%;
+              display:inline-block;margin-right:7px;
+            }}
+            .dot.match {{ background: {MVV_RED}; }}
+            .dot.practice {{ background: {PRACTICE_BLUE}; }}
+            .dot.none {{ background: rgba(180,180,180,0.45); }}
+
+            .sl-grid {{
+              display: grid;
+              grid-template-columns: repeat(7, 1fr);
+              column-gap: 10px;
+              row-gap: 8px;
+            }}
+
+            .dow {{
+              font-size: 15px;
+              font-weight: 800;
+              opacity: .85;
+            }}
+
+            .cell {{
+              height: 26px;               /* tile hoogte */
+              border-radius: 18px;
+              border: 1px solid var(--bd);
+              background: var(--bg);
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              font-weight: 900;
+              font-size: 12px;
+              cursor: pointer;
+              user-select: none;
+            }}
+
+            .cell.disabled {{
+              opacity: 0.35;
+              cursor: default;
+            }}
+
+            .cell.sel {{
+              outline: 2px solid rgba(255,255,255,0.85);
+              box-shadow: 0 0 0 2px rgba(255,0,51,0.55);
+            }}
+          </style>
+
+          <div class="sl-wrap">
+            <div class="sl-toolbar">
+              <button class="sl-btn" id="prev">‹</button>
+              <div class="sl-title">${{monthLabel(viewYear, viewMonth)}}</div>
+              <button class="sl-btn" id="next">›</button>
+              <button class="sl-btn" id="today">{DATA.labels.today}</button>
+            </div>
+
+            <div class="sl-range">{DATA.labels.range}: ${{minDay.split("-").reverse().join("-")}} – ${{maxDay.split("-").reverse().join("-")}}</div>
+
+            <div class="sl-legend">
+              <span><span class="dot match"></span>{DATA.labels.legend_match}</span>
+              <span><span class="dot practice"></span>{DATA.labels.legend_practice}</span>
+              <span><span class="dot none"></span>{DATA.labels.legend_none}</span>
+            </div>
+
+            <div class="sl-grid" id="grid"></div>
+          </div>
+        `;
+
+        const grid = document.getElementById("grid");
+
+        // DOW row
+        for (const d of DATA.labels.dows) {{
+          const el = document.createElement("div");
+          el.className = "dow";
+          el.textContent = d;
+          grid.appendChild(el);
+        }}
+
+        // blank cells before day 1
+        const offset = firstDowMondayBased(viewYear, viewMonth);
+        for (let i=0; i<offset; i++) {{
+          const blank = document.createElement("div");
+          blank.className = "cell disabled";
+          blank.textContent = "";
+          grid.appendChild(blank);
+        }}
+
+        const dim = daysInMonth(viewYear, viewMonth);
+        for (let day=1; day<=dim; day++) {{
+          const iso = ymd(viewYear, viewMonth, day);
+
+          let bg = DATA.colors.none;
+          let bd = DATA.colors.border_none;
+
+          if (matchDays.has(iso)) {{
+            bg = DATA.colors.match;
+            bd = DATA.colors.border_match;
+          }} else if (daysWithData.has(iso)) {{
+            bg = DATA.colors.practice;
+            bd = DATA.colors.border_practice;
+          }}
+
+          const el = document.createElement("div");
+          el.className = "cell";
+          el.textContent = String(day);
+
+          el.style.background = bg;
+          el.style.borderColor = bd;
+
+          if (iso === selected) {{
+            el.classList.add("sel");
+          }}
+
+          el.addEventListener("click", () => {{
+            selected = iso;
+            postValue(iso);
+            render(); // update selection highlight without rerun
+          }});
+
+          grid.appendChild(el);
+        }}
+
+        // navigation (no rerun)
+        document.getElementById("prev").onclick = () => {{
+          viewMonth -= 1;
+          if (viewMonth < 1) {{ viewMonth = 12; viewYear -= 1; }}
+          render();
+        }};
+        document.getElementById("next").onclick = () => {{
+          viewMonth += 1;
+          if (viewMonth > 12) {{ viewMonth = 1; viewYear += 1; }}
+          render();
+        }};
+        document.getElementById("today").onclick = () => {{
+          const t = new Date();
+          viewYear = t.getFullYear();
+          viewMonth = t.getMonth()+1;
+          render();
+        }};
+
+        setHeight({height});
+      }}
+
+      render();
+    </script>
+    """
+
+    # component returns ISO date string when clicked
+    iso = components.html(html, height=height, key=f"{key_prefix}_html")
+
+    if isinstance(iso, str) and len(iso) == 10:
+        try:
+            picked = date.fromisoformat(iso)
+            st.session_state[f"{key_prefix}_selected"] = picked
+        except Exception:
+            pass
+
     return st.session_state[f"{key_prefix}_selected"]
-
 
 # -----------------------------
 # Data helpers
@@ -560,3 +718,4 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
