@@ -1,17 +1,34 @@
 # session_load_pages.py
+# ==========================================
+# Session Load dashboard
+# - Kalender als enige dag-filter (geen sliders)
+# - Kleuren als bolletjes (✅ stabiel in Streamlit; geen HTML component)
+#   * Rood  = Match/Practice Match (Type bevat "match")
+#   * Blauw = Practice/data (wel data, geen match)
+#   * Grijs = geen data
+# - Compacte kalender (smalle tiles, minimale gaps)
+# - Maand + jaar tussen pijlen, maanden met hoofdletter
+# - Grafieken:
+#   * Total Distance
+#   * Sprint & High Sprint (grouped)
+#   * Accelerations / Decelerations (grouped)
+#   * HR zones + TRIMP (✅ gegroepeerde balken i.p.v. stacked)
+# ==========================================
+
 from __future__ import annotations
 
 import calendar
 from datetime import date, timedelta
-import json
-import streamlit.components.v1 as components
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Kolomnamen
+# -----------------------------
+# Kolomnamen (verwacht uit 07_GPS_Data mapping)
+# -----------------------------
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -36,6 +53,12 @@ PRACTICE_BLUE = "#4AA3FF"
 # Helpers (data prep)
 # -----------------------------
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
+    """
+    - Datum -> datetime
+    - Alleen rijen met datum + speler
+    - TRIMP alias -> 'TRIMP'
+    - Numeriek cast (NaN -> 0)
+    """
     df = df_gps.copy()
 
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -44,17 +67,23 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
+    # TRIMP alias -> TRIMP
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
             trimp_col = c
             break
-    df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
+
+    if trimp_col is not None:
+        df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0)
+    else:
+        df["TRIMP"] = 0.0
 
     numeric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
         COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        *HR_COLS,
+        "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -68,6 +97,10 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
 
 
 def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
+    """
+    days_with_data: dagen met minstens 1 record
+    match_days: dagen waar Type 'match' bevat
+    """
     if df.empty:
         return set(), set()
 
@@ -84,13 +117,16 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
 
 
 def _month_label_nl(y: int, m: int) -> str:
-    months = ["", "Januari", "Februari", "Maart", "April", "Mei", "Juni", "Juli",
-              "Augustus", "September", "Oktober", "November", "December"]
+    months = [
+        "",
+        "Januari", "Februari", "Maart", "April", "Mei", "Juni",
+        "Juli", "Augustus", "September", "Oktober", "November", "December",
+    ]
     return f"{months[m]} {y}"
 
 
 # -----------------------------
-# Kalender CSS (buttons)
+# Kalender UI (bolletjes)
 # -----------------------------
 def _calendar_css_compact() -> None:
     st.markdown(
@@ -123,37 +159,55 @@ def _calendar_css_compact() -> None:
         .sl-dot.none {{ background: rgba(180,180,180,0.45); }}
 
         .sl-dow {{
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 800;
             opacity: .85;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }}
 
-        /* Tiles compacter + hoger instelbaar */
-        div[data-testid="stButton"] > button {{
+        /* Buttons compacter + minder breedte (halveren effect) */
+        div[data-testid="stButton"] button {{
             width: 100% !important;
-            border-radius: 18px !important;
+            border-radius: 999px !important;
             padding: 2px 6px !important;
-            min-height: 26px !important;   /* HIER hoger/lager */
+            min-height: 24px !important;   /* hoger/lager hier aanpassen */
             line-height: 1.0 !important;
             border: 1px solid rgba(255,255,255,0.12) !important;
             background: rgba(255,255,255,0.03) !important;
             font-weight: 900 !important;
-            font-size: 12px !important;
+            font-size: 11px !important;
+            white-space: nowrap !important;
         }}
-        div[data-testid="stButton"] > button:hover {{
+        div[data-testid="stButton"] button:hover {{
             border: 1px solid rgba(255,255,255,0.22) !important;
             background: rgba(255,255,255,0.05) !important;
         }}
 
-        /* Minder gaps */
-        section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.10rem !important; }}
-        div[data-testid="stVerticalBlock"] > div {{ gap: 0.06rem; }}
+        /* Minder gaps tussen columns/rows */
+        section.main div[data-testid="stHorizontalBlock"] {{ gap: 0.05rem !important; }}
+        div[data-testid="stVerticalBlock"] > div {{ gap: 0.03rem; }}
 
-        /* Toolbar buttons niet gigantisch */
-        .sl-nav div[data-testid="stButton"] > button {{
-            min-height: 30px !important;
-            font-size: 12px !important;
+        /* Dot in button */
+        .sl-btn-inner {{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap: 8px;
+        }}
+        .sl-btn-dot {{
+            width:10px; height:10px; border-radius:50%;
+            display:inline-block;
+        }}
+        .sl-dot-match {{ background:{MVV_RED}; }}
+        .sl-dot-practice {{ background:{PRACTICE_BLUE}; }}
+        .sl-dot-none {{ background: rgba(180,180,180,0.45); }}
+
+        /* Maand header center */
+        .sl-month {{
+            text-align:center;
+            font-weight: 900;
+            font-size: 16px;
+            margin-top: 2px;
         }}
         </style>
         """,
@@ -161,318 +215,109 @@ def _calendar_css_compact() -> None:
     )
 
 
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal", height: int = 240) -> date:
+def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "slcal") -> date:
+    _calendar_css_compact()
+
     days_with_data, match_days = _compute_day_sets(df)
 
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
 
-    # default selected
     if f"{key_prefix}_selected" not in st.session_state:
         st.session_state[f"{key_prefix}_selected"] = max_day
+    if f"{key_prefix}_ym" not in st.session_state:
+        sel0: date = st.session_state[f"{key_prefix}_selected"]
+        st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
 
-    selected: date = st.session_state[f"{key_prefix}_selected"]
-    start_y, start_m = selected.year, selected.month
+    y, m = st.session_state[f"{key_prefix}_ym"]
 
-    # serialize sets
-    payload = {
-        "days_with_data": sorted([d.isoformat() for d in days_with_data]),
-        "match_days": sorted([d.isoformat() for d in match_days]),
-        "min_day": min_day.isoformat(),
-        "max_day": max_day.isoformat(),
-        "init_year": start_y,
-        "init_month": start_m,
-        "selected": selected.isoformat(),
-        "labels": {
-            "legend_match": "Match/Practice Match",
-            "legend_practice": "Practice/data",
-            "legend_none": "geen data",
-            "range": "Bereik",
-            "today": "today",
-            "dows": ["ma", "di", "wo", "do", "vr", "za", "zo"],
-            "months": ["", "Januari","Februari","Maart","April","Mei","Juni","Juli","Augustus","September","Oktober","November","December"],
-        },
-        # styling knobs
-        "colors": {
-            "match": "rgba(255,0,51,0.60)",
-            "practice": "rgba(74,163,255,0.42)",
-            "none": "rgba(180,180,180,0.16)",
-            "border_match": "rgba(255,0,51,0.90)",
-            "border_practice": "rgba(74,163,255,0.70)",
-            "border_none": "rgba(180,180,180,0.25)",
-        }
-    }
+    # Toolbar: ‹ [Maand Jaar] › today
+    c1, c2, c3, c4 = st.columns([0.9, 3.2, 0.9, 1.2])
+    with c1:
+        if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
+            first = date(y, m, 1)
+            prev_last = first - timedelta(days=1)
+            st.session_state[f"{key_prefix}_ym"] = (prev_last.year, prev_last.month)
+            y, m = st.session_state[f"{key_prefix}_ym"]
+    with c2:
+        st.markdown(f"<div class='sl-month'>{_month_label_nl(y, m)}</div>", unsafe_allow_html=True)
+    with c3:
+        if st.button("›", key=f"{key_prefix}_next", use_container_width=True):
+            last_day = calendar.monthrange(y, m)[1]
+            nxt = date(y, m, last_day) + timedelta(days=1)
+            st.session_state[f"{key_prefix}_ym"] = (nxt.year, nxt.month)
+            y, m = st.session_state[f"{key_prefix}_ym"]
+    with c4:
+        if st.button("today", key=f"{key_prefix}_today", use_container_width=True):
+            t = date.today()
+            st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
+            st.session_state[f"{key_prefix}_selected"] = t
+            y, m = st.session_state[f"{key_prefix}_ym"]
 
-    html = f"""
-    <div id="slcal-root"></div>
+    st.markdown(
+        f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
+        unsafe_allow_html=True,
+    )
 
-    <script>
-      const DATA = {json.dumps(payload)};
-      const root = document.getElementById("slcal-root");
+    st.markdown(
+        """
+        <div class="sl-legend">
+          <span><span class="sl-dot match"></span>Match/Practice Match</span>
+          <span><span class="sl-dot practice"></span>Practice/data</span>
+          <span><span class="sl-dot none"></span>geen data</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-      const daysWithData = new Set(DATA.days_with_data);
-      const matchDays = new Set(DATA.match_days);
+    # month days
+    cal = calendar.Calendar(firstweekday=0)  # Monday
+    month_days = list(cal.itermonthdates(y, m))
+    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
 
-      let viewYear = DATA.init_year;
-      let viewMonth = DATA.init_month;
-      let selected = DATA.selected;
+    # DOW headers
+    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
+    header_cols = st.columns(7)
+    for i, name in enumerate(dows):
+        with header_cols[i]:
+            st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
 
-      function monthLabel(y, m) {{
-        return DATA.labels.months[m] + " " + y;
-      }}
+    # Grid
+    for week in weeks:
+        cols = st.columns(7)
+        for i, d in enumerate(week):
+            in_month = (d.month == m)
 
-      function ymd(y, m, d) {{
-        const mm = String(m).padStart(2,"0");
-        const dd = String(d).padStart(2,"0");
-        return `${{y}}-${{mm}}-${{dd}}`;
-      }}
+            if d in match_days:
+                dot_class = "sl-btn-dot sl-dot-match"
+            elif d in days_with_data:
+                dot_class = "sl-btn-dot sl-dot-practice"
+            else:
+                dot_class = "sl-btn-dot sl-dot-none"
 
-      function daysInMonth(y, m) {{
-        return new Date(y, m, 0).getDate();
-      }}
+            label_html = f"<span class='{dot_class}'></span><span>{d.day}</span>"
+            btn_label = f"{d.day}"  # Streamlit label must be plain text
 
-      function firstDowMondayBased(y, m) {{
-        // JS: 0=Sun..6=Sat
-        const jsDow = new Date(y, m-1, 1).getDay();
-        // convert to Monday=0..Sunday=6
-        return (jsDow + 6) % 7;
-      }}
+            bkey = f"{key_prefix}_d_{d.isoformat()}"
+            with cols[i]:
+                # Render dot + day number using HTML above the button to avoid label hacks
+                st.markdown(
+                    f"""
+                    <div style="margin-bottom:-26px; position:relative; z-index:2; pointer-events:none;">
+                      <div class="sl-btn-inner" style="height:24px;">
+                        {label_html}
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-      function postValue(val) {{
-        // Streamlit "unofficial" postMessage bridge used by components.html
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "streamlit:setComponentValue",
-          value: val
-        }}, "*");
-      }}
-
-      function setHeight(h) {{
-        window.parent.postMessage({{
-          isStreamlitMessage: true,
-          type: "streamlit:setFrameHeight",
-          height: h
-        }}, "*");
-      }}
-
-      function render() {{
-        const minDay = DATA.min_day;
-        const maxDay = DATA.max_day;
-
-        root.innerHTML = `
-          <style>
-            :root {{
-              --bg: rgba(255,255,255,0.03);
-              --bd: rgba(255,255,255,0.12);
-              --txt: rgba(255,255,255,0.92);
-              --muted: rgba(255,255,255,0.65);
-            }}
-
-            .sl-wrap {{
-              font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
-              color: var(--txt);
-            }}
-
-            .sl-toolbar {{
-              display: grid;
-              grid-template-columns: 120px 1fr 120px 140px;
-              gap: 10px;
-              align-items: center;
-              margin-bottom: 6px;
-            }}
-
-            .sl-btn {{
-              background: var(--bg);
-              border: 1px solid var(--bd);
-              color: var(--txt);
-              border-radius: 18px;
-              height: 30px;
-              cursor: pointer;
-              font-weight: 800;
-              font-size: 12px;
-            }}
-            .sl-btn:hover {{
-              border-color: rgba(255,255,255,0.22);
-              background: rgba(255,255,255,0.05);
-            }}
-
-            .sl-title {{
-              text-align: center;
-              font-weight: 900;
-              font-size: 16px;
-            }}
-
-            .sl-range {{
-              text-align: right;
-              font-size: 12px;
-              opacity: .7;
-              margin-top: -2px;
-            }}
-
-            .sl-legend {{
-              display:flex;
-              gap:16px;
-              align-items:center;
-              font-size:12px;
-              margin: 6px 0 10px 0;
-              opacity:.9;
-            }}
-            .dot {{
-              width:10px;height:10px;border-radius:50%;
-              display:inline-block;margin-right:7px;
-            }}
-            .dot.match {{ background: {MVV_RED}; }}
-            .dot.practice {{ background: {PRACTICE_BLUE}; }}
-            .dot.none {{ background: rgba(180,180,180,0.45); }}
-
-            .sl-grid {{
-              display: grid;
-              grid-template-columns: repeat(7, 1fr);
-              column-gap: 10px;
-              row-gap: 8px;
-            }}
-
-            .dow {{
-              font-size: 15px;
-              font-weight: 800;
-              opacity: .85;
-            }}
-
-            .cell {{
-              height: 26px;               /* tile hoogte */
-              border-radius: 18px;
-              border: 1px solid var(--bd);
-              background: var(--bg);
-              display:flex;
-              align-items:center;
-              justify-content:center;
-              font-weight: 900;
-              font-size: 12px;
-              cursor: pointer;
-              user-select: none;
-            }}
-
-            .cell.disabled {{
-              opacity: 0.35;
-              cursor: default;
-            }}
-
-            .cell.sel {{
-              outline: 2px solid rgba(255,255,255,0.85);
-              box-shadow: 0 0 0 2px rgba(255,0,51,0.55);
-            }}
-          </style>
-
-          <div class="sl-wrap">
-            <div class="sl-toolbar">
-              <button class="sl-btn" id="prev">‹</button>
-              <div class="sl-title">${{monthLabel(viewYear, viewMonth)}}</div>
-              <button class="sl-btn" id="next">›</button>
-              <button class="sl-btn" id="today">{DATA.labels.today}</button>
-            </div>
-
-            <div class="sl-range">{DATA.labels.range}: ${{minDay.split("-").reverse().join("-")}} – ${{maxDay.split("-").reverse().join("-")}}</div>
-
-            <div class="sl-legend">
-              <span><span class="dot match"></span>{DATA.labels.legend_match}</span>
-              <span><span class="dot practice"></span>{DATA.labels.legend_practice}</span>
-              <span><span class="dot none"></span>{DATA.labels.legend_none}</span>
-            </div>
-
-            <div class="sl-grid" id="grid"></div>
-          </div>
-        `;
-
-        const grid = document.getElementById("grid");
-
-        // DOW row
-        for (const d of DATA.labels.dows) {{
-          const el = document.createElement("div");
-          el.className = "dow";
-          el.textContent = d;
-          grid.appendChild(el);
-        }}
-
-        // blank cells before day 1
-        const offset = firstDowMondayBased(viewYear, viewMonth);
-        for (let i=0; i<offset; i++) {{
-          const blank = document.createElement("div");
-          blank.className = "cell disabled";
-          blank.textContent = "";
-          grid.appendChild(blank);
-        }}
-
-        const dim = daysInMonth(viewYear, viewMonth);
-        for (let day=1; day<=dim; day++) {{
-          const iso = ymd(viewYear, viewMonth, day);
-
-          let bg = DATA.colors.none;
-          let bd = DATA.colors.border_none;
-
-          if (matchDays.has(iso)) {{
-            bg = DATA.colors.match;
-            bd = DATA.colors.border_match;
-          }} else if (daysWithData.has(iso)) {{
-            bg = DATA.colors.practice;
-            bd = DATA.colors.border_practice;
-          }}
-
-          const el = document.createElement("div");
-          el.className = "cell";
-          el.textContent = String(day);
-
-          el.style.background = bg;
-          el.style.borderColor = bd;
-
-          if (iso === selected) {{
-            el.classList.add("sel");
-          }}
-
-          el.addEventListener("click", () => {{
-            selected = iso;
-            postValue(iso);
-            render(); // update selection highlight without rerun
-          }});
-
-          grid.appendChild(el);
-        }}
-
-        // navigation (no rerun)
-        document.getElementById("prev").onclick = () => {{
-          viewMonth -= 1;
-          if (viewMonth < 1) {{ viewMonth = 12; viewYear -= 1; }}
-          render();
-        }};
-        document.getElementById("next").onclick = () => {{
-          viewMonth += 1;
-          if (viewMonth > 12) {{ viewMonth = 1; viewYear += 1; }}
-          render();
-        }};
-        document.getElementById("today").onclick = () => {{
-          const t = new Date();
-          viewYear = t.getFullYear();
-          viewMonth = t.getMonth()+1;
-          render();
-        }};
-
-        setHeight({height});
-      }}
-
-      render();
-    </script>
-    """
-
-    # component returns ISO date string when clicked
-    iso = components.html(html, height=height, key=f"{key_prefix}_html")
-
-    if isinstance(iso, str) and len(iso) == 10:
-        try:
-            picked = date.fromisoformat(iso)
-            st.session_state[f"{key_prefix}_selected"] = picked
-        except Exception:
-            pass
+                if st.button(btn_label, key=bkey, disabled=not in_month, use_container_width=True):
+                    st.session_state[f"{key_prefix}_selected"] = d
+                    st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
 
     return st.session_state[f"{key_prefix}_selected"]
+
 
 # -----------------------------
 # Data helpers
@@ -508,7 +353,8 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     metric_cols = [
         COL_TD, COL_SPRINT, COL_HS,
         COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        *HR_COLS,
+        "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
@@ -521,27 +367,38 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden in de data.")
         return
+
     data = df_agg.sort_values(COL_TD, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
     vals = data[COL_TD].to_numpy()
 
     fig = go.Figure()
     fig.add_bar(
-        x=players, y=vals,
+        x=players,
+        y=vals,
         marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
         insidetextanchor="middle",
         name="Total Distance",
     )
-    mean_val = float(np.nanmean(vals)) if len(vals) else 0.0
+
+    mean_val = float(np.nanmean(vals)) if len(vals) > 0 else 0.0
     fig.add_hline(
-        y=mean_val, line_dash="dot", line_color="black",
+        y=mean_val,
+        line_dash="dot",
+        line_color="black",
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
-        annotation_position="top left", annotation_font_size=10,
+        annotation_position="top left",
+        annotation_font_size=10,
     )
-    fig.update_layout(title="Total Distance", yaxis_title="Total Distance (m)", xaxis_title=None,
-                      margin=dict(l=10, r=10, t=40, b=80))
+
+    fig.update_layout(
+        title="Total Distance",
+        yaxis_title="Total Distance (m)",
+        xaxis_title=None,
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -550,21 +407,41 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
         st.info("Sprint / High Sprint kolommen niet compleet in de data.")
         return
+
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
     sprint_vals = data[COL_SPRINT].to_numpy()
     hs_vals = data[COL_HS].to_numpy()
 
-    fig = go.Figure()
     x = np.arange(len(players))
-    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
-                marker_color="rgba(255,180,180,0.9)")
-    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
-                marker_color="rgba(150,0,0,0.9)")
+    fig = go.Figure()
 
-    fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="Distance (m)",
-                      xaxis_title=None, barmode="group",
-                      margin=dict(l=10, r=10, t=40, b=80))
+    fig.add_bar(
+        x=x - 0.2,
+        y=sprint_vals,
+        width=0.4,
+        name="Sprint",
+        marker_color="rgba(255,180,180,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
+        textposition="outside",
+    )
+    fig.add_bar(
+        x=x + 0.2,
+        y=hs_vals,
+        width=0.4,
+        name="High Sprint",
+        marker_color="rgba(150,0,0,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
+        textposition="outside",
+    )
+
+    fig.update_layout(
+        title="Sprint & High Sprint Distance",
+        yaxis_title="Distance (m)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -574,6 +451,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
     if not have_cols:
         st.info("Geen Acceleration/Deceleration kolommen gevonden.")
         return
+
     sort_col = COL_ACC_TOT if COL_ACC_TOT in df_agg.columns else have_cols[0]
     data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
@@ -581,6 +459,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     width = 0.18
+
     if COL_ACC_TOT in data.columns:
         fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
                     marker_color="rgba(255,180,180,0.9)")
@@ -594,9 +473,13 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
                     marker_color="rgba(0,60,180,0.9)")
 
-    fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)",
-                      xaxis_title=None, barmode="group",
-                      margin=dict(l=10, r=10, t=40, b=80))
+    fig.update_layout(
+        title="Accelerations / Decelerations",
+        yaxis_title="Aantal (N)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -604,13 +487,16 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 def _plot_hr_trimp(df_agg: pd.DataFrame):
     have_hr = [c for c in HR_COLS if c in df_agg.columns]
     has_trimp = "TRIMP" in df_agg.columns
+
     if not have_hr and not has_trimp:
         st.info("Geen HR-zone kolommen of TRIMP-kolom gevonden.")
         return
 
     players = df_agg[COL_PLAYER].astype(str).tolist()
     base_x = np.arange(len(players))
+
     fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
+
     color_map = {
         "HRzone1": "rgba(180,180,180,0.9)",
         "HRzone2": "rgba(150,200,255,0.9)",
@@ -619,37 +505,53 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone5": "rgba(255,0,0,0.9)",
     }
 
+    # gegroepeerde balken
     if have_hr:
         n = len(have_hr)
         group_w = 0.80
         bar_w = group_w / max(n, 1)
         start = -group_w / 2 + bar_w / 2
+
         for idx, z in enumerate(have_hr):
             x = base_x + (start + idx * bar_w)
-            fig.add_bar(x=x, y=df_agg[z], name=z, marker_color=color_map.get(z, "gray"),
-                        width=bar_w * 0.95, secondary_y=False)
+            fig.add_bar(
+                x=x,
+                y=df_agg[z],
+                name=z,
+                marker_color=color_map.get(z, "gray"),
+                width=bar_w * 0.95,
+                secondary_y=False,
+            )
 
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=base_x, y=df_agg["TRIMP"],
-                mode="lines+markers", name="HR Trimp",
+                x=base_x,
+                y=df_agg["TRIMP"],
+                mode="lines+markers",
+                name="HR Trimp",
                 line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
             ),
             secondary_y=True,
         )
 
-    fig.update_layout(title="Time in HR zone", xaxis_title=None, barmode="group",
-                      margin=dict(l=10, r=10, t=40, b=80), bargap=0.15)
+    fig.update_layout(
+        title="Time in HR zone",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+        bargap=0.15,
+    )
     fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
     fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
     if has_trimp:
         fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
+
     st.plotly_chart(fig, use_container_width=True)
 
 
 # -----------------------------
-# Main
+# Hoofd entrypoint
 # -----------------------------
 def session_load_pages_main(df_gps: pd.DataFrame):
     st.header("Session Load")
@@ -676,6 +578,7 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
         return
 
+    # Type/sessie keuze
     session_mode = "Alles"
     if COL_TYPE in df_day_all.columns:
         types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist())
@@ -718,4 +621,3 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
-
