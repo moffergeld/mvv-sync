@@ -2,10 +2,10 @@
 # ============================================================
 # Player pagina: tabs Data + Forms
 #
-# FIX RPE save error:
-#   "SyncQueryRequestBuilder object has no attribute 'select'"
-# -> in supabase-py v2 werkt .select() niet op upsert builder zoals in sommige voorbeelden.
-# -> Oplossing: upsert header, daarna opnieuw SELECT header.id (via maybe_single).
+# FIXES:
+# - NameError fetch_asrm_for_date -> toegevoegd als alias naar load_asrm
+# - RPE save error (supabase-py v2): geen .select() op upsert builder
+#   -> upsert header, daarna SELECT id (maybe_single)
 #
 # DATA tab:
 #   2x2 layout:
@@ -164,6 +164,11 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
         return resp.data
     except Exception:
         return None
+
+
+# Alias voor compat met UI call in Data-tab
+def fetch_asrm_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
+    return load_asrm(sb, player_id, d)
 
 
 def save_asrm(
