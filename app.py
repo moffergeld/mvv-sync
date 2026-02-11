@@ -27,13 +27,12 @@ def login_ui():
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
-    if st.button("Sign in", use_container_width=True):
+    if st.button("Sign in", use_container_width=True, key="btn_signin"):
         try:
             res = sb.auth.sign_in_with_password({"email": email, "password": password})
             st.session_state["access_token"] = res.session.access_token
             st.session_state["user_email"] = email
 
-            # belangrijk voor PostgREST/RLS calls
             try:
                 sb.postgrest.auth(res.session.access_token)
             except Exception:
@@ -44,7 +43,7 @@ def login_ui():
             st.error(f"Sign in mislukt: {e}")
 
 def logout_button():
-    if st.button("Logout", use_container_width=True):
+    if st.button("Logout", use_container_width=True, key="btn_logout"):
         try:
             sb.auth.sign_out()
         except Exception:
@@ -52,7 +51,7 @@ def logout_button():
         st.session_state.clear()
         st.rerun()
 
-def tile(img_path: str, target_page: str | None, disabled: bool = False):
+def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
     b64 = img_to_b64(img_path)
     st.markdown(
         f"""
@@ -66,21 +65,21 @@ def tile(img_path: str, target_page: str | None, disabled: bool = False):
     )
 
     if disabled:
-        st.button("Coming soon", use_container_width=True, disabled=True)
+        st.button("Coming soon", use_container_width=True, disabled=True, key=f"btn_{tile_id}_soon")
     else:
-        if st.button("Open", use_container_width=True):
+        if st.button("Open", use_container_width=True, key=f"btn_{tile_id}_open"):
             st.switch_page(target_page)
 
 # ----------------------------
-# CSS (tiles exact even breed als Open-knop)
+# CSS (tiles even breed als Open-knop)
 # ----------------------------
 st.markdown(
     """
     <style>
       .tile-wrap { width: 100%; }
       .tile-img{
-        width: 100%;              /* even breed als Open (kolombreedte) */
-        height: 220px;            /* vaste hoogte voor alle afbeeldingen */
+        width: 100%;
+        height: 220px;            /* vaste hoogte */
         border-radius: 22px;
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(0,0,0,.35);
@@ -89,7 +88,7 @@ st.markdown(
       .tile-img img{
         width: 100%;
         height: 100%;
-        object-fit: fill;         /* <-- STRETCH */
+        object-fit: fill;         /* STRETCH */
         object-position: center;
         display: block;
       }
@@ -105,7 +104,6 @@ if "access_token" not in st.session_state:
     login_ui()
     st.stop()
 
-# Zorg dat de client ook na refresh/rerun geautoriseerd blijft
 try:
     sb.postgrest.auth(st.session_state["access_token"])
 except Exception:
@@ -126,13 +124,13 @@ st.write("Klik op een tegel om een module te openen.")
 c1, c2, c3, c4 = st.columns(4, gap="large")
 
 with c1:
-    tile("Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
+    tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
 
 with c2:
-    tile("Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py")
+    tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py")
 
 with c3:
-    tile("Assets/Afbeeldingen/Script/GPS_Import.PNG", "pages/06_GPS_Import.py")
+    tile("gpsimport", "Assets/Afbeeldingen/Script/GPS_Import.PNG", "pages/06_GPS_Import.py")
 
 with c4:
-    tile("Assets/Afbeeldingen/Script/Medical.PNG", None, disabled=True)
+    tile("medical", "Assets/Afbeeldingen/Script/Medical.PNG", None, disabled=True)
