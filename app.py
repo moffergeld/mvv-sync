@@ -58,12 +58,12 @@ pg = st.navigation(
         st.Page("pages/01_player_pages.py", title="Player pages", icon="👤"),
         st.Page("pages/02_GPS_Data.py", title="GPS Data", icon="📈"),
         st.Page("pages/06_GPS_Import.py", title="GPS Import", icon="⬆️"),
-        st.Page("pages/acwr_pages.py", title="ACWR + Targets", icon="🎯"),
-        st.Page("pages/ffp_pages.py", title="Fitness / Fatigue / Performance", icon="🧠"),
-        st.Page("pages/session_load_pages.py", title="Session Load", icon="📊"),
     ],
     position="sidebar",
 )
+
+pg.run()
+
 
 # Sidebar status + logout
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
