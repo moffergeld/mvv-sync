@@ -54,7 +54,6 @@ except Exception:
 # Sidebar navigation (zet hier de NAMES zoals jij ze wil)
 pg = st.navigation(
     [
-        st.Page("app.py", title="Inlogpagina", icon="🔐"),
         st.Page("pages/01_player_pages.py", title="Player pages", icon="👤"),
         st.Page("pages/02_GPS_Data.py", title="GPS Data", icon="📈"),
         st.Page("pages/06_GPS_Import.py", title="GPS Import", icon="⬆️"),
