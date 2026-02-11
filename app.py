@@ -102,45 +102,57 @@ TILES = [
 ]
 
 # =========================
-# Home (tegels)
+# CSS
+# - 4 naast elkaar
+# - geen lege "boxes" boven de afbeeldingen
 # =========================
-st.title("MVV Dashboard")
-st.write("Klik op een tegel om een module te openen.")
-
 st.markdown(
     """
     <style>
-    /* Maak de tiles compacter */
+    /* Verwijder extra witruimte rondom images/containers */
+    div[data-testid="stImage"] { margin: 0 !important; padding: 0 !important; }
+    div[data-testid="stImage"] img { border-radius: 18px; display:block; }
+
+    /* Compacter layout */
     .tile-card {
         padding: 10px 10px 12px 10px;
-        border-radius: 16px;
-        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,.10);
         background: rgba(255,255,255,.03);
     }
 
-    /* Minder ruimte tussen afbeelding en knop */
-    div[data-testid="stImage"] { margin-bottom: 6px; }
-
-    /* Knoppen iets compacter */
+    /* Knoppen compacter */
     div.stButton > button {
         padding-top: 0.35rem !important;
         padding-bottom: 0.35rem !important;
         border-radius: 12px !important;
+        margin-top: 8px !important;
+    }
+
+    /* Belangrijk: zorg dat er geen lege placeholders boven komen door containers */
+    div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stImage"]) {
+        margin-top: 0 !important;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# 3 kolommen maar kleinere tegels door extra side padding + small gap
-cols = st.columns(3, gap="small")
+# =========================
+# Home (tegels)
+# =========================
+st.title("MVV Dashboard")
+st.write("Klik op een tegel om een module te openen.")
+
+# 4 kolommen naast elkaar
+cols = st.columns(4, gap="small")
 
 for i, t in enumerate(TILES):
-    with cols[i % 3]:
+    with cols[i % 4]:
         st.markdown("<div class='tile-card'>", unsafe_allow_html=True)
 
-        # Afbeelding kleiner: vaste breedte (en dus ook hoogte kleiner)
-        st.image(t["img"], width=520)
+        # Iets kleiner zodat 4 naast elkaar netjes past
+        st.image(t["img"], use_container_width=True)
 
         if t["enabled"]:
             if st.button("Open", key=f"open_{t['key']}", use_container_width=True):
