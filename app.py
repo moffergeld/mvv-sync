@@ -51,22 +51,10 @@ try:
 except Exception:
     pass
 
-# Sidebar navigation (zet hier de NAMES zoals jij ze wil)
-pg = st.navigation(
-    [
-        st.Page("pages/01_player_pages.py", title="Player pages", icon="👤"),
-        st.Page("pages/02_GPS_Data.py", title="GPS Data", icon="📈"),
-        st.Page("pages/06_GPS_Import.py", title="GPS Import", icon="⬆️"),
-    ],
-    position="sidebar",
-)
-
-pg.run()
-
-
-# Sidebar status + logout
+# Topbar / sidebar
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 logout_button()
 
-# Run de gekozen pagina
-pg.run()
+st.title("MVV Dashboard")
+st.write("Gebruik het menu links om een module te openen.")
+st.write("• Forms (Wellness/RPE)")
