@@ -103,25 +103,36 @@ TILES = [
 
 # =========================
 # CSS
-# - 4 naast elkaar
-# - geen lege "boxes" boven de afbeeldingen
+# - forceer gelijke afbeeldingshoogte/ratio (mag stretchen)
+# - geen lege boxes boven
 # =========================
 st.markdown(
     """
     <style>
-    /* Verwijder extra witruimte rondom images/containers */
-    div[data-testid="stImage"] { margin: 0 !important; padding: 0 !important; }
-    div[data-testid="stImage"] img { border-radius: 18px; display:block; }
+    :root{
+        --tile-img-h: 280px;   /* pas aan indien nodig */
+        --tile-radius: 18px;
+    }
 
-    /* Compacter layout */
+    /* card */
     .tile-card {
         padding: 10px 10px 12px 10px;
-        border-radius: 18px;
+        border-radius: var(--tile-radius);
         border: 1px solid rgba(255,255,255,.10);
         background: rgba(255,255,255,.03);
     }
 
-    /* Knoppen compacter */
+    /* afbeelding wrapper + img: altijd zelfde hoogte, breedte 100%, STRETCH toegestaan */
+    div[data-testid="stImage"] { margin:0 !important; padding:0 !important; }
+    div[data-testid="stImage"] img {
+        width: 100% !important;
+        height: var(--tile-img-h) !important;
+        object-fit: fill !important;   /* <--- stretch */
+        border-radius: var(--tile-radius);
+        display:block;
+    }
+
+    /* knoppen compacter */
     div.stButton > button {
         padding-top: 0.35rem !important;
         padding-bottom: 0.35rem !important;
@@ -129,7 +140,7 @@ st.markdown(
         margin-top: 8px !important;
     }
 
-    /* Belangrijk: zorg dat er geen lege placeholders boven komen door containers */
+    /* fix eventuele extra ruimte boven images */
     div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stImage"]) {
         margin-top: 0 !important;
     }
@@ -144,14 +155,12 @@ st.markdown(
 st.title("MVV Dashboard")
 st.write("Klik op een tegel om een module te openen.")
 
-# 4 kolommen naast elkaar
 cols = st.columns(4, gap="small")
 
 for i, t in enumerate(TILES):
-    with cols[i % 4]:
+    with cols[i]:
         st.markdown("<div class='tile-card'>", unsafe_allow_html=True)
 
-        # Iets kleiner zodat 4 naast elkaar netjes past
         st.image(t["img"], use_container_width=True)
 
         if t["enabled"]:
