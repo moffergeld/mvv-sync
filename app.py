@@ -79,7 +79,7 @@ st.markdown(
       .tile-wrap { width: 100%; }
       .tile-img{
         width: 100%;
-        height: 250px;            /* vaste hoogte */
+        height: 300px;            /* vaste hoogte */
         border-radius: 22px;
         overflow: hidden;
         box-shadow: 0 10px 30px rgba(0,0,0,.35);
