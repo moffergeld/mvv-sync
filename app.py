@@ -1,6 +1,11 @@
 import streamlit as st
 from supabase import create_client
 
+import streamlit as st
+
+st.set_page_config(page_title="Inlogpagina", layout="wide")
+st.title("Inlogpagina")
+
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
