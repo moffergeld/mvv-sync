@@ -648,7 +648,7 @@ def player_pages_main():
                 if not row:
                     st.info("Geen Wellness entry voor deze datum.")
                 else:
-                    plot_asrm_session(row, title=f"Wellness (Session) — {d.isoformat()}")
+                    plot_asrm_session(row)
             else:
                 df = fetch_asrm_over_time(sb, target_player_id, limit=180)
                 if df.empty:
