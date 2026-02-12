@@ -3,16 +3,19 @@
 # Player pagina: tabs Data + Forms
 #
 # FIXES:
-# - NameError fetch_asrm_for_date -> toegevoegd als alias naar load_asrm
+# - NameError fetch_asrm_for_date -> alias naar load_asrm
 # - RPE save error (supabase-py v2): geen .select() op upsert builder
 #   -> upsert header, daarna SELECT id (maybe_single)
 #
 # DATA tab:
 #   2x2 layout:
-#     [GPS Session Table]    [GPS Over time graph]
+#     [GPS Recent table]     [GPS Over time graph]
 #     [Wellness switch]      [RPE switch]
 #
 # GPS data uit: public.v_gps_summary
+# - Geen losse "datum select" + losse 1-row tabel meer
+# - Alleen "Recent sessions (laatste 10)" + "Vorige 10"
+# - Parameters hernoemd + playerload2d verwijderd
 # ============================================================
 
 from __future__ import annotations
@@ -61,13 +64,13 @@ def _add_zone_background(fig: go.Figure, y_min: float = 1, y_max: float = 10):
 # -----------------------------
 GPS_TABLE = "v_gps_summary"
 
+# Labels zoals jij wil + mapping naar kolommen in view
 GPS_METRICS = [
     ("Total Distance", "total_distance"),
-    ("Running", "running"),
-    ("Sprint", "sprint"),
-    ("High Sprint", "high_sprint"),
-    ("Max Speed", "max_speed"),
-    ("PlayerLoad2D", "playerload2d"),
+    ("14.4–19.7 km/h", "running"),
+    ("19.8–25.1 km/h", "sprint"),
+    (">25,1 km/h", "high_sprint"),
+    ("Max Speed (km/u)", "max_speed"),
 ]
 
 GPS_RECENT_COLS = [
@@ -78,7 +81,6 @@ GPS_RECENT_COLS = [
     "sprint",
     "high_sprint",
     "max_speed",
-    "playerload2d",
 ]
 
 
@@ -101,22 +103,6 @@ def fetch_gps_summary_recent(sb, player_id: str, limit: int = 30) -> pd.DataFram
         return df
     except Exception:
         return pd.DataFrame()
-
-
-def fetch_gps_summary_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
-    try:
-        row = (
-            sb.table(GPS_TABLE)
-            .select(",".join(set(GPS_RECENT_COLS + ["player_id"])))
-            .eq("player_id", player_id)
-            .eq("datum", d.isoformat())
-            .maybe_single()
-            .execute()
-            .data
-        )
-        return row
-    except Exception:
-        return None
 
 
 def plot_gps_over_time(df: pd.DataFrame, metric_label: str, metric_key: str):
@@ -284,10 +270,6 @@ def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, A
 
 
 def _get_rpe_entry_id(sb, player_id: str, entry_date: date) -> Optional[str]:
-    """
-    Na upsert: haal de id op met een SELECT.
-    Dit voorkomt de .select() op upsert builder bug.
-    """
     try:
         r = (
             sb.table("rpe_entries")
@@ -323,15 +305,12 @@ def save_rpe(
         "notes": notes.strip() if notes else None,
     }
 
-    # 1) upsert header (geen .select() hier!)
     sb.table("rpe_entries").upsert(header_payload, on_conflict="player_id,entry_date").execute()
 
-    # 2) fetch id
     rpe_entry_id = _get_rpe_entry_id(sb, player_id, entry_date)
     if not rpe_entry_id:
         raise RuntimeError("Kon rpe_entry_id niet ophalen na opslaan.")
 
-    # 3) upsert sessions
     payload: List[Dict[str, Any]] = []
     for s in sessions:
         payload.append(
@@ -564,33 +543,25 @@ def player_pages_main():
         gps_left, gps_right = st.columns(2)
 
         with gps_left:
-            st.subheader("GPS – Session")
+            st.subheader("GPS – Recent")
 
             gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=60)
             if gps_df_recent.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                available_dates = sorted(gps_df_recent["datum"].dropna().unique().tolist(), reverse=True)
-
-                sel_date = st.selectbox(
-                    "Datum",
-                    options=available_dates,
-                    index=0,
-                    key="gps_date_sel",
-                    format_func=lambda d: d.isoformat(),
-                )
-
-                row = fetch_gps_summary_for_date(sb, target_player_id, sel_date)
-                if not row:
-                    st.info("Geen GPS entry voor deze datum.")
-                else:
-                    show = {k: row.get(k) for k in GPS_RECENT_COLS if k in row}
-                    st.dataframe(pd.DataFrame([show]), use_container_width=True, hide_index=True)
+                df_sorted = gps_df_recent.sort_values("datum", ascending=False)
 
                 st.markdown("**Recent sessions (laatste 10)**")
-                show_df = gps_df_recent.sort_values("datum", ascending=False).head(10)
-                cols = [c for c in GPS_RECENT_COLS if c in show_df.columns]
-                st.dataframe(show_df[cols], use_container_width=True, hide_index=True)
+                last10 = df_sorted.head(10)
+                cols = [c for c in GPS_RECENT_COLS if c in last10.columns]
+                st.dataframe(last10[cols], use_container_width=True, hide_index=True)
+
+                st.markdown("**Vorige 10 sessions**")
+                prev10 = df_sorted.iloc[10:20].copy()
+                if prev10.empty:
+                    st.info("Geen extra sessions (minder dan 11 records).")
+                else:
+                    st.dataframe(prev10[cols], use_container_width=True, hide_index=True)
 
         with gps_right:
             st.subheader("GPS – Over time")
@@ -649,7 +620,11 @@ def player_pages_main():
                 if df.empty:
                     st.info("Geen RPE entries gevonden.")
                 else:
-                    options = [("RPE (avg)", "rpe_avg"), ("Duration (sum)", "duration_sum"), ("Session Load (sum)", "session_load_sum")]
+                    options = [
+                        ("RPE (avg)", "rpe_avg"),
+                        ("Duration (sum)", "duration_sum"),
+                        ("Session Load (sum)", "session_load_sum"),
+                    ]
                     metric_label = st.selectbox("Parameter", options=[o[0] for o in options], index=0, key="rpe_param")
                     metric_key = dict(options)[metric_label]
                     plot_rpe_over_time(df, metric_key, metric_label)
