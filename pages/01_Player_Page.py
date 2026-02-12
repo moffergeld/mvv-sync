@@ -1,16 +1,14 @@
 # player_pages.py
 # ============================================================
-# Player pagina: tabs Data + Forms + Checklist
+# Checklist tab FIX:
+# - Gebruik created_at (datum + tijd hh:mm) voor ingevuld-tijd.
+# - Voor RPE: neem created_at uit rpe_sessions (laatste per speler op die dag),
+#   omdat jij daar de timestamps hebt.
+# - Voor Wellness: neem created_at uit asrm_entries (als aanwezig).
 #
-# Checklist tab:
-# - Kies datum
-# - Toon alle actieve spelers (players.is_active = TRUE)
-# - Per speler: Wellness (ASRM) ingevuld? + tijd, RPE ingevuld? + tijd
-#
-# Let op (timestamps):
-# - Niet zeker welke timestamp kolom je in asrm_entries/rpe_entries hebt.
-# - Script probeert eerst: updated_at -> created_at -> inserted_at.
-# - Als die kolommen niet bestaan, blijft de tijd leeg maar “ingevuld” werkt wel.
+# NB:
+# - Als asrm_entries geen created_at heeft, blijft Wellness time leeg.
+# - RPE "ingevuld" = er bestaat minimaal 1 rpe_sessions record voor die speler op die dag.
 # ============================================================
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ from roles import get_sb, require_auth, get_profile, pick_target_player
 # -----------------------------
 # Utils
 # -----------------------------
-CHART_H = 340  # één hoogte voor alle charts in Data-tab
+CHART_H = 340
 
 
 def _df_from_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -39,18 +37,18 @@ def _coerce_date_series(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce").dt.date
 
 
-def _pick_ts(row: Dict[str, Any]) -> Optional[str]:
-    """
-    Probeert een 'ingevuld om' timestamp te pakken uit bekende kolomnamen.
-    Returned als string, anders None.
-    """
-    for k in ("updated_at", "created_at", "inserted_at"):
-        if k in row and row.get(k) is not None:
-            try:
-                return pd.to_datetime(row[k]).strftime("%d-%m-%Y %H:%M")
-            except Exception:
-                return str(row[k])
-    return None
+def _fmt_dt_hhmm(v: Any) -> str:
+    if v is None or v == "":
+        return ""
+    try:
+        dt = pd.to_datetime(v, utc=True).tz_convert("Europe/Amsterdam")
+        return dt.strftime("%d-%m-%Y %H:%M")
+    except Exception:
+        try:
+            dt = pd.to_datetime(v)
+            return dt.strftime("%d-%m-%Y %H:%M")
+        except Exception:
+            return str(v)
 
 
 def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
@@ -175,11 +173,7 @@ def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: s
             marker=dict(size=6),
         )
     )
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_H,
-        showlegend=False,
-    )
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=CHART_H, showlegend=False)
     fig.update_xaxes(type="date", tickformat="%d-%m-%Y", title_text=None)
     fig.update_yaxes(title_text=metric_label)
     _strip_titles(fig)
@@ -211,32 +205,6 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
         return resp.data
     except Exception:
         return None
-
-
-def fetch_asrm_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
-    return load_asrm(sb, player_id, d)
-
-
-def save_asrm(
-    sb,
-    player_id: str,
-    entry_date: date,
-    muscle_soreness: int,
-    fatigue: int,
-    sleep_quality: int,
-    stress: int,
-    mood: int,
-):
-    payload = {
-        "player_id": player_id,
-        "entry_date": entry_date.isoformat(),
-        "muscle_soreness": int(muscle_soreness),
-        "fatigue": int(fatigue),
-        "sleep_quality": int(sleep_quality),
-        "stress": int(stress),
-        "mood": int(mood),
-    }
-    sb.table("asrm_entries").upsert(payload, on_conflict="player_id,entry_date").execute()
 
 
 def fetch_asrm_over_time(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
@@ -272,11 +240,7 @@ def plot_asrm_over_time(df: pd.DataFrame, param_key: str):
         )
     )
     _add_zone_background(fig, 0, 10)
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_H,
-        showlegend=False,
-    )
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=CHART_H, showlegend=False)
     fig.update_xaxes(type="date", tickformat="%d-%m-%Y", title_text=None)
     fig.update_yaxes(title_text="Score (0–10)")
     _strip_titles(fig)
@@ -291,11 +255,7 @@ def plot_asrm_session(row: Dict[str, Any]):
     fig = go.Figure()
     fig.add_trace(go.Bar(x=labels, y=values, marker=dict(color="rgba(135,206,250,1)")))
     _add_zone_background(fig, 0, 10)
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_H,
-        showlegend=False,
-    )
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=CHART_H, showlegend=False)
     fig.update_xaxes(title_text=None)
     fig.update_yaxes(title_text="Score (0–10)")
     _strip_titles(fig)
@@ -429,7 +389,7 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
 def build_rpe_timeseries_daily(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
     h = fetch_rpe_header_over_time(sb, player_id, limit=limit)
     if h.empty:
-        return h
+        return pd.DataFrame(columns=["entry_date", "avg_rpe", "min_rpe", "max_rpe"])
 
     entry_ids = h["id"].astype(str).tolist()
     s = fetch_rpe_sessions_for_entry_ids(sb, entry_ids)
@@ -543,21 +503,9 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
     )
 
     _add_zone_background(fig, 0, 10)
-
-    fig.update_xaxes(
-        type="category",
-        tickmode="array",
-        tickvals=x_vals,
-        ticktext=x_text,
-        title_text=None,
-    )
+    fig.update_xaxes(type="category", tickmode="array", tickvals=x_vals, ticktext=x_text, title_text=None)
     fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
-
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_H,
-        showlegend=False,
-    )
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=CHART_H, showlegend=False)
     _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -570,7 +518,6 @@ def plot_rpe_session(sessions_df: pd.DataFrame):
     df = sessions_df.copy()
     df["session_index"] = pd.to_numeric(df["session_index"], errors="coerce").fillna(0).astype(int)
     df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0)
-
     df = df[df["session_index"].isin([1, 2])].sort_values("session_index")
     if df.empty:
         st.info("Geen RPE sessions (1/2) gevonden voor deze datum.")
@@ -581,56 +528,134 @@ def plot_rpe_session(sessions_df: pd.DataFrame):
 
     fig = go.Figure()
     fig.add_trace(go.Bar(x=x, y=y, marker=dict(color="#FF0033"), opacity=0.9))
-
     _add_zone_background(fig, 0, 10)
-
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_H,
-        showlegend=False,
-    )
-
+    fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=CHART_H, showlegend=False)
     fig.update_xaxes(type="category", tickmode="array", tickvals=["1", "2"], ticktext=["1", "2"], title_text=None)
     fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
-
     _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
 # -----------------------------
-# Checklist helpers (per datum)
+# Checklist (per datum)
 # -----------------------------
-def _select_rows_for_date_with_ts(sb, table: str, date_col: str, d: date) -> List[Dict[str, Any]]:
+def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
     """
-    Probeert eerst player_id + date + (updated_at/created_at/inserted_at).
-    Als timestamp kolommen niet bestaan, valt terug op alleen player_id + date.
+    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op asrm_entries.created_at
     """
-    want_cols_1 = f"player_id,{date_col},updated_at,created_at,inserted_at"
-    want_cols_2 = f"player_id,{date_col}"
-
     try:
         rows = (
-            sb.table(table)
-            .select(want_cols_1)
-            .eq(date_col, d.isoformat())
+            sb.table("asrm_entries")
+            .select("player_id,created_at")
+            .eq("entry_date", d.isoformat())
             .execute()
             .data
             or []
         )
-        return rows
     except Exception:
+        # fallback zonder created_at
+        rows = []
         try:
             rows = (
-                sb.table(table)
-                .select(want_cols_2)
-                .eq(date_col, d.isoformat())
+                sb.table("asrm_entries")
+                .select("player_id")
+                .eq("entry_date", d.isoformat())
                 .execute()
                 .data
                 or []
             )
-            return rows
         except Exception:
-            return []
+            rows = []
+
+    out: Dict[str, str] = {}
+    for r in rows:
+        pid = r.get("player_id")
+        if not pid:
+            continue
+        out[str(pid)] = _fmt_dt_hhmm(r.get("created_at"))
+    return out
+
+
+def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
+    """
+    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op LAATSTE rpe_sessions.created_at van die dag.
+
+    Stap 1: haal rpe_entries ids voor die datum + player_id
+    Stap 2: haal rpe_sessions (rpe_entry_id, created_at) voor die ids
+    Stap 3: per player_id pak max(created_at)
+    """
+    try:
+        headers = (
+            sb.table("rpe_entries")
+            .select("id,player_id")
+            .eq("entry_date", d.isoformat())
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    if not headers:
+        return {}
+
+    id_to_player = {str(h["id"]): str(h["player_id"]) for h in headers if h.get("id") and h.get("player_id")}
+    entry_ids = list(id_to_player.keys())
+    if not entry_ids:
+        return {}
+
+    # Probeer created_at mee te nemen
+    try:
+        sess_rows = (
+            sb.table("rpe_sessions")
+            .select("rpe_entry_id,created_at")
+            .in_("rpe_entry_id", entry_ids)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        # fallback zonder created_at
+        try:
+            sess_rows = (
+                sb.table("rpe_sessions")
+                .select("rpe_entry_id")
+                .in_("rpe_entry_id", entry_ids)
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            return {}
+
+    # per player_id max created_at
+    latest: Dict[str, Any] = {}
+    for r in sess_rows:
+        eid = r.get("rpe_entry_id")
+        if not eid:
+            continue
+        pid = id_to_player.get(str(eid))
+        if not pid:
+            continue
+        ts = r.get("created_at")
+        if ts is None:
+            # als geen ts, markeer gevuld maar zonder tijd
+            latest.setdefault(pid, None)
+            continue
+        try:
+            dt = pd.to_datetime(ts)
+        except Exception:
+            dt = None
+
+        if pid not in latest or (dt is not None and latest[pid] is not None and dt > latest[pid]) or (
+            dt is not None and latest[pid] is None
+        ):
+            latest[pid] = dt
+
+    out: Dict[str, str] = {}
+    for pid, dt in latest.items():
+        out[pid] = _fmt_dt_hhmm(dt) if dt is not None else ""
+    return out
 
 
 def build_checklist_table(sb, d: date) -> pd.DataFrame:
@@ -638,33 +663,28 @@ def build_checklist_table(sb, d: date) -> pd.DataFrame:
     if players.empty:
         return pd.DataFrame(columns=["Player", "Wellness", "Wellness time", "RPE", "RPE time"])
 
-    # Wellness (asrm_entries)
-    asrm_rows = _select_rows_for_date_with_ts(sb, "asrm_entries", "entry_date", d)
-    asrm_map: Dict[str, Dict[str, Any]] = {str(r.get("player_id")): r for r in (asrm_rows or []) if r.get("player_id")}
+    asrm_map = _fetch_asrm_filled_players(sb, d)
+    rpe_map = _fetch_rpe_filled_players(sb, d)
 
-    # RPE (rpe_entries - header)
-    rpe_rows = _select_rows_for_date_with_ts(sb, "rpe_entries", "entry_date", d)
-    rpe_map: Dict[str, Dict[str, Any]] = {str(r.get("player_id")): r for r in (rpe_rows or []) if r.get("player_id")}
-
-    out_rows: List[Dict[str, Any]] = []
+    rows: List[Dict[str, Any]] = []
     for _, p in players.iterrows():
         pid = str(p["player_id"])
         pname = str(p["full_name"])
 
-        a = asrm_map.get(pid)
-        r = rpe_map.get(pid)
+        a_time = asrm_map.get(pid, "")
+        r_time = rpe_map.get(pid, "")
 
-        out_rows.append(
+        rows.append(
             {
                 "Player": pname,
-                "Wellness": "✅" if a else "❌",
-                "Wellness time": _pick_ts(a) if a else "",
-                "RPE": "✅" if r else "❌",
-                "RPE time": _pick_ts(r) if r else "",
+                "Wellness": "✅" if pid in asrm_map else "❌",
+                "Wellness time": a_time,
+                "RPE": "✅" if pid in rpe_map else "❌",
+                "RPE time": r_time,
             }
         )
 
-    return pd.DataFrame(out_rows)
+    return pd.DataFrame(rows)
 
 
 # -----------------------------
@@ -684,11 +704,10 @@ def player_pages_main():
         st.stop()
 
     st.title(f"Player: {target_player_name}")
+
     tab_data, tab_forms, tab_checklist = st.tabs(["Data", "Forms", "Checklist"])
 
-    # ============================
-    # DATA TAB
-    # ============================
+    # DATA
     with tab_data:
         left, right = st.columns(2)
 
@@ -706,12 +725,7 @@ def player_pages_main():
             if gps_raw.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                metric_label = st.selectbox(
-                    "Parameter",
-                    options=[m[0] for m in GPS_METRICS],
-                    index=0,
-                    key="gps_metric_sel",
-                )
+                metric_label = st.selectbox("Parameter", options=[m[0] for m in GPS_METRICS], index=0, key="gps_metric_sel")
                 metric_key = dict(GPS_METRICS)[metric_label]
                 summed = gps_timeseries_summed_for_plot(gps_raw, metric_key=metric_key)
                 if summed.empty:
@@ -720,7 +734,6 @@ def player_pages_main():
                     plot_gps_over_time(summed, metric_label, metric_key)
 
         st.divider()
-
         well_col, rpe_col = st.columns(2)
 
         with well_col:
@@ -728,7 +741,7 @@ def player_pages_main():
             mode_w = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="well_mode")
             if mode_w == "Session":
                 d = st.date_input("Datum (Wellness)", value=date.today(), key="well_date")
-                row = fetch_asrm_for_date(sb, target_player_id, d)
+                row = load_asrm(sb, target_player_id, d)
                 if not row:
                     st.info("Geen Wellness entry voor deze datum.")
                 else:
@@ -738,12 +751,7 @@ def player_pages_main():
                 if df.empty:
                     st.info("Geen Wellness entries gevonden.")
                 else:
-                    param_label = st.selectbox(
-                        "Parameter",
-                        options=[x[0] for x in ASRM_COLS],
-                        index=0,
-                        key="well_param",
-                    )
+                    param_label = st.selectbox("Parameter", options=[x[0] for x in ASRM_COLS], index=0, key="well_param")
                     param_key = dict(ASRM_COLS)[param_label]
                     plot_asrm_over_time(df, param_key)
 
@@ -764,9 +772,7 @@ def player_pages_main():
                 else:
                     plot_rpe_over_time_daily(daily)
 
-    # ============================
-    # FORMS TAB
-    # ============================
+    # FORMS
     with tab_forms:
         st.header("Forms")
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
@@ -776,7 +782,6 @@ def player_pages_main():
         with col_asrm:
             st.subheader("ASRM (Wellbeing)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
-
             ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
             fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
             sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing.get("sleep_quality", 5)), key="asrm_sleep")
@@ -846,9 +851,7 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-    # ============================
-    # CHECKLIST TAB
-    # ============================
+    # CHECKLIST
     with tab_checklist:
         st.header("Checklist")
         d = st.date_input("Datum (Checklist)", value=date.today(), key="checklist_date")
@@ -857,7 +860,6 @@ def player_pages_main():
         if df.empty:
             st.info("Geen actieve spelers gevonden, of geen data.")
         else:
-            # Optioneel: filter op "niet ingevuld" alleen
             only_missing = st.toggle("Toon alleen ontbrekend", value=False, key="checklist_only_missing")
             if only_missing:
                 df = df[(df["Wellness"] == "❌") | (df["RPE"] == "❌")].copy()
