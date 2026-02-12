@@ -1,17 +1,30 @@
 # player_pages.py
 # ============================================================
-# Updates:
-# 1) RPE (Data tab - Session view):
-#    - Alleen 0-10 schaal (geen duration/session-load bars)
-#    - Toon per session alleen RPE (markers/line) + zone achtergrond
+# Player pagina: tabs Data + Forms
 #
-# 2) RPE (Forms tab):
-#    - Checkbox/toggle om Session 2 aan/uit te zetten
-#    - Alleen als aan: velden voor sessie 2 zichtbaar + opgeslagen
+# FIXES / WENSEN:
+# - GPS tabel: alleen 1 tabel (laatste 20), geen datum-selectie tabel.
+# - GPS kolomnamen aangepast:
+#   Date, Type, Total Distance (m), 14.4–19.7 km/h, 19.8–25.1 km/h, >25,1 km/h, Max Speed (km/u)
+# - GPS Over time:
+#   * bij dubbele sessions op dezelfde datum -> alleen in grafiek sommeren per datum
+#   * lijn rood + smooth/curvy
+# - Wellness & RPE charts:
+#   * x-as over time: alleen datum (geen tijd)
+#   * y-as 0–10, ticks per 1 (zowel session als over time)
+#   * RPE session: alleen 0–10 (geen duration)
+#   * RPE session x-as: alleen 1 en 2 (ticks per 1)
+# - Forms:
+#   * RPE opslaan bug fix (geen .select() op upsert builder)
+#   * optie om 2e sessie aan/uit te zetten
 #
-# GPS:
-# - Tabel: alle rows apart (laatste 20) met hernoemde kolommen
-# - Grafiek: aggregatie per datum (som; max_speed=max) + rode smooth lijn
+# Data bronnen:
+# - GPS: public.v_gps_summary (Summary-rows)
+# - Wellness: public.asrm_entries
+# - RPE: public.rpe_entries + public.rpe_sessions
+#
+# Vereist: roles.py met:
+#   get_sb, require_auth, get_profile, pick_target_player
 # ============================================================
 
 from __future__ import annotations
@@ -33,9 +46,15 @@ def _df_from_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
 
-def _add_zone_background(fig: go.Figure, y_min: float = 1, y_max: float = 10):
+def _coerce_date_series(s: pd.Series) -> pd.Series:
+    # Force "pure date" (no time) for Plotly
+    return pd.to_datetime(s, errors="coerce").dt.date
+
+
+def _add_zone_background(fig: go.Figure):
+    # 0–10 scale
     zones = [
-        (1, 4, "rgba(0, 200, 0, 0.12)"),
+        (0, 4, "rgba(0, 200, 0, 0.12)"),
         (5, 7, "rgba(255, 165, 0, 0.14)"),
         (8, 10, "rgba(255, 0, 0, 0.14)"),
     ]
@@ -52,7 +71,16 @@ def _add_zone_background(fig: go.Figure, y_min: float = 1, y_max: float = 10):
             line=dict(width=0),
             layer="below",
         )
-    fig.update_yaxes(range=[y_min, y_max])
+    fig.update_yaxes(range=[0, 10], tick0=0, dtick=1)
+
+
+def _axis_y_0_10(fig: go.Figure, axis: str = "y"):
+    if axis == "y":
+        fig.update_yaxes(range=[0, 10], tick0=0, dtick=1)
+    else:
+        fig.update_layout(
+            yaxis2=dict(range=[0, 10], tick0=0, dtick=1)
+        )
 
 
 # -----------------------------
@@ -60,25 +88,18 @@ def _add_zone_background(fig: go.Figure, y_min: float = 1, y_max: float = 10):
 # -----------------------------
 GPS_TABLE = "v_gps_summary"
 
+# mapping: label -> column
 GPS_METRICS = [
-    ("Total Distance", "total_distance"),
+    ("Total Distance (m)", "total_distance"),
     ("14.4–19.7 km/h", "running"),
     ("19.8–25.1 km/h", "sprint"),
     (">25,1 km/h", "high_sprint"),
     ("Max Speed (km/u)", "max_speed"),
 ]
 
-GPS_RECENT_COLS = [
-    "datum",
-    "type",
-    "total_distance",
-    "running",
-    "sprint",
-    "high_sprint",
-    "max_speed",
-]
+GPS_TABLE_COLS_RAW = ["datum", "type", "total_distance", "running", "sprint", "high_sprint", "max_speed"]
 
-GPS_COL_RENAME = {
+GPS_RENAME = {
     "datum": "Date",
     "type": "Type",
     "total_distance": "Total Distance (m)",
@@ -89,12 +110,11 @@ GPS_COL_RENAME = {
 }
 
 
-def fetch_gps_recent_rows(sb, player_id: str, limit: int = 20) -> pd.DataFrame:
-    """Voor TABEL: alle rows apart (geen aggregatie)."""
+def fetch_gps_summary_recent_raw(sb, player_id: str, limit: int = 60) -> pd.DataFrame:
     try:
         rows = (
             sb.table(GPS_TABLE)
-            .select(",".join(set(GPS_RECENT_COLS + ["player_id"])))
+            .select(",".join(set(GPS_TABLE_COLS_RAW + ["player_id"])))
             .eq("player_id", player_id)
             .order("datum", desc=True)
             .limit(limit)
@@ -105,66 +125,62 @@ def fetch_gps_recent_rows(sb, player_id: str, limit: int = 20) -> pd.DataFrame:
         df = _df_from_rows(rows)
         if df.empty:
             return df
-        df["datum"] = pd.to_datetime(df["datum"]).dt.date
+        df["datum"] = _coerce_date_series(df["datum"])
         return df
     except Exception:
         return pd.DataFrame()
 
 
-def fetch_gps_for_plot(sb, player_id: str, limit: int = 250) -> pd.DataFrame:
-    """Voor GRAFIEK: aggregeer per datum (som; max_speed=max)."""
-    try:
-        rows = (
-            sb.table(GPS_TABLE)
-            .select(",".join(set(GPS_RECENT_COLS + ["player_id"])))
-            .eq("player_id", player_id)
-            .order("datum", desc=True)
-            .limit(limit)
-            .execute()
-            .data
-            or []
-        )
-        df = _df_from_rows(rows)
-        if df.empty:
-            return df
-        df["datum"] = pd.to_datetime(df["datum"]).dt.date
-
-        sum_cols = ["total_distance", "running", "sprint", "high_sprint"]
-        max_cols = ["max_speed"]
-        for c in sum_cols + max_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-
-        agg = {c: "sum" for c in sum_cols if c in df.columns}
-        for c in max_cols:
-            if c in df.columns:
-                agg[c] = "max"
-
-        out = df.groupby("datum", as_index=False).agg(agg)
-        return out.sort_values("datum")
-    except Exception:
-        return pd.DataFrame()
+def gps_table_pretty(df_raw: pd.DataFrame, n: int = 20) -> pd.DataFrame:
+    if df_raw.empty:
+        return df_raw
+    show = df_raw.sort_values("datum", ascending=False).head(n).copy()
+    cols = [c for c in GPS_TABLE_COLS_RAW if c in show.columns]
+    show = show[cols]
+    show = show.rename(columns=GPS_RENAME)
+    return show
 
 
-def plot_gps_over_time(df: pd.DataFrame, metric_label: str, metric_key: str):
+def gps_timeseries_summed_for_plot(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
+    """
+    Alleen voor grafiek: als er meerdere Summary rows op 1 datum zijn -> som per datum.
+    """
+    if df_raw.empty:
+        return df_raw
+    df = df_raw.copy()
+    df["datum"] = _coerce_date_series(df["datum"])
+    df[metric_key] = pd.to_numeric(df[metric_key], errors="coerce").fillna(0.0)
+
+    out = (
+        df.groupby("datum", as_index=False)[metric_key]
+        .sum()
+        .sort_values("datum")
+        .reset_index(drop=True)
+    )
+    return out.tail(10)
+
+
+def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: str):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=df["datum"],
-            y=pd.to_numeric(df[metric_key], errors="coerce"),
+            x=df_summed["datum"],
+            y=pd.to_numeric(df_summed[metric_key], errors="coerce"),
             mode="lines+markers",
+            line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
+            marker=dict(size=6),
             name=metric_label,
-            line=dict(color="red", width=3, shape="spline"),
-            marker=dict(color="red"),
         )
     )
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
-        xaxis_title="Datum",
+        xaxis_title="Date",
         yaxis_title=metric_label,
         showlegend=False,
     )
+    # Datum-only (geen tijd)
+    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -196,6 +212,7 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
 
 
 def fetch_asrm_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
+    # alias (zodat de Data-tab geen NameError krijgt)
     return load_asrm(sb, player_id, d)
 
 
@@ -236,7 +253,7 @@ def fetch_asrm_over_time(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
         df = _df_from_rows(rows)
         if df.empty:
             return df
-        df["entry_date"] = pd.to_datetime(df["entry_date"]).dt.date
+        df["entry_date"] = _coerce_date_series(df["entry_date"])
         return df.sort_values("entry_date")
     except Exception:
         return pd.DataFrame()
@@ -249,6 +266,8 @@ def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
             x=df["entry_date"],
             y=pd.to_numeric(df[param_key], errors="coerce"),
             mode="lines+markers",
+            line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
+            marker=dict(size=6),
             name=param_label,
         )
     )
@@ -256,10 +275,11 @@ def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
-        xaxis_title="Datum",
-        yaxis_title="Score (1-10)",
+        xaxis_title="Date",
+        yaxis_title="Score (0–10)",
         showlegend=False,
     )
+    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -274,7 +294,7 @@ def plot_asrm_session(row: Dict[str, Any], title: str):
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
-        yaxis_title="Score (1-10)",
+        yaxis_title="Score (0–10)",
         title=title,
         showlegend=False,
     )
@@ -282,7 +302,7 @@ def plot_asrm_session(row: Dict[str, Any], title: str):
 
 
 # -----------------------------
-# RPE (save/load)
+# RPE
 # -----------------------------
 def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     header = None
@@ -347,12 +367,15 @@ def save_rpe(
         "notes": notes.strip() if notes else None,
     }
 
+    # 1) upsert header (zonder .select())
     sb.table("rpe_entries").upsert(header_payload, on_conflict="player_id,entry_date").execute()
 
+    # 2) haal id op met SELECT
     rpe_entry_id = _get_rpe_entry_id(sb, player_id, entry_date)
     if not rpe_entry_id:
         raise RuntimeError("Kon rpe_entry_id niet ophalen na opslaan.")
 
+    # 3) upsert sessions (op index)
     payload: List[Dict[str, Any]] = []
     for s in sessions:
         payload.append(
@@ -365,73 +388,6 @@ def save_rpe(
         )
     if payload:
         sb.table("rpe_sessions").upsert(payload, on_conflict="rpe_entry_id,session_index").execute()
-
-
-# -----------------------------
-# RPE (Data tab visuals)
-# -----------------------------
-def fetch_rpe_for_date(sb, player_id: str, d: date) -> Tuple[Optional[Dict[str, Any]], pd.DataFrame]:
-    try:
-        header = (
-            sb.table("rpe_entries")
-            .select("*")
-            .eq("player_id", player_id)
-            .eq("entry_date", d.isoformat())
-            .maybe_single()
-            .execute()
-            .data
-        )
-    except Exception:
-        header = None
-
-    if not header or not header.get("id"):
-        return header, pd.DataFrame()
-
-    try:
-        rows = (
-            sb.table("rpe_sessions")
-            .select("session_index,rpe")
-            .eq("rpe_entry_id", header["id"])
-            .order("session_index")
-            .execute()
-            .data
-            or []
-        )
-        df = _df_from_rows(rows)
-        if not df.empty:
-            df["session_index"] = pd.to_numeric(df["session_index"], errors="coerce").fillna(0).astype(int)
-            df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0)
-        return header, df
-    except Exception:
-        return header, pd.DataFrame()
-
-
-def plot_rpe_session_simple(df: pd.DataFrame, title: str):
-    if df.empty:
-        st.info("Geen RPE sessions gevonden voor deze datum.")
-        return
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=df["session_index"].astype(str),
-            y=df["rpe"],
-            mode="lines+markers",
-            name="RPE",
-            line=dict(color="red", width=3, shape="spline"),
-            marker=dict(color="red", size=8),
-        )
-    )
-    _add_zone_background(fig, 1, 10)
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=30, b=10),
-        height=340,
-        title=title,
-        xaxis_title="Session #",
-        yaxis_title="RPE (1-10)",
-        showlegend=False,
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
 
 def fetch_rpe_header_over_time(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
@@ -449,7 +405,7 @@ def fetch_rpe_header_over_time(sb, player_id: str, limit: int = 90) -> pd.DataFr
         df = _df_from_rows(rows)
         if df.empty:
             return df
-        df["entry_date"] = pd.to_datetime(df["entry_date"]).dt.date
+        df["entry_date"] = _coerce_date_series(df["entry_date"])
         return df.sort_values("entry_date")
     except Exception:
         return pd.DataFrame()
@@ -461,7 +417,7 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
     try:
         rows = (
             sb.table("rpe_sessions")
-            .select("rpe_entry_id,session_index,rpe,duration_min")
+            .select("rpe_entry_id,session_index,duration_min,rpe")
             .in_("rpe_entry_id", entry_ids)
             .execute()
             .data
@@ -472,8 +428,11 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def build_rpe_avg_timeseries(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
-    """Over time: gemiddelde RPE over sessies (gewogen op duration als beschikbaar, anders simpel gemiddelde)."""
+def build_rpe_timeseries_avg(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
+    """
+    Over time RPE: gewogen gemiddelde RPE per dag (dur*rpe / dur).
+    (duration wordt niet getoond, maar gebruikt voor avg)
+    """
     h = fetch_rpe_header_over_time(sb, player_id, limit=limit)
     if h.empty:
         return h
@@ -484,43 +443,118 @@ def build_rpe_avg_timeseries(sb, player_id: str, limit: int = 90) -> pd.DataFram
         h["rpe_avg"] = None
         return h
 
+    s["duration_min"] = pd.to_numeric(s["duration_min"], errors="coerce").fillna(0.0)
     s["rpe"] = pd.to_numeric(s["rpe"], errors="coerce").fillna(0.0)
-    if "duration_min" in s.columns:
-        s["duration_min"] = pd.to_numeric(s["duration_min"], errors="coerce").fillna(0.0)
-    else:
-        s["duration_min"] = 0.0
+    s["load"] = s["duration_min"] * s["rpe"]
 
-    def _avg(g: pd.DataFrame) -> float:
-        dur = g["duration_min"].sum()
-        if dur > 0:
-            return float((g["rpe"] * g["duration_min"]).sum() / dur)
-        return float(g["rpe"].mean()) if len(g) else 0.0
+    agg = s.groupby("rpe_entry_id", as_index=False).agg(
+        dur=("duration_min", "sum"),
+        load=("load", "sum"),
+    )
+    agg["rpe_avg"] = agg.apply(lambda r: (r["load"] / r["dur"]) if r["dur"] > 0 else None, axis=1)
 
-    avg = s.groupby("rpe_entry_id", as_index=False).apply(lambda g: pd.Series({"rpe_avg": _avg(g)})).reset_index(drop=True)
-
-    out = h.merge(avg, left_on="id", right_on="rpe_entry_id", how="left").drop(columns=["rpe_entry_id"])
+    out = h.merge(agg[["rpe_entry_id", "rpe_avg"]], left_on="id", right_on="rpe_entry_id", how="left").drop(columns=["rpe_entry_id"])
     return out.sort_values("entry_date")
 
 
-def plot_rpe_over_time_avg(df: pd.DataFrame):
+def fetch_rpe_for_date(sb, player_id: str, d: date) -> pd.DataFrame:
+    """
+    Session view: haal RPE per sessie (1/2) op voor één datum.
+    """
+    try:
+        header = (
+            sb.table("rpe_entries")
+            .select("id")
+            .eq("player_id", player_id)
+            .eq("entry_date", d.isoformat())
+            .maybe_single()
+            .execute()
+            .data
+        )
+    except Exception:
+        header = None
+
+    if not header or not header.get("id"):
+        return pd.DataFrame()
+
+    try:
+        rows = (
+            sb.table("rpe_sessions")
+            .select("session_index,rpe")
+            .eq("rpe_entry_id", header["id"])
+            .order("session_index")
+            .execute()
+            .data
+            or []
+        )
+        df = _df_from_rows(rows)
+        if df.empty:
+            return df
+        df["session_index"] = pd.to_numeric(df["session_index"], errors="coerce").fillna(0).astype(int)
+        df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def plot_rpe_over_time(df: pd.DataFrame):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=df["entry_date"],
             y=pd.to_numeric(df["rpe_avg"], errors="coerce"),
             mode="lines+markers",
-            name="RPE (avg)",
-            line=dict(color="red", width=3, shape="spline"),
-            marker=dict(color="red"),
+            line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
+            marker=dict(size=6),
+            name="RPE",
         )
     )
-    _add_zone_background(fig, 1, 10)
+    _add_zone_background(fig)
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
-        xaxis_title="Datum",
-        yaxis_title="RPE (1-10)",
+        xaxis_title="Date",
+        yaxis_title="RPE (0–10)",
         showlegend=False,
+    )
+    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def plot_rpe_session(df_sessions: pd.DataFrame, d: date):
+    if df_sessions.empty:
+        st.info("Geen RPE sessions gevonden voor deze datum.")
+        return
+
+    # Zorg dat sessie 1 en 2 altijd zichtbaar als ticks (ook als 1 ontbreekt)
+    x = df_sessions["session_index"].astype(int)
+    y = pd.to_numeric(df_sessions["rpe"], errors="coerce").fillna(0)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="lines+markers",
+            line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
+            marker=dict(size=8),
+            name="RPE",
+        )
+    )
+    _add_zone_background(fig)
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=340,
+        title=f"RPE (Session) — {d.isoformat()}",
+        xaxis_title="Session #",
+        yaxis_title="RPE (0–10)",
+        showlegend=False,
+    )
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=[1, 2],
+        ticktext=["1", "2"],
+        range=[0.7, 2.3],
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -539,7 +573,7 @@ def player_pages_main():
     target_player_id, target_player_name, _ = pick_target_player(sb, profile, label="Speler", key="pp_player_select")
 
     if not target_player_id:
-        st.error("Geen speler beschikbaar (players leeg of geen toegang).")
+        st.error("Geen speler beschikbaar.")
         st.stop()
 
     st.title(f"Player: {target_player_name}")
@@ -550,25 +584,24 @@ def player_pages_main():
     # DATA TAB
     # ============================
     with tab_data:
-        gps_left, gps_right = st.columns(2)
+        left, right = st.columns(2)
 
-        with gps_left:
+        # ---- GPS recent (1 tabel) ----
+        with left:
             st.subheader("GPS – Recent (laatste 20)")
-            gps_df_rows = fetch_gps_recent_rows(sb, target_player_id, limit=20)
 
-            if gps_df_rows.empty:
+            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=200)
+            if gps_raw.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                df_sorted = gps_df_rows.sort_values("datum", ascending=False).copy()
-                cols = [c for c in GPS_RECENT_COLS if c in df_sorted.columns]
-                table_df = df_sorted[cols].rename(columns=GPS_COL_RENAME)
-                st.dataframe(table_df, use_container_width=True, hide_index=True)
+                pretty = gps_table_pretty(gps_raw, n=20)
+                st.dataframe(pretty, use_container_width=True, hide_index=True)
 
-        with gps_right:
+        # ---- GPS over time (sum per date) ----
+        with right:
             st.subheader("GPS – Over time")
-            gps_df_plot = fetch_gps_for_plot(sb, target_player_id, limit=250)
-
-            if gps_df_plot.empty:
+            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=200)
+            if gps_raw.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
                 metric_label = st.selectbox(
@@ -578,13 +611,17 @@ def player_pages_main():
                     key="gps_metric_sel",
                 )
                 metric_key = dict(GPS_METRICS)[metric_label]
-                df_plot = gps_df_plot.tail(10)
-                plot_gps_over_time(df_plot, metric_label, metric_key)
+                summed = gps_timeseries_summed_for_plot(gps_raw, metric_key=metric_key)
+                if summed.empty:
+                    st.info("Onvoldoende data voor grafiek.")
+                else:
+                    plot_gps_over_time(summed, metric_label, metric_key)
 
         st.divider()
 
         well_col, rpe_col = st.columns(2)
 
+        # ---- Wellness ----
         with well_col:
             st.subheader("Wellness")
             mode_w = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="well_mode")
@@ -597,7 +634,7 @@ def player_pages_main():
                 else:
                     plot_asrm_session(row, title=f"Wellness (Session) — {d.isoformat()}")
             else:
-                df = fetch_asrm_over_time(sb, target_player_id, limit=90)
+                df = fetch_asrm_over_time(sb, target_player_id, limit=180)
                 if df.empty:
                     st.info("Geen Wellness entries gevonden.")
                 else:
@@ -605,23 +642,24 @@ def player_pages_main():
                     param_key = dict(ASRM_COLS)[param_label]
                     plot_asrm_over_time(df, param_label, param_key)
 
+        # ---- RPE ----
         with rpe_col:
             st.subheader("RPE")
             mode_r = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="rpe_mode")
 
             if mode_r == "Session":
                 d = st.date_input("Datum (RPE)", value=date.today(), key="rpe_date")
-                header, rpe_df = fetch_rpe_for_date(sb, target_player_id, d)
-                if not header:
+                sess = fetch_rpe_for_date(sb, target_player_id, d)
+                if sess.empty:
                     st.info("Geen RPE entry voor deze datum.")
                 else:
-                    plot_rpe_session_simple(rpe_df, title=f"RPE (Session) — {d.isoformat()}")
+                    plot_rpe_session(sess, d)
             else:
-                df = build_rpe_avg_timeseries(sb, target_player_id, limit=90)
-                if df.empty or df["rpe_avg"].dropna().empty:
+                df = build_rpe_timeseries_avg(sb, target_player_id, limit=180)
+                if df.empty or df["rpe_avg"].isna().all():
                     st.info("Geen RPE entries gevonden.")
                 else:
-                    plot_rpe_over_time_avg(df.tail(90))
+                    plot_rpe_over_time(df)
 
     # ============================
     # FORMS TAB
@@ -632,6 +670,7 @@ def player_pages_main():
 
         col_asrm, col_rpe = st.columns(2)
 
+        # ---- ASRM form ----
         with col_asrm:
             st.subheader("ASRM (Wellbeing)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
@@ -649,11 +688,16 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
+        # ---- RPE form ----
         with col_rpe:
             st.subheader("RPE (Session)")
             header, sessions = load_rpe(sb, target_player_id, entry_date)
             header = header or {}
             sessions = sessions or []
+
+            # auto: als session 2 bestaat -> toggle aan
+            has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in sessions)
+            enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key="rpe_enable_s2")
 
             injury_default = bool(header.get("injury", False))
             injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
@@ -678,7 +722,7 @@ def player_pages_main():
             st.markdown("### Sessions")
 
             def _sess(idx: int, key: str, default: int) -> int:
-                hit = next((s for s in sessions if int(s.get("session_index", 0)) == idx), None)
+                hit = next((s for s in sessions if int(s.get("session_index", 0) or 0) == idx), None)
                 if not hit:
                     return default
                 v = hit.get(key)
@@ -689,22 +733,17 @@ def player_pages_main():
             s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
             # Session 2 (optioneel)
-            s2_has_existing = any(int(s.get("session_index", 0)) == 2 for s in sessions)
-            s2_enabled = st.checkbox("2e sessie vandaag?", value=s2_has_existing, key="rpe_s2_enabled")
+            if enable_s2:
+                s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
+                s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
+            else:
+                s2_dur, s2_rpe = 0, 0
 
             sessions_payload: List[Dict[str, int]] = []
             if s1_dur > 0:
                 sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
-            else:
-                # als duration 0 is maar je wél rpe wil opslaan, zet hier eventueel duration=1
-                # (nu: duration=0 => session wordt niet opgeslagen)
-                pass
-
-            if s2_enabled:
-                s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
-                s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
-                if s2_dur > 0:
-                    sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
+            if enable_s2 and s2_dur > 0:
+                sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
 
             if st.button("RPE opslaan", use_container_width=True, key="rpe_save"):
                 try:
