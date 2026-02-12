@@ -478,42 +478,81 @@ def fetch_rpe_for_date(sb, player_id: str, d: date) -> pd.DataFrame:
 
 
 def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
+    """
+    1 punt per dag:
+      - y = gewogen gemiddelde RPE (avg_rpe)
+      - errorbars: min/max RPE die dag
+    + x-as toont alleen unieke datums (geen 'dubbele' labels).
+    """
+    if df_daily is None or df_daily.empty:
+        st.info("Geen RPE entries gevonden.")
+        return
+
+    dff = df_daily.copy()
+
+    # Zorg dat dit echt dates zijn (geen timestamps/strings)
+    dff["entry_date"] = pd.to_datetime(dff["entry_date"], errors="coerce").dt.date
+    dff = dff.dropna(subset=["entry_date"])
+
+    # Uniek per dag (veiligheidsnet)
+    dff = dff.groupby("entry_date", as_index=False).agg(
+        avg_rpe=("avg_rpe", "mean"),
+        min_rpe=("min_rpe", "min"),
+        max_rpe=("max_rpe", "max"),
+    ).sort_values("entry_date")
+
+    y = pd.to_numeric(dff["avg_rpe"], errors="coerce")
+    ymin = pd.to_numeric(dff["min_rpe"], errors="coerce")
+    ymax = pd.to_numeric(dff["max_rpe"], errors="coerce")
+
     # errorbars: + = max-avg, - = avg-min
-    y = pd.to_numeric(df_daily["avg_rpe"], errors="coerce")
-    y_up = pd.to_numeric(df_daily["max_rpe"], errors="coerce") - y
-    y_dn = y - pd.to_numeric(df_daily["min_rpe"], errors="coerce")
+    y_up = (ymax - y).fillna(0)
+    y_dn = (y - ymin).fillna(0)
+
+    x_vals = dff["entry_date"].tolist()
+    x_text = [pd.to_datetime(d).strftime("%d-%m-%Y") for d in x_vals]
 
     fig = go.Figure()
+
     fig.add_trace(
         go.Scatter(
-            x=df_daily["entry_date"],
+            x=x_vals,
             y=y,
             mode="lines+markers",
             line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
-            marker=dict(size=6),
+            marker=dict(size=7),
             error_y=dict(
                 type="data",
                 symmetric=False,
-                array=y_up.fillna(0),
-                arrayminus=y_dn.fillna(0),
+                array=y_up,
+                arrayminus=y_dn,
                 thickness=1.5,
-                width=4,
+                width=6,
             ),
             name="RPE",
         )
     )
+
     _add_zone_background(fig)
+
+    # Belangrijk: x-as alleen unieke dagen tonen
+    fig.update_xaxes(
+        type="category",                 # voorkomt “tussen-ticks” en dubbele labels
+        tickmode="array",
+        tickvals=x_vals,
+        ticktext=x_text,
+        title_text="Date",
+    )
+
+    fig.update_yaxes(range=[0, 10], tick0=0, dtick=1, title_text="RPE (0–10)")
+
     fig.update_layout(
-        margin=dict(l=10, r=10, t=30, b=10),
+        margin=dict(l=10, r=10, t=20, b=10),
         height=340,
-        xaxis_title="Date",
-        yaxis_title="RPE (0–10)",
         showlegend=False,
     )
-    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
+
     st.plotly_chart(fig, use_container_width=True)
-
-
 def plot_rpe_session(df_sessions: pd.DataFrame, d: date):
     if df_sessions.empty:
         st.info("Geen RPE sessions gevonden voor deze datum.")
