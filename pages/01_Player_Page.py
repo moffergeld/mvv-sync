@@ -2,20 +2,18 @@
 # ============================================================
 # Player pagina: tabs Data + Forms
 #
-# FIXES:
-# - NameError fetch_asrm_for_date -> alias naar load_asrm
-# - RPE save error (supabase-py v2): geen .select() op upsert builder
-#   -> upsert header, daarna SELECT id (maybe_single)
+# EXTRA FIX:
+# - GPS: als er meerdere Summary-rows op dezelfde datum zijn, toon/plot de SOM per datum
+#   (dus aggregeren op datum).
 #
-# DATA tab:
-#   2x2 layout:
-#     [GPS Recent table]     [GPS Over time graph]
-#     [Wellness switch]      [RPE switch]
+# DATA tab (2x2):
+#   [GPS Recent table]      [GPS Over time graph]
+#   [Wellness switch]       [RPE switch]
 #
 # GPS data uit: public.v_gps_summary
-# - Geen losse "datum select" + losse 1-row tabel meer
-# - Alleen "Recent sessions (laatste 10)" + "Vorige 10"
-# - Parameters hernoemd + playerload2d verwijderd
+# - Alleen 1 tabel: laatste 20 (per datum geaggregeerd)
+# - Kolomnamen aangepast (Date/Type/...)
+# - Metrics labels aangepast + playerload verwijderd
 # ============================================================
 
 from __future__ import annotations
@@ -64,7 +62,6 @@ def _add_zone_background(fig: go.Figure, y_min: float = 1, y_max: float = 10):
 # -----------------------------
 GPS_TABLE = "v_gps_summary"
 
-# Labels zoals jij wil + mapping naar kolommen in view
 GPS_METRICS = [
     ("Total Distance", "total_distance"),
     ("14.4–19.7 km/h", "running"),
@@ -73,6 +70,8 @@ GPS_METRICS = [
     ("Max Speed (km/u)", "max_speed"),
 ]
 
+# LET OP: type zit erin om een "label" te kunnen tonen, maar bij meerdere sessions op 1 dag
+# kunnen types verschillen. We kiezen dan de "meest voorkomende" of eerste.
 GPS_RECENT_COLS = [
     "datum",
     "type",
@@ -83,8 +82,65 @@ GPS_RECENT_COLS = [
     "max_speed",
 ]
 
+GPS_COL_RENAME = {
+    "datum": "Date",
+    "type": "Type",
+    "total_distance": "Total Distance (m)",
+    "running": "14.4–19.7 km/h",
+    "sprint": "19.8–25.1 km/h",
+    "high_sprint": ">25,1 km/h",
+    "max_speed": "Max Speed (km/u)",
+}
 
-def fetch_gps_summary_recent(sb, player_id: str, limit: int = 30) -> pd.DataFrame:
+
+def _aggregate_gps_per_date(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregeer meerdere rows op dezelfde datum naar 1 row:
+    - som voor distance/zone metrics
+    - max voor max_speed
+    - type: meest voorkomende (mode), fallback eerste
+    """
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df["datum"] = pd.to_datetime(df["datum"]).dt.date
+
+    sum_cols = ["total_distance", "running", "sprint", "high_sprint"]
+    max_cols = ["max_speed"]
+
+    for c in sum_cols + max_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    def _mode_or_first(s: pd.Series):
+        s = s.dropna().astype(str)
+        if s.empty:
+            return None
+        m = s.mode()
+        return m.iloc[0] if not m.empty else s.iloc[0]
+
+    agg_dict = {}
+    for c in sum_cols:
+        if c in df.columns:
+            agg_dict[c] = "sum"
+    for c in max_cols:
+        if c in df.columns:
+            agg_dict[c] = "max"
+    if "type" in df.columns:
+        agg_dict["type"] = _mode_or_first
+
+    out = df.groupby("datum", as_index=False).agg(agg_dict)
+
+    # sorteer newest first voor tabellen (caller kan nog aanpassen)
+    return out
+
+
+def fetch_gps_summary_recent(sb, player_id: str, limit: int = 120) -> pd.DataFrame:
+    """
+    Haal ruwe rows op (kan meerdere per datum bevatten) en aggregeer daarna per datum.
+    limit wat hoger zetten zodat je na aggregatie nog genoeg dagen overhoudt.
+    """
     try:
         rows = (
             sb.table(GPS_TABLE)
@@ -99,7 +155,7 @@ def fetch_gps_summary_recent(sb, player_id: str, limit: int = 30) -> pd.DataFram
         df = _df_from_rows(rows)
         if df.empty:
             return df
-        df["datum"] = pd.to_datetime(df["datum"]).dt.date
+        df = _aggregate_gps_per_date(df)
         return df
     except Exception:
         return pd.DataFrame()
@@ -152,7 +208,6 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
         return None
 
 
-# Alias voor compat met UI call in Data-tab
 def fetch_asrm_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
     return load_asrm(sb, player_id, d)
 
@@ -179,7 +234,7 @@ def save_asrm(
     sb.table("asrm_entries").upsert(payload, on_conflict="player_id,entry_date").execute()
 
 
-def fetch_asrm_over_time(sb, player_id: str, limit: int = 60) -> pd.DataFrame:
+def fetch_asrm_over_time(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
     try:
         rows = (
             sb.table("asrm_entries")
@@ -325,7 +380,7 @@ def save_rpe(
         sb.table("rpe_sessions").upsert(payload, on_conflict="rpe_entry_id,session_index").execute()
 
 
-def fetch_rpe_header_over_time(sb, player_id: str, limit: int = 60) -> pd.DataFrame:
+def fetch_rpe_header_over_time(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
     try:
         rows = (
             sb.table("rpe_entries")
@@ -363,7 +418,7 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def build_rpe_timeseries(sb, player_id: str, limit: int = 60) -> pd.DataFrame:
+def build_rpe_timeseries(sb, player_id: str, limit: int = 90) -> pd.DataFrame:
     h = fetch_rpe_header_over_time(sb, player_id, limit=limit)
     if h.empty:
         return h
@@ -544,19 +599,20 @@ def player_pages_main():
 
         with gps_left:
             st.subheader("GPS – Recent (laatste 20)")
-        
-            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=60)
+            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=120)  # hoger ophalen, daarna aggregeren
+
             if gps_df_recent.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
                 df_sorted = gps_df_recent.sort_values("datum", ascending=False).head(20).copy()
                 cols = [c for c in GPS_RECENT_COLS if c in df_sorted.columns]
-                st.dataframe(df_sorted[cols], use_container_width=True, hide_index=True)
+                table_df = df_sorted[cols].rename(columns=GPS_COL_RENAME)
+                st.dataframe(table_df, use_container_width=True, hide_index=True)
 
         with gps_right:
             st.subheader("GPS – Over time")
+            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=120)
 
-            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=60)
             if gps_df_recent.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
