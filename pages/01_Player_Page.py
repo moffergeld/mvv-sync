@@ -1,16 +1,22 @@
 # player_pages.py
 # ============================================================
-# Update (requested):
-# - Wellness + RPE charts:
-#   - Geen chart-titels (bovenin)
-#   - Geen x-as titel ("Date" / "Session #")
-#   - Zelfde hoogte voor Wellness en RPE (session + over time)
-# - Fix: _add_zone_background accepteert nu y_min/y_max zodat TypeError weg is
+# Player pagina: tabs Data + Forms
 #
-# Verder:
-# - GPS tabel blijft “alles apart”
-# - GPS over-time blijft per dag gesommeerd + smooth + rood
-# - RPE over-time: per datum 1 punt (gewogen avg) + errorbars (min/max)
+# Update (op basis van je feedback):
+# - "undefined" weggehaald (komt door Plotly title = None / verkeerde param).
+# - Geen titels in de grafieken + geen x-as titel (axis title).
+# - Wellness en RPE grafieken dezelfde hoogte.
+# - RPE Session: bars (zoals Wellness), alleen 0–10 schaal.
+# - RPE Over time: 1 punt per datum (gewogen avg op duration), min/max als errorbars.
+# - Y-as (Wellness + RPE): 0–10 met stappen van 1.
+# - X-as (RPE Session): alleen 1 en 2.
+# - GPS: tabel alle sessions apart, grafiek som per dag (alleen in grafiek),
+#   rood + smooth (spline).
+#
+# Vereist:
+# - roles.py met: get_sb, require_auth, get_profile, pick_target_player
+# - Supabase tables/views:
+#   public.asrm_entries, public.rpe_entries, public.rpe_sessions, public.v_gps_summary
 # ============================================================
 
 from __future__ import annotations
@@ -19,18 +25,18 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 
 from roles import get_sb, require_auth, get_profile, pick_target_player
-
-
-CHART_HEIGHT = 340  # overal dezelfde hoogte
 
 
 # -----------------------------
 # Utils
 # -----------------------------
+CHART_H = 340  # één hoogte voor alle charts in Data-tab
+
+
 def _df_from_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
@@ -39,7 +45,7 @@ def _coerce_date_series(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce").dt.date
 
 
-def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10, dtick: int = 1):
+def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
     zones = [
         (0, 4, "rgba(0, 200, 0, 0.12)"),
         (5, 7, "rgba(255, 165, 0, 0.14)"),
@@ -58,7 +64,13 @@ def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10, dt
             line=dict(width=0),
             layer="below",
         )
-    fig.update_yaxes(range=[y_min, y_max], tick0=y_min, dtick=dtick)
+    fig.update_yaxes(range=[y_min, y_max], tick0=0, dtick=1)
+
+
+def _strip_titles(fig: go.Figure):
+    # Geen plot titel + geen x-as titel (wel ticks/labels)
+    fig.update_layout(title_text="", xaxis_title=None)
+    return fig
 
 
 # -----------------------------
@@ -87,7 +99,7 @@ GPS_RENAME = {
 }
 
 
-def fetch_gps_summary_recent_raw(sb, player_id: str, limit: int = 200) -> pd.DataFrame:
+def fetch_gps_summary_recent_raw(sb, player_id: str, limit: int = 400) -> pd.DataFrame:
     try:
         rows = (
             sb.table(GPS_TABLE)
@@ -113,11 +125,13 @@ def gps_table_pretty(df_raw: pd.DataFrame, n: int = 20) -> pd.DataFrame:
         return df_raw
     show = df_raw.sort_values("datum", ascending=False).head(n).copy()
     cols = [c for c in GPS_TABLE_COLS_RAW if c in show.columns]
-    show = show[cols].rename(columns=GPS_RENAME)
-    return show
+    return show[cols].rename(columns=GPS_RENAME)
 
 
 def gps_timeseries_summed_for_plot(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
+    """
+    Alleen voor de grafiek: als er meerdere summaries op 1 dag zijn -> som per datum.
+    """
     if df_raw.empty:
         return df_raw
     df = df_raw.copy()
@@ -136,17 +150,16 @@ def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: s
             mode="lines+markers",
             line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
             marker=dict(size=6),
-            name=metric_label,
         )
     )
     fig.update_layout(
-        margin=dict(l=10, r=10, t=30, b=10),
-        height=CHART_HEIGHT,
-        xaxis_title="Date",
-        yaxis_title=metric_label,
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=CHART_H,
         showlegend=False,
     )
-    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
+    fig.update_xaxes(type="date", tickformat="%d-%m-%Y", title_text=None)
+    fig.update_yaxes(title_text=metric_label)
+    _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -224,7 +237,7 @@ def fetch_asrm_over_time(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
+def plot_asrm_over_time(df: pd.DataFrame, param_key: str):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -233,19 +246,17 @@ def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
             mode="lines+markers",
             line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
             marker=dict(size=6),
-            name=param_label,
         )
     )
-    _add_zone_background(fig, y_min=0, y_max=10, dtick=1)
+    _add_zone_background(fig, 0, 10)
     fig.update_layout(
         margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_HEIGHT,
+        height=CHART_H,
         showlegend=False,
-        xaxis_title=None,   # geen x-as titel
-        title=None,         # geen titel
     )
-    fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
+    fig.update_xaxes(type="date", tickformat="%d-%m-%Y", title_text=None)
     fig.update_yaxes(title_text="Score (0–10)")
+    _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -255,16 +266,16 @@ def plot_asrm_session(row: Dict[str, Any]):
     values = [int(row.get(k, 0) or 0) for k in keys]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=labels, y=values))
-    _add_zone_background(fig, y_min=0, y_max=10, dtick=1)
+    fig.add_trace(go.Bar(x=labels, y=values, marker=dict(color="rgba(135,206,250,1)")))
+    _add_zone_background(fig, 0, 10)
     fig.update_layout(
         margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_HEIGHT,
+        height=CHART_H,
         showlegend=False,
-        xaxis_title=None,   # geen x-as titel
-        title=None,         # geen titel
     )
+    fig.update_xaxes(title_text=None)
     fig.update_yaxes(title_text="Score (0–10)")
+    _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -334,6 +345,7 @@ def save_rpe(
         "notes": notes.strip() if notes else None,
     }
 
+    # supabase-py v2: geen .select() op upsert builder
     sb.table("rpe_entries").upsert(header_payload, on_conflict="player_id,entry_date").execute()
 
     rpe_entry_id = _get_rpe_entry_id(sb, player_id, entry_date)
@@ -393,6 +405,11 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
 
 
 def build_rpe_timeseries_daily(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
+    """
+    Per datum:
+    - avg_rpe: gewogen op duration_min (dur*rpe / dur); fallback mean als dur==0
+    - min_rpe/max_rpe: min/max over sessies die dag
+    """
     h = fetch_rpe_header_over_time(sb, player_id, limit=limit)
     if h.empty:
         return h
@@ -465,7 +482,7 @@ def fetch_rpe_for_date(sb, player_id: str, d: date) -> pd.DataFrame:
         if df.empty:
             return df
         df["session_index"] = pd.to_numeric(df["session_index"], errors="coerce").fillna(0).astype(int)
-        df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0.0)
+        df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0)
         return df
     except Exception:
         return pd.DataFrame()
@@ -480,11 +497,11 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
     dff["entry_date"] = pd.to_datetime(dff["entry_date"], errors="coerce").dt.date
     dff = dff.dropna(subset=["entry_date"])
 
-    dff = dff.groupby("entry_date", as_index=False).agg(
-        avg_rpe=("avg_rpe", "mean"),
-        min_rpe=("min_rpe", "min"),
-        max_rpe=("max_rpe", "max"),
-    ).sort_values("entry_date")
+    dff = (
+        dff.groupby("entry_date", as_index=False)
+        .agg(avg_rpe=("avg_rpe", "mean"), min_rpe=("min_rpe", "min"), max_rpe=("max_rpe", "max"))
+        .sort_values("entry_date")
+    )
 
     y = pd.to_numeric(dff["avg_rpe"], errors="coerce")
     ymin = pd.to_numeric(dff["min_rpe"], errors="coerce")
@@ -512,47 +529,42 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
                 thickness=1.5,
                 width=6,
             ),
-            name="RPE",
         )
     )
 
-    _add_zone_background(fig, y_min=0, y_max=10, dtick=1)
+    _add_zone_background(fig, 0, 10)
 
+    # Unieke datums als categorie -> geen “dubbele” labels
     fig.update_xaxes(
         type="category",
         tickmode="array",
         tickvals=x_vals,
         ticktext=x_text,
-        title_text=None,  # geen x-as titel
+        title_text=None,
     )
-    fig.update_yaxes(title_text="RPE (0–10)")
+    fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
 
     fig.update_layout(
         margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_HEIGHT,
+        height=CHART_H,
         showlegend=False,
-        title=None,  # geen titel
     )
-
+    _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
-def plot_rpe_session_bars(df_sessions: pd.DataFrame):
+def plot_rpe_session(sessions_df: pd.DataFrame):
     """
-    RPE session chart:
-    - Bars (zoals Wellness)
-    - Zones (groen/oranje/rood)
-    - Y: 0–10 dtick=1
-    - X: alleen 1 en 2
-    - Geen titel, geen x-as titel
+    Bars (zoals Wellness), alleen RPE 0–10.
+    X: alleen session 1 en 2.
     """
-    if df_sessions is None or df_sessions.empty:
+    if sessions_df is None or sessions_df.empty:
         st.info("Geen RPE sessions gevonden voor deze datum.")
         return
 
-    df = df_sessions.copy()
+    df = sessions_df.copy()
     df["session_index"] = pd.to_numeric(df["session_index"], errors="coerce").fillna(0).astype(int)
-    df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0.0)
+    df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0)
 
     df = df[df["session_index"].isin([1, 2])].sort_values("session_index")
     if df.empty:
@@ -563,17 +575,14 @@ def plot_rpe_session_bars(df_sessions: pd.DataFrame):
     y = df["rpe"].tolist()
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=x, y=y, opacity=0.9))
+    fig.add_trace(go.Bar(x=x, y=y, marker=dict(color="#FF0033"), opacity=0.9))
 
-    _add_zone_background(fig, y_min=0, y_max=10, dtick=1)
+    _add_zone_background(fig, 0, 10)
 
     fig.update_layout(
         margin=dict(l=10, r=10, t=10, b=10),
-        height=CHART_HEIGHT,
+        height=CHART_H,
         showlegend=False,
-        title=None,        # geen titel
-        xaxis_title=None,  # geen x-as titel
-        yaxis_title="RPE (0–10)",
     )
 
     fig.update_xaxes(
@@ -581,8 +590,11 @@ def plot_rpe_session_bars(df_sessions: pd.DataFrame):
         tickmode="array",
         tickvals=["1", "2"],
         ticktext=["1", "2"],
+        title_text=None,
     )
+    fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
 
+    _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -605,15 +617,15 @@ def player_pages_main():
     st.title(f"Player: {target_player_name}")
     tab_data, tab_forms = st.tabs(["Data", "Forms"])
 
-    # -------------------------
+    # ============================
     # DATA TAB
-    # -------------------------
+    # ============================
     with tab_data:
         left, right = st.columns(2)
 
         with left:
             st.subheader("GPS – Recent (laatste 20)")
-            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=200)
+            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=400)
             if gps_raw.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
@@ -621,11 +633,16 @@ def player_pages_main():
 
         with right:
             st.subheader("GPS – Over time")
-            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=200)
+            gps_raw = fetch_gps_summary_recent_raw(sb, target_player_id, limit=400)
             if gps_raw.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                metric_label = st.selectbox("Parameter", options=[m[0] for m in GPS_METRICS], index=0, key="gps_metric_sel")
+                metric_label = st.selectbox(
+                    "Parameter",
+                    options=[m[0] for m in GPS_METRICS],
+                    index=0,
+                    key="gps_metric_sel",
+                )
                 metric_key = dict(GPS_METRICS)[metric_label]
                 summed = gps_timeseries_summed_for_plot(gps_raw, metric_key=metric_key)
                 if summed.empty:
@@ -653,9 +670,14 @@ def player_pages_main():
                 if df.empty:
                     st.info("Geen Wellness entries gevonden.")
                 else:
-                    param_label = st.selectbox("Parameter", options=[x[0] for x in ASRM_COLS], index=0, key="well_param")
+                    param_label = st.selectbox(
+                        "Parameter",
+                        options=[x[0] for x in ASRM_COLS],
+                        index=0,
+                        key="well_param",
+                    )
                     param_key = dict(ASRM_COLS)[param_label]
-                    plot_asrm_over_time(df, param_label, param_key)
+                    plot_asrm_over_time(df, param_key)
 
         with rpe_col:
             st.subheader("RPE")
@@ -667,7 +689,7 @@ def player_pages_main():
                 if sess.empty:
                     st.info("Geen RPE entry voor deze datum.")
                 else:
-                    plot_rpe_session_bars(sess)
+                    plot_rpe_session(sess)
             else:
                 daily = build_rpe_timeseries_daily(sb, target_player_id, limit=180)
                 if daily.empty or daily["avg_rpe"].isna().all():
@@ -675,9 +697,9 @@ def player_pages_main():
                 else:
                     plot_rpe_over_time_daily(daily)
 
-    # -------------------------
+    # ============================
     # FORMS TAB
-    # -------------------------
+    # ============================
     with tab_forms:
         st.header("Forms")
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
@@ -687,6 +709,7 @@ def player_pages_main():
         with col_asrm:
             st.subheader("ASRM (Wellbeing)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
+
             ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
             fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
             sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing.get("sleep_quality", 5)), key="asrm_sleep")
