@@ -37,9 +37,9 @@ def _coerce_date_series(s: pd.Series) -> pd.Series:
 
 def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
     zones = [
-        (0, 4, "rgba(0, 200, 0, 0.12)"),       # groen
-        (5, 7, "rgba(255, 165, 0, 0.14)"),     # oranje
-        (8, 10, "rgba(255, 0, 0, 0.14)"),      # rood
+        (0, 4.5, "rgba(0, 200, 0, 0.12)"),       # groen
+        (4.5, 7.5, "rgba(255, 165, 0, 0.14)"),     # oranje
+        (7.5, 10, "rgba(255, 0, 0, 0.14)"),      # rood
     ]
     for y0, y1, color in zones:
         fig.add_shape(
@@ -239,7 +239,7 @@ def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
         xaxis_title="Date",
-        yaxis_title="Score (0–10)",
+        #yaxis_title="Score (0–10)",
         showlegend=False,
     )
     fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
