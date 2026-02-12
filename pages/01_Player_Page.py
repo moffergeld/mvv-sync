@@ -543,25 +543,15 @@ def player_pages_main():
         gps_left, gps_right = st.columns(2)
 
         with gps_left:
-            st.subheader("GPS – Recent")
-
+            st.subheader("GPS – Recent (laatste 20)")
+        
             gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=60)
             if gps_df_recent.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                df_sorted = gps_df_recent.sort_values("datum", ascending=False)
-
-                st.markdown("**Recent sessions (laatste 10)**")
-                last10 = df_sorted.head(10)
-                cols = [c for c in GPS_RECENT_COLS if c in last10.columns]
-                st.dataframe(last10[cols], use_container_width=True, hide_index=True)
-
-                st.markdown("**Vorige 10 sessions**")
-                prev10 = df_sorted.iloc[10:20].copy()
-                if prev10.empty:
-                    st.info("Geen extra sessions (minder dan 11 records).")
-                else:
-                    st.dataframe(prev10[cols], use_container_width=True, hide_index=True)
+                df_sorted = gps_df_recent.sort_values("datum", ascending=False).head(20).copy()
+                cols = [c for c in GPS_RECENT_COLS if c in df_sorted.columns]
+                st.dataframe(df_sorted[cols], use_container_width=True, hide_index=True)
 
         with gps_right:
             st.subheader("GPS – Over time")
