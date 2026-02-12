@@ -1,19 +1,9 @@
 # player_pages.py
 # ============================================================
-# Player pagina: tabs Data + Forms
-#
-# EXTRA FIX:
-# - GPS: als er meerdere Summary-rows op dezelfde datum zijn, toon/plot de SOM per datum
-#   (dus aggregeren op datum).
-#
-# DATA tab (2x2):
-#   [GPS Recent table]      [GPS Over time graph]
-#   [Wellness switch]       [RPE switch]
-#
-# GPS data uit: public.v_gps_summary
-# - Alleen 1 tabel: laatste 20 (per datum geaggregeerd)
-# - Kolomnamen aangepast (Date/Type/...)
-# - Metrics labels aangepast + playerload verwijderd
+# Wijziging t.o.v. vorige versie:
+# - GPS TABEL: NIET aggregeren -> alle rows apart tonen (laatste 20)
+# - GPS GRAFIEK: WEL aggregeren per datum (som van metrics per datum; max_speed = max)
+# - GPS GRAFIEK: rode, smooth (curvy) lijn
 # ============================================================
 
 from __future__ import annotations
@@ -70,8 +60,6 @@ GPS_METRICS = [
     ("Max Speed (km/u)", "max_speed"),
 ]
 
-# LET OP: type zit erin om een "label" te kunnen tonen, maar bij meerdere sessions op 1 dag
-# kunnen types verschillen. We kiezen dan de "meest voorkomende" of eerste.
 GPS_RECENT_COLS = [
     "datum",
     "type",
@@ -93,54 +81,8 @@ GPS_COL_RENAME = {
 }
 
 
-def _aggregate_gps_per_date(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aggregeer meerdere rows op dezelfde datum naar 1 row:
-    - som voor distance/zone metrics
-    - max voor max_speed
-    - type: meest voorkomende (mode), fallback eerste
-    """
-    if df.empty:
-        return df
-
-    df = df.copy()
-    df["datum"] = pd.to_datetime(df["datum"]).dt.date
-
-    sum_cols = ["total_distance", "running", "sprint", "high_sprint"]
-    max_cols = ["max_speed"]
-
-    for c in sum_cols + max_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-
-    def _mode_or_first(s: pd.Series):
-        s = s.dropna().astype(str)
-        if s.empty:
-            return None
-        m = s.mode()
-        return m.iloc[0] if not m.empty else s.iloc[0]
-
-    agg_dict = {}
-    for c in sum_cols:
-        if c in df.columns:
-            agg_dict[c] = "sum"
-    for c in max_cols:
-        if c in df.columns:
-            agg_dict[c] = "max"
-    if "type" in df.columns:
-        agg_dict["type"] = _mode_or_first
-
-    out = df.groupby("datum", as_index=False).agg(agg_dict)
-
-    # sorteer newest first voor tabellen (caller kan nog aanpassen)
-    return out
-
-
-def fetch_gps_summary_recent(sb, player_id: str, limit: int = 120) -> pd.DataFrame:
-    """
-    Haal ruwe rows op (kan meerdere per datum bevatten) en aggregeer daarna per datum.
-    limit wat hoger zetten zodat je na aggregatie nog genoeg dagen overhoudt.
-    """
+def fetch_gps_recent_rows(sb, player_id: str, limit: int = 20) -> pd.DataFrame:
+    """Voor TABEL: alle rows apart (geen aggregatie)."""
     try:
         rows = (
             sb.table(GPS_TABLE)
@@ -155,8 +97,45 @@ def fetch_gps_summary_recent(sb, player_id: str, limit: int = 120) -> pd.DataFra
         df = _df_from_rows(rows)
         if df.empty:
             return df
-        df = _aggregate_gps_per_date(df)
+        df["datum"] = pd.to_datetime(df["datum"]).dt.date
         return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def fetch_gps_for_plot(sb, player_id: str, limit: int = 200) -> pd.DataFrame:
+    """Voor GRAFIEK: haal meer op en aggregeer per datum (som)."""
+    try:
+        rows = (
+            sb.table(GPS_TABLE)
+            .select(",".join(set(GPS_RECENT_COLS + ["player_id"])))
+            .eq("player_id", player_id)
+            .order("datum", desc=True)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+        df = _df_from_rows(rows)
+        if df.empty:
+            return df
+        df["datum"] = pd.to_datetime(df["datum"]).dt.date
+
+        # numeric
+        sum_cols = ["total_distance", "running", "sprint", "high_sprint"]
+        max_cols = ["max_speed"]
+        for c in sum_cols + max_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+        # aggregeer per datum (type niet nodig voor plot)
+        agg = {c: "sum" for c in sum_cols if c in df.columns}
+        for c in max_cols:
+            if c in df.columns:
+                agg[c] = "max"
+
+        out = df.groupby("datum", as_index=False).agg(agg)
+        return out.sort_values("datum")
     except Exception:
         return pd.DataFrame()
 
@@ -169,6 +148,8 @@ def plot_gps_over_time(df: pd.DataFrame, metric_label: str, metric_key: str):
             y=pd.to_numeric(df[metric_key], errors="coerce"),
             mode="lines+markers",
             name=metric_label,
+            line=dict(color="red", width=3, shape="spline"),
+            marker=dict(color="red"),
         )
     )
     fig.update_layout(
@@ -599,21 +580,21 @@ def player_pages_main():
 
         with gps_left:
             st.subheader("GPS – Recent (laatste 20)")
-            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=120)  # hoger ophalen, daarna aggregeren
+            gps_df_rows = fetch_gps_recent_rows(sb, target_player_id, limit=20)
 
-            if gps_df_recent.empty:
+            if gps_df_rows.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
-                df_sorted = gps_df_recent.sort_values("datum", ascending=False).head(20).copy()
+                df_sorted = gps_df_rows.sort_values("datum", ascending=False).copy()
                 cols = [c for c in GPS_RECENT_COLS if c in df_sorted.columns]
                 table_df = df_sorted[cols].rename(columns=GPS_COL_RENAME)
                 st.dataframe(table_df, use_container_width=True, hide_index=True)
 
         with gps_right:
             st.subheader("GPS – Over time")
-            gps_df_recent = fetch_gps_summary_recent(sb, target_player_id, limit=120)
+            gps_df_plot = fetch_gps_for_plot(sb, target_player_id, limit=250)
 
-            if gps_df_recent.empty:
+            if gps_df_plot.empty:
                 st.info("Geen GPS summary data gevonden (v_gps_summary).")
             else:
                 metric_label = st.selectbox(
@@ -623,7 +604,7 @@ def player_pages_main():
                     key="gps_metric_sel",
                 )
                 metric_key = dict(GPS_METRICS)[metric_label]
-                df_plot = gps_df_recent.sort_values("datum").tail(10)
+                df_plot = gps_df_plot.tail(10)
                 plot_gps_over_time(df_plot, metric_label, metric_key)
 
         st.divider()
