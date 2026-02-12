@@ -82,7 +82,6 @@ GPS_RENAME = {
     "max_speed": "Max Speed (km/u)",
 }
 
-
 def fetch_gps_summary_recent_raw(sb, player_id: str, limit: int = 200) -> pd.DataFrame:
     try:
         rows = (
@@ -103,14 +102,12 @@ def fetch_gps_summary_recent_raw(sb, player_id: str, limit: int = 200) -> pd.Dat
     except Exception:
         return pd.DataFrame()
 
-
 def gps_table_pretty(df_raw: pd.DataFrame, n: int = 20) -> pd.DataFrame:
     if df_raw.empty:
         return df_raw
     show = df_raw.sort_values("datum", ascending=False).head(n).copy()
     cols = [c for c in GPS_TABLE_COLS_RAW if c in show.columns]
     return show[cols].rename(columns=GPS_RENAME)
-
 
 def gps_timeseries_summed_for_plot(df_raw: pd.DataFrame, metric_key: str, tail_n: int = 10) -> pd.DataFrame:
     """
@@ -123,7 +120,6 @@ def gps_timeseries_summed_for_plot(df_raw: pd.DataFrame, metric_key: str, tail_n
     df[metric_key] = pd.to_numeric(df[metric_key], errors="coerce").fillna(0.0)
     out = df.groupby("datum", as_index=False)[metric_key].sum().sort_values("datum").reset_index(drop=True)
     return out.tail(tail_n)
-
 
 def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: str):
     fig = go.Figure()
@@ -147,7 +143,6 @@ def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: s
     fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
     st.plotly_chart(fig, use_container_width=True)
 
-
 # -----------------------------
 # ASRM (Wellness)
 # -----------------------------
@@ -158,7 +153,6 @@ ASRM_COLS = [
     ("Stress", "stress"),
     ("Mood", "mood"),
 ]
-
 
 def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
     try:
@@ -174,10 +168,8 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-
 def fetch_asrm_for_date(sb, player_id: str, d: date) -> Optional[Dict[str, Any]]:
     return load_asrm(sb, player_id, d)
-
 
 def save_asrm(
     sb,
@@ -200,7 +192,6 @@ def save_asrm(
     }
     sb.table("asrm_entries").upsert(payload, on_conflict="player_id,entry_date").execute()
 
-
 def fetch_asrm_over_time(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
     try:
         rows = (
@@ -220,7 +211,6 @@ def fetch_asrm_over_time(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
         return df.sort_values("entry_date")
     except Exception:
         return pd.DataFrame()
-
 
 def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
     fig = go.Figure()
@@ -245,7 +235,6 @@ def plot_asrm_over_time(df: pd.DataFrame, param_label: str, param_key: str):
     fig.update_xaxes(type="date", tickformat="%d-%m-%Y")
     st.plotly_chart(fig, use_container_width=True)
 
-
 def plot_asrm_session(row: Dict[str, Any], title: str):
     labels = [x[0] for x in ASRM_COLS]
     keys = [x[1] for x in ASRM_COLS]
@@ -263,7 +252,6 @@ def plot_asrm_session(row: Dict[str, Any], title: str):
     )
     fig.update_yaxes(range=[0, 10], tick0=0, dtick=1)
     st.plotly_chart(fig, use_container_width=True)
-
 
 # -----------------------------
 # RPE (tables: rpe_entries + rpe_sessions)
@@ -515,7 +503,7 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
                 thickness=1.5,
                 width=6,
             ),
-            name="RPE",
+            #name="RPE",
         )
     )
 
@@ -527,7 +515,7 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
         tickmode="array",
         tickvals=x_vals,
         ticktext=x_text,
-        title_text="Date",
+        #title_text="Date",
     )
     fig.update_yaxes(range=[0, 10], tick0=0, dtick=1, title_text="RPE (0–10)")
 
@@ -575,7 +563,7 @@ def plot_rpe_session(sessions_df: pd.DataFrame, d: date):
     _add_zone_background(fig, y_min=0, y_max=10)
 
     fig.update_layout(
-        title=f"RPE (Session) — {d.isoformat()}",
+        #title=f"RPE (Session) — {d.isoformat()}",
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
         xaxis_title="Session #",
