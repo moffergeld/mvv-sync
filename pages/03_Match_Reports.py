@@ -1,10 +1,9 @@
-# pages/02_Match_Reports.py
+# pages/03_Match_Reports.py
 # ============================================================
-# Streamlit — Match Reports (Supabase)
-# - Match selector gebruikt public.matches (fixture/home_away/opponent/result/score)
-# - GPS bron: public.v_gps_match_events (First Half / Second Half)
-# - Plotly grafieken + st.dataframe (zelfde stijl als Player Pages)
-# - Team logos: Assets/Afbeeldingen/Team_Logos (repo)
+# FIX: Streamlit cache UnhashableParamError
+# -> st.cache_data kan geen 'sb' (Supabase client) hashen.
+# -> Oplossing: cache NIET op functions die 'sb' als param krijgen.
+#    We cachen alleen op primitives (match_id, limit) of doen geen cache.
 # ============================================================
 
 from __future__ import annotations
@@ -36,7 +35,6 @@ LOGO_EXTS = [".png", ".jpg", ".jpeg", ".webp"]
 
 MATCHES_TABLE = "matches"
 GPS_MATCH_VIEW = "v_gps_match_events"
-
 MATCH_EVENTS = ["First Half", "Second Half"]
 
 GPS_COLS = [
@@ -143,18 +141,14 @@ def load_logo_bytes(club_name: str, target_h: int = 140) -> Optional[bytes]:
 
 
 # -------------------------
-# Supabase helpers
+# Data helpers (NO sb in cache)
 # -------------------------
 def _df_from_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
 
-@st.cache_data(show_spinner=False)
 def fetch_matches(sb, limit: int = 400) -> pd.DataFrame:
-    """
-    public.matches:
-      match_id, match_date, fixture, home_away, opponent, season, result, goals_for, goals_against
-    """
+    """public.matches"""
     try:
         rows = (
             sb.table(MATCHES_TABLE)
@@ -174,12 +168,8 @@ def fetch_matches(sb, limit: int = 400) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(show_spinner=False)
 def fetch_gps_match_events(sb, match_id: int, limit: int = 10000) -> pd.DataFrame:
-    """
-    v_gps_match_events:
-      alle spelers + events (First Half/Second Half)
-    """
+    """v_gps_match_events (First Half / Second Half)"""
     try:
         rows = (
             sb.table(GPS_MATCH_VIEW)
@@ -273,7 +263,7 @@ def match_table(df: pd.DataFrame) -> pd.DataFrame:
             "total_distance": "Total Distance (m)",
             "running": "14.4–19.7 km/h",
             "sprint": "19.8–25.1 km/h",
-            "high_sprint": ">25.1 km/h",
+            "high_sprint": ">25,1 km/h",
             "max_speed": "Max Speed (km/u)",
         }
     )
@@ -294,8 +284,11 @@ def _match_label(row: Dict[str, Any]) -> str:
     gf = row.get("goals_for")
     ga = row.get("goals_against")
     score = ""
-    if gf is not None and ga is not None and not (pd.isna(gf) or pd.isna(ga)):
-        score = f"{int(gf)}-{int(ga)}"
+    try:
+        if gf is not None and ga is not None and not (pd.isna(gf) or pd.isna(ga)):
+            score = f"{int(gf)}-{int(ga)}"
+    except Exception:
+        score = ""
 
     parts = [dt]
     if season:
@@ -342,7 +335,6 @@ def main():
     except Exception:
         pass
 
-    # Header: logos + score
     left_team = "MVV Maastricht"
     right_team = opponent if opponent else "Opponent"
 
