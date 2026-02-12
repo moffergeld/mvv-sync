@@ -1,22 +1,16 @@
 # player_pages.py
 # ============================================================
-# Player pagina: tabs Data + Forms
+# Player pagina: tabs Data + Forms + Checklist
 #
-# Update (op basis van je feedback):
-# - "undefined" weggehaald (komt door Plotly title = None / verkeerde param).
-# - Geen titels in de grafieken + geen x-as titel (axis title).
-# - Wellness en RPE grafieken dezelfde hoogte.
-# - RPE Session: bars (zoals Wellness), alleen 0–10 schaal.
-# - RPE Over time: 1 punt per datum (gewogen avg op duration), min/max als errorbars.
-# - Y-as (Wellness + RPE): 0–10 met stappen van 1.
-# - X-as (RPE Session): alleen 1 en 2.
-# - GPS: tabel alle sessions apart, grafiek som per dag (alleen in grafiek),
-#   rood + smooth (spline).
+# Checklist tab:
+# - Kies datum
+# - Toon alle actieve spelers (players.is_active = TRUE)
+# - Per speler: Wellness (ASRM) ingevuld? + tijd, RPE ingevuld? + tijd
 #
-# Vereist:
-# - roles.py met: get_sb, require_auth, get_profile, pick_target_player
-# - Supabase tables/views:
-#   public.asrm_entries, public.rpe_entries, public.rpe_sessions, public.v_gps_summary
+# Let op (timestamps):
+# - Niet zeker welke timestamp kolom je in asrm_entries/rpe_entries hebt.
+# - Script probeert eerst: updated_at -> created_at -> inserted_at.
+# - Als die kolommen niet bestaan, blijft de tijd leeg maar “ingevuld” werkt wel.
 # ============================================================
 
 from __future__ import annotations
@@ -45,6 +39,20 @@ def _coerce_date_series(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce").dt.date
 
 
+def _pick_ts(row: Dict[str, Any]) -> Optional[str]:
+    """
+    Probeert een 'ingevuld om' timestamp te pakken uit bekende kolomnamen.
+    Returned als string, anders None.
+    """
+    for k in ("updated_at", "created_at", "inserted_at"):
+        if k in row and row.get(k) is not None:
+            try:
+                return pd.to_datetime(row[k]).strftime("%d-%m-%Y %H:%M")
+            except Exception:
+                return str(row[k])
+    return None
+
+
 def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
     zones = [
         (0, 4, "rgba(0, 200, 0, 0.12)"),
@@ -68,9 +76,27 @@ def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
 
 
 def _strip_titles(fig: go.Figure):
-    # Geen plot titel + geen x-as titel (wel ticks/labels)
     fig.update_layout(title_text="", xaxis_title=None)
     return fig
+
+
+# -----------------------------
+# Players (actief)
+# -----------------------------
+def fetch_active_players(sb) -> pd.DataFrame:
+    try:
+        rows = (
+            sb.table("players")
+            .select("player_id,full_name,is_active")
+            .eq("is_active", True)
+            .order("full_name")
+            .execute()
+            .data
+            or []
+        )
+        return _df_from_rows(rows)
+    except Exception:
+        return pd.DataFrame(columns=["player_id", "full_name", "is_active"])
 
 
 # -----------------------------
@@ -129,9 +155,6 @@ def gps_table_pretty(df_raw: pd.DataFrame, n: int = 20) -> pd.DataFrame:
 
 
 def gps_timeseries_summed_for_plot(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
-    """
-    Alleen voor de grafiek: als er meerdere summaries op 1 dag zijn -> som per datum.
-    """
     if df_raw.empty:
         return df_raw
     df = df_raw.copy()
@@ -345,7 +368,6 @@ def save_rpe(
         "notes": notes.strip() if notes else None,
     }
 
-    # supabase-py v2: geen .select() op upsert builder
     sb.table("rpe_entries").upsert(header_payload, on_conflict="player_id,entry_date").execute()
 
     rpe_entry_id = _get_rpe_entry_id(sb, player_id, entry_date)
@@ -405,11 +427,6 @@ def fetch_rpe_sessions_for_entry_ids(sb, entry_ids: List[str]) -> pd.DataFrame:
 
 
 def build_rpe_timeseries_daily(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
-    """
-    Per datum:
-    - avg_rpe: gewogen op duration_min (dur*rpe / dur); fallback mean als dur==0
-    - min_rpe/max_rpe: min/max over sessies die dag
-    """
     h = fetch_rpe_header_over_time(sb, player_id, limit=limit)
     if h.empty:
         return h
@@ -521,20 +538,12 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
             mode="lines+markers",
             line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
             marker=dict(size=7),
-            error_y=dict(
-                type="data",
-                symmetric=False,
-                array=y_up,
-                arrayminus=y_dn,
-                thickness=1.5,
-                width=6,
-            ),
+            error_y=dict(type="data", symmetric=False, array=y_up, arrayminus=y_dn, thickness=1.5, width=6),
         )
     )
 
     _add_zone_background(fig, 0, 10)
 
-    # Unieke datums als categorie -> geen “dubbele” labels
     fig.update_xaxes(
         type="category",
         tickmode="array",
@@ -554,10 +563,6 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
 
 
 def plot_rpe_session(sessions_df: pd.DataFrame):
-    """
-    Bars (zoals Wellness), alleen RPE 0–10.
-    X: alleen session 1 en 2.
-    """
     if sessions_df is None or sessions_df.empty:
         st.info("Geen RPE sessions gevonden voor deze datum.")
         return
@@ -585,17 +590,81 @@ def plot_rpe_session(sessions_df: pd.DataFrame):
         showlegend=False,
     )
 
-    fig.update_xaxes(
-        type="category",
-        tickmode="array",
-        tickvals=["1", "2"],
-        ticktext=["1", "2"],
-        title_text=None,
-    )
+    fig.update_xaxes(type="category", tickmode="array", tickvals=["1", "2"], ticktext=["1", "2"], title_text=None)
     fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
 
     _strip_titles(fig)
     st.plotly_chart(fig, use_container_width=True)
+
+
+# -----------------------------
+# Checklist helpers (per datum)
+# -----------------------------
+def _select_rows_for_date_with_ts(sb, table: str, date_col: str, d: date) -> List[Dict[str, Any]]:
+    """
+    Probeert eerst player_id + date + (updated_at/created_at/inserted_at).
+    Als timestamp kolommen niet bestaan, valt terug op alleen player_id + date.
+    """
+    want_cols_1 = f"player_id,{date_col},updated_at,created_at,inserted_at"
+    want_cols_2 = f"player_id,{date_col}"
+
+    try:
+        rows = (
+            sb.table(table)
+            .select(want_cols_1)
+            .eq(date_col, d.isoformat())
+            .execute()
+            .data
+            or []
+        )
+        return rows
+    except Exception:
+        try:
+            rows = (
+                sb.table(table)
+                .select(want_cols_2)
+                .eq(date_col, d.isoformat())
+                .execute()
+                .data
+                or []
+            )
+            return rows
+        except Exception:
+            return []
+
+
+def build_checklist_table(sb, d: date) -> pd.DataFrame:
+    players = fetch_active_players(sb)
+    if players.empty:
+        return pd.DataFrame(columns=["Player", "Wellness", "Wellness time", "RPE", "RPE time"])
+
+    # Wellness (asrm_entries)
+    asrm_rows = _select_rows_for_date_with_ts(sb, "asrm_entries", "entry_date", d)
+    asrm_map: Dict[str, Dict[str, Any]] = {str(r.get("player_id")): r for r in (asrm_rows or []) if r.get("player_id")}
+
+    # RPE (rpe_entries - header)
+    rpe_rows = _select_rows_for_date_with_ts(sb, "rpe_entries", "entry_date", d)
+    rpe_map: Dict[str, Dict[str, Any]] = {str(r.get("player_id")): r for r in (rpe_rows or []) if r.get("player_id")}
+
+    out_rows: List[Dict[str, Any]] = []
+    for _, p in players.iterrows():
+        pid = str(p["player_id"])
+        pname = str(p["full_name"])
+
+        a = asrm_map.get(pid)
+        r = rpe_map.get(pid)
+
+        out_rows.append(
+            {
+                "Player": pname,
+                "Wellness": "✅" if a else "❌",
+                "Wellness time": _pick_ts(a) if a else "",
+                "RPE": "✅" if r else "❌",
+                "RPE time": _pick_ts(r) if r else "",
+            }
+        )
+
+    return pd.DataFrame(out_rows)
 
 
 # -----------------------------
@@ -615,7 +684,7 @@ def player_pages_main():
         st.stop()
 
     st.title(f"Player: {target_player_name}")
-    tab_data, tab_forms = st.tabs(["Data", "Forms"])
+    tab_data, tab_forms, tab_checklist = st.tabs(["Data", "Forms", "Checklist"])
 
     # ============================
     # DATA TAB
@@ -657,7 +726,6 @@ def player_pages_main():
         with well_col:
             st.subheader("Wellness")
             mode_w = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="well_mode")
-
             if mode_w == "Session":
                 d = st.date_input("Datum (Wellness)", value=date.today(), key="well_date")
                 row = fetch_asrm_for_date(sb, target_player_id, d)
@@ -682,7 +750,6 @@ def player_pages_main():
         with rpe_col:
             st.subheader("RPE")
             mode_r = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="rpe_mode")
-
             if mode_r == "Session":
                 d = st.date_input("Datum (RPE)", value=date.today(), key="rpe_date")
                 sess = fetch_rpe_for_date(sb, target_player_id, d)
@@ -778,6 +845,24 @@ def player_pages_main():
                     st.success("RPE opgeslagen.")
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
+
+    # ============================
+    # CHECKLIST TAB
+    # ============================
+    with tab_checklist:
+        st.header("Checklist")
+        d = st.date_input("Datum (Checklist)", value=date.today(), key="checklist_date")
+
+        df = build_checklist_table(sb, d)
+        if df.empty:
+            st.info("Geen actieve spelers gevonden, of geen data.")
+        else:
+            # Optioneel: filter op "niet ingevuld" alleen
+            only_missing = st.toggle("Toon alleen ontbrekend", value=False, key="checklist_only_missing")
+            if only_missing:
+                df = df[(df["Wellness"] == "❌") | (df["RPE"] == "❌")].copy()
+
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
