@@ -553,43 +553,65 @@ def plot_rpe_over_time_daily(df_daily: pd.DataFrame):
     )
 
     st.plotly_chart(fig, use_container_width=True)
-def plot_rpe_session(df_sessions: pd.DataFrame, d: date):
-    if df_sessions.empty:
+    
+def plot_rpe_session(sessions_df: pd.DataFrame, title: str):
+    """
+    RPE session chart:
+    - Bars met alleen RPE (0–10)
+    - Achtergrond zones (groen/oranje/rood)
+    - Y-as: 0–10 met stappen 1
+    - X-as: alleen 1 en 2 (session #)
+    """
+    if sessions_df is None or sessions_df.empty:
         st.info("Geen RPE sessions gevonden voor deze datum.")
         return
 
-    x = df_sessions["session_index"].astype(int)
-    y = pd.to_numeric(df_sessions["rpe"], errors="coerce").fillna(0)
+    df = sessions_df.copy()
+    df["session_index"] = pd.to_numeric(df.get("session_index"), errors="coerce").fillna(0).astype(int)
+    df["rpe"] = pd.to_numeric(df.get("rpe"), errors="coerce").fillna(0)
+
+    # Alleen sessies 1/2 tonen en sorteren
+    df = df[df["session_index"].isin([1, 2])].sort_values("session_index")
+    if df.empty:
+        st.info("Geen RPE sessions (1/2) gevonden voor deze datum.")
+        return
+
+    x = df["session_index"].astype(str).tolist()
+    y = df["rpe"].tolist()
 
     fig = go.Figure()
     fig.add_trace(
-        go.Scatter(
+        go.Bar(
             x=x,
             y=y,
-            mode="lines+markers",
-            line=dict(color="#FF0033", width=3, shape="spline", smoothing=1.2),
-            marker=dict(size=8),
             name="RPE",
+            opacity=0.85,
         )
     )
-    _add_zone_background(fig)
+
+    _add_zone_background(fig, y_min=0, y_max=10)
+
     fig.update_layout(
+        title=title,
         margin=dict(l=10, r=10, t=30, b=10),
         height=340,
-        title=f"RPE (Session) — {d.isoformat()}",
         xaxis_title="Session #",
         yaxis_title="RPE (0–10)",
         showlegend=False,
     )
+
+    # x-as alleen 1 en 2
     fig.update_xaxes(
+        type="category",
         tickmode="array",
-        tickvals=[1, 2],
+        tickvals=["1", "2"],
         ticktext=["1", "2"],
-        range=[0.7, 2.3],
     )
+
+    # y-as 0–10 per 1
+    fig.update_yaxes(range=[0, 10], tick0=0, dtick=1)
+
     st.plotly_chart(fig, use_container_width=True)
-
-
 # -----------------------------
 # UI
 # -----------------------------
