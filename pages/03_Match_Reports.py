@@ -1,8 +1,9 @@
 # pages/03_Match_Reports.py
 # ============================================================
 # Update:
-# - Tables: géén Duration (min) kolom
-# - Nummering/Index links weg (hide_index=True)
+# - Tables: altijd alle spelers zichtbaar (geen scroll)
+#   -> geen vaste height meegeven aan st.dataframe
+#   -> (optioneel) ook show_df_height calc, maar default werkt zonder height
 # ============================================================
 
 from __future__ import annotations
@@ -284,25 +285,26 @@ def render_tables_row(agg: pd.DataFrame, sort_key_min: str):
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
+    # Belangrijk: GEEN height meegeven -> Streamlit maakt 'm passend' zodat alles zichtbaar is.
     with c1:
         sty = _style_by_percentiles(td, "TD").format({"TD": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(sty, use_container_width=True, hide_index=True)
 
     with c2:
         sty = _style_by_percentiles(run, "14.4–19.7").format({"14.4–19.7": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(sty, use_container_width=True, hide_index=True)
 
     with c3:
         sty = _style_by_percentiles(spr, "19.8–25.1").format({"19.8–25.1": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(sty, use_container_width=True, hide_index=True)
 
     with c4:
         sty = _style_by_percentiles(hs, "25.2+").format({"25.2+": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(sty, use_container_width=True, hide_index=True)
 
     with c5:
         sty = _style_by_percentiles(ms, "Max Speed").format({"Max Speed": "{:.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(sty, use_container_width=True, hide_index=True)
 
 
 # -----------------------------
