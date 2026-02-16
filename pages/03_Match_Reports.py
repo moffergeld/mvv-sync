@@ -1,8 +1,8 @@
 # pages/03_Match_Reports.py
 # ============================================================
 # Update:
-# - Eén rij tabellen (5 losse tables naast elkaar)
-# - Keuze via "bolletjes" (radio): Full / First / Second
+# - Tables: géén Duration (min) kolom
+# - Nummering/Index links weg (hide_index=True)
 # ============================================================
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ EVENT_FULL = "Full match (First + Second)"
 EVENT_FIRST = "First Half"
 EVENT_SECOND = "Second Half"
 
-TEAM_LOGO_DIR = Path("Assets/Afbeeldingen/Team_Logos")  # repo-pad
+TEAM_LOGO_DIR = Path("Assets/Afbeeldingen/Team_Logos")
 MVV_LOGO_PATHS = [
     Path("Assets/Afbeeldingen/Team_Logos/MVV Maastricht.png"),
     Path("Assets/Afbeeldingen/Team_Logos/MVV.png"),
@@ -140,9 +140,7 @@ def fetch_matches(sb, limit: int = 500) -> pd.DataFrame:
 def fetch_match_events(sb, match_id: int) -> pd.DataFrame:
     rows = (
         sb.table(MATCH_EVENTS_VIEW)
-        .select(
-            "match_id,player_name,datum,event,duration,total_distance,running,sprint,high_sprint,max_speed"
-        )
+        .select("match_id,player_name,datum,event,duration,total_distance,running,sprint,high_sprint,max_speed")
         .eq("match_id", match_id)
         .in_("event", [EVENT_FIRST, EVENT_SECOND, "First Half", "Second Half"])
         .execute()
@@ -241,17 +239,17 @@ def plot_sprint_vs_highsprint_bar(agg: pd.DataFrame, title_suffix: str):
 
 
 # -----------------------------
-# Tables (5 losse)
+# Tables (5 losse) - zonder Duration
 # -----------------------------
 def build_table_td(agg: pd.DataFrame) -> pd.DataFrame:
-    out = agg[["player_name", "duration_min", "total_distance", "total_distance_min"]].copy()
-    out.columns = ["Player", "Duration (min)", "TD", "/min"]
+    out = agg[["player_name", "total_distance", "total_distance_min"]].copy()
+    out.columns = ["Player", "TD", "/min"]
     return out
 
 
 def build_table_band(agg: pd.DataFrame, col: str, label_short: str) -> pd.DataFrame:
-    out = agg[["player_name", "duration_min", col, f"{col}_min"]].copy()
-    out.columns = ["Player", "Duration (min)", label_short, "/min"]
+    out = agg[["player_name", col, f"{col}_min"]].copy()
+    out.columns = ["Player", label_short, "/min"]
     return out
 
 
@@ -278,48 +276,33 @@ def render_tables_row(agg: pd.DataFrame, sort_key_min: str):
         st.info("Geen data.")
         return
 
-    # basis formatting
-    for c in ["duration_min", "total_distance", "running", "sprint", "high_sprint", "max_speed"]:
-        if c in agg.columns:
-            agg[c] = pd.to_numeric(agg[c], errors="coerce")
-
-    t1, t2, t3, t4, t5 = st.columns(5)
-
-    td = build_table_td(agg)
-    run = build_table_band(agg, "running", "14.4–19.7")
-    spr = build_table_band(agg, "sprint", "19.8–25.1")
-    hs = build_table_band(agg, "high_sprint", "25.2+")
+    td = apply_global_order(agg, sort_key_min, build_table_td(agg))
+    run = apply_global_order(agg, sort_key_min, build_table_band(agg, "running", "14.4–19.7"))
+    spr = apply_global_order(agg, sort_key_min, build_table_band(agg, "sprint", "19.8–25.1"))
+    hs = apply_global_order(agg, sort_key_min, build_table_band(agg, "high_sprint", "25.2+"))
     ms = build_table_maxspeed(agg)
 
-    td = apply_global_order(agg, sort_key_min, td)
-    run = apply_global_order(agg, sort_key_min, run)
-    spr = apply_global_order(agg, sort_key_min, spr)
-    hs = apply_global_order(agg, sort_key_min, hs)
+    c1, c2, c3, c4, c5 = st.columns(5)
 
-    with t1:
-        show = td.copy()
-        sty = _style_by_percentiles(show, "TD").format({"Duration (min)": "{:.2f}", "TD": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380)
+    with c1:
+        sty = _style_by_percentiles(td, "TD").format({"TD": "{:,.0f}", "/min": "{:,.2f}"})
+        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
 
-    with t2:
-        show = run.copy()
-        sty = _style_by_percentiles(show, "14.4–19.7").format({"Duration (min)": "{:.2f}", "14.4–19.7": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380)
+    with c2:
+        sty = _style_by_percentiles(run, "14.4–19.7").format({"14.4–19.7": "{:,.0f}", "/min": "{:,.2f}"})
+        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
 
-    with t3:
-        show = spr.copy()
-        sty = _style_by_percentiles(show, "19.8–25.1").format({"Duration (min)": "{:.2f}", "19.8–25.1": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380)
+    with c3:
+        sty = _style_by_percentiles(spr, "19.8–25.1").format({"19.8–25.1": "{:,.0f}", "/min": "{:,.2f}"})
+        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
 
-    with t4:
-        show = hs.copy()
-        sty = _style_by_percentiles(show, "25.2+").format({"Duration (min)": "{:.2f}", "25.2+": "{:,.0f}", "/min": "{:,.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380)
+    with c4:
+        sty = _style_by_percentiles(hs, "25.2+").format({"25.2+": "{:,.0f}", "/min": "{:,.2f}"})
+        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
 
-    with t5:
-        show = ms.copy()
-        sty = _style_by_percentiles(show, "Max Speed").format({"Max Speed": "{:.2f}"})
-        st.dataframe(sty, use_container_width=True, height=380)
+    with c5:
+        sty = _style_by_percentiles(ms, "Max Speed").format({"Max Speed": "{:.2f}"})
+        st.dataframe(sty, use_container_width=True, height=380, hide_index=True)
 
 
 # -----------------------------
@@ -370,7 +353,6 @@ def main():
     match_date = match_row["match_date"]
     opponent = str(match_row.get("opponent") or "")
 
-    # Logos header
     lh, mh, rh = st.columns([1, 2, 1], vertical_alignment="center")
     with lh:
         mvv_logo = _read_mvv_logo()
@@ -388,7 +370,6 @@ def main():
         st.warning("Geen match events gevonden in v_gps_match_events voor deze match_id.")
         return
 
-    # Sort + Half selector
     sort_label = st.selectbox("Sort tables on (per minute)", options=[x[0] for x in SORT_OPTIONS], index=0)
     sort_key_min = dict(SORT_OPTIONS)[sort_label]
 
@@ -404,7 +385,6 @@ def main():
     agg = aggregate_block(df_events, half_key)
     title_suffix = half_label
 
-    # Charts (ook op dezelfde selectie)
     c1, c2 = st.columns(2)
     with c1:
         plot_total_distance_bar(agg, title_suffix)
