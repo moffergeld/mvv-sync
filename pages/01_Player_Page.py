@@ -1,5 +1,10 @@
 # player_pages.py
 # ============================================================
+# Checklist tab FIX + UI security:
+# - Players (role=player) kunnen GEEN andere speler kiezen:
+#   Data + Forms altijd eigen player_id uit profile.
+# - Checklist tab is alleen zichtbaar voor staff.
+#
 # Checklist tab FIX:
 # - Gebruik created_at (datum + tijd hh:mm) voor ingevuld-tijd.
 # - Voor RPE: neem created_at uit rpe_sessions (laatste per speler op die dag),
@@ -21,7 +26,6 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from roles import get_sb, require_auth, get_profile, pick_target_player
-
 
 # -----------------------------
 # Utils
@@ -95,6 +99,21 @@ def fetch_active_players(sb) -> pd.DataFrame:
         return _df_from_rows(rows)
     except Exception:
         return pd.DataFrame(columns=["player_id", "full_name", "is_active"])
+
+
+def _fetch_player_name(sb, player_id: str) -> str:
+    try:
+        p = (
+            sb.table("players")
+            .select("full_name")
+            .eq("player_id", player_id)
+            .maybe_single()
+            .execute()
+            .data
+        )
+        return (p or {}).get("full_name") or "Player"
+    except Exception:
+        return "Player"
 
 
 # -----------------------------
@@ -205,6 +224,19 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
         return resp.data
     except Exception:
         return None
+
+
+def save_asrm(sb, player_id: str, entry_date: date, ms: int, fat: int, sleep: int, stress: int, mood: int):
+    payload = {
+        "player_id": player_id,
+        "entry_date": entry_date.isoformat(),
+        "muscle_soreness": int(ms),
+        "fatigue": int(fat),
+        "sleep_quality": int(sleep),
+        "stress": int(stress),
+        "mood": int(mood),
+    }
+    sb.table("asrm_entries").upsert(payload, on_conflict="player_id,entry_date").execute()
 
 
 def fetch_asrm_over_time(sb, player_id: str, limit: int = 180) -> pd.DataFrame:
@@ -553,7 +585,6 @@ def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
             or []
         )
     except Exception:
-        # fallback zonder created_at
         rows = []
         try:
             rows = (
@@ -579,10 +610,6 @@ def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
 def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
     """
     Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op LAATSTE rpe_sessions.created_at van die dag.
-
-    Stap 1: haal rpe_entries ids voor die datum + player_id
-    Stap 2: haal rpe_sessions (rpe_entry_id, created_at) voor die ids
-    Stap 3: per player_id pak max(created_at)
     """
     try:
         headers = (
@@ -604,7 +631,6 @@ def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
     if not entry_ids:
         return {}
 
-    # Probeer created_at mee te nemen
     try:
         sess_rows = (
             sb.table("rpe_sessions")
@@ -615,7 +641,6 @@ def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
             or []
         )
     except Exception:
-        # fallback zonder created_at
         try:
             sess_rows = (
                 sb.table("rpe_sessions")
@@ -628,7 +653,6 @@ def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
         except Exception:
             return {}
 
-    # per player_id max created_at
     latest: Dict[str, Any] = {}
     for r in sess_rows:
         eid = r.get("rpe_entry_id")
@@ -639,7 +663,6 @@ def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
             continue
         ts = r.get("created_at")
         if ts is None:
-            # als geen ts, markeer gevuld maar zonder tijd
             latest.setdefault(pid, None)
             continue
         try:
@@ -697,15 +720,32 @@ def player_pages_main():
         st.error("Supabase client niet beschikbaar.")
         st.stop()
 
-    profile = get_profile(sb)
-    target_player_id, target_player_name, _ = pick_target_player(sb, profile, label="Speler", key="pp_player_select")
-    if not target_player_id:
-        st.error("Geen speler beschikbaar.")
-        st.stop()
+    profile = get_profile(sb) or {}
+    role = str(profile.get("role") or "").lower()
+    my_player_id = profile.get("player_id")
+
+    # Player: forceer eigen speler, geen dropdown
+    if role == "player":
+        if not my_player_id:
+            st.error("Je profiel is niet gekoppeld aan een speler (player_id ontbreekt).")
+            st.stop()
+        target_player_id = str(my_player_id)
+        target_player_name = _fetch_player_name(sb, target_player_id)
+    else:
+        target_player_id, target_player_name, _ = pick_target_player(sb, profile, label="Speler", key="pp_player_select")
+        if not target_player_id:
+            st.error("Geen speler beschikbaar.")
+            st.stop()
 
     st.title(f"Player: {target_player_name}")
 
-    tab_data, tab_forms, tab_checklist = st.tabs(["Data", "Forms", "Checklist"])
+    # Tabs: Checklist alleen staff
+    tab_names = ["Data", "Forms"] + (["Checklist"] if role != "player" else [])
+    tabs = st.tabs(tab_names)
+
+    tab_data = tabs[0]
+    tab_forms = tabs[1]
+    tab_checklist = tabs[tab_names.index("Checklist")] if "Checklist" in tab_names else None
 
     # DATA
     with tab_data:
@@ -807,8 +847,20 @@ def player_pages_main():
             injury_default = bool(header.get("injury", False))
             injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
 
-            injury_type = st.text_input("Injury type", value=str(header.get("injury_type") or ""), disabled=not injury, key="rpe_injury_type")
-            injury_pain = st.slider("Pain (0–10)", 0, 10, value=int(header.get("injury_pain", 0) or 0), disabled=not injury, key="rpe_pain")
+            injury_type = st.text_input(
+                "Injury type",
+                value=str(header.get("injury_type") or ""),
+                disabled=not injury,
+                key="rpe_injury_type",
+            )
+            injury_pain = st.slider(
+                "Pain (0–10)",
+                0,
+                10,
+                value=int(header.get("injury_pain", 0) or 0),
+                disabled=not injury,
+                key="rpe_pain",
+            )
             notes = st.text_area("Notes (optioneel)", value=str(header.get("notes") or ""), key="rpe_notes")
 
             st.markdown("### Sessions")
@@ -851,20 +903,21 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-    # CHECKLIST
-    with tab_checklist:
-        st.header("Checklist")
-        d = st.date_input("Datum (Checklist)", value=date.today(), key="checklist_date")
+    # CHECKLIST (alleen staff)
+    if tab_checklist is not None:
+        with tab_checklist:
+            st.header("Checklist")
+            d = st.date_input("Datum (Checklist)", value=date.today(), key="checklist_date")
 
-        df = build_checklist_table(sb, d)
-        if df.empty:
-            st.info("Geen actieve spelers gevonden, of geen data.")
-        else:
-            only_missing = st.toggle("Toon alleen ontbrekend", value=False, key="checklist_only_missing")
-            if only_missing:
-                df = df[(df["Wellness"] == "❌") | (df["RPE"] == "❌")].copy()
+            df = build_checklist_table(sb, d)
+            if df.empty:
+                st.info("Geen actieve spelers gevonden, of geen data.")
+            else:
+                only_missing = st.toggle("Toon alleen ontbrekend", value=False, key="checklist_only_missing")
+                if only_missing:
+                    df = df[(df["Wellness"] == "❌") | (df["RPE"] == "❌")].copy()
 
-            st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 if __name__ == "__main__":
