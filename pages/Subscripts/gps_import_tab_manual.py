@@ -10,7 +10,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from gps_import_common import (
+from Subscripts.gps_import_common import (
     INT_DB_COLS,
     MATCH_TYPES,
     TYPE_OPTIONS,
