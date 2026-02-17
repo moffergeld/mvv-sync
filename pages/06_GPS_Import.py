@@ -8,6 +8,9 @@
 # Requires:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
 #   st.session_state["access_token"] (JWT)
+#
+# NOTE:
+# - profiles.team column removed -> code must NOT select it.
 # ============================================================
 
 from __future__ import annotations
@@ -202,7 +205,10 @@ def normalize_role(v) -> str | None:
 
 
 @st.cache_data(ttl=60)
-def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | None, str | None]:
+def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | None, None]:
+    """
+    profiles.team verwijderd -> return (user_id, email, role, team=None)
+    """
     u = auth_get_user(access_token)
     user_id = u.get("id")
     email = u.get("email")
@@ -214,11 +220,12 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
         dfp = rest_get(
             access_token,
             "profiles",
-            f"select=user_id,role,team&user_id=eq.{user_id}&limit=1",
+            f"select=user_id,role&user_id=eq.{user_id}&limit=1",
         )
         if not dfp.empty:
             role = normalize_role(dfp.iloc[0].get("role"))
-            team = dfp.iloc[0].get("team")
+            team = None
+
     return user_id, email, role, team
 
 
@@ -280,7 +287,17 @@ def parse_matches_csv(file_bytes: bytes) -> pd.DataFrame:
     df["fixture"] = df.apply(lambda r: build_fixture(TEAM_NAME_MATCHES, r.get("home_away"), r.get("opponent")), axis=1)
     df["result"] = df.apply(lambda r: build_result(r.get("goals_for"), r.get("goals_against")), axis=1)
 
-    keep = ["match_date", "fixture", "home_away", "opponent", "match_type", "season", "result", "goals_for", "goals_against"]
+    keep = [
+        "match_date",
+        "fixture",
+        "home_away",
+        "opponent",
+        "match_type",
+        "season",
+        "result",
+        "goals_for",
+        "goals_against",
+    ]
     return df[keep]
 
 
