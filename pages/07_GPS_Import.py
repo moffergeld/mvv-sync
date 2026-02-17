@@ -5,21 +5,18 @@
 # - Tab: Matches
 # NOTE: profiles.team column removed -> code must NOT select it.
 # ============================================================
-
 from __future__ import annotations
-
 import streamlit as st
-
-from gps_import_common import (
+from Subscripts.gps_import_common import (
     ALLOWED_IMPORT,
     get_access_token,
     get_players_map,
     get_profile_role,
 )
-from gps_import_tab_excel import tab_import_excel_main
-from gps_import_tab_export import tab_export_main
-from gps_import_tab_manual import tab_manual_add_main
-from gps_import_tab_matches import tab_matches_main
+from Subscripts.gps_import_tab_excel import tab_import_excel_main
+from Subscripts.gps_import_tab_export import tab_export_main
+from Subscripts.gps_import_tab_manual import tab_manual_add_main
+from Subscripts.gps_import_tab_matches import tab_matches_main
 
 st.set_page_config(page_title="GPS Import", layout="wide")
 st.title("GPS Import")
