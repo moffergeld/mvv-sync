@@ -1,6 +1,7 @@
 # app.py
 import base64
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 from supabase import create_client
@@ -42,7 +43,7 @@ def cookie_manager() -> stx.CookieManager:
     return st.session_state["_cookie_mgr"]
 
 cm = cookie_manager()
-_ = cm.get_all()  # initialiseert cookie state
+cm.get_all()  # initialiseert cookie state
 
 # ----------------------------
 # Helpers
@@ -56,10 +57,10 @@ def maintenance_banner():
     st.markdown(
         f"""
         <style>
-        .maintenance-banner{{
+        .maintenance-banner {{
             padding: 16px 18px;
             border-radius: 14px;
-en            border: 2px solid rgba(255, 0, 0, 0.55);
+            border: 2px solid rgba(255, 0, 0, 0.55);
             background: rgba(255, 0, 0, 0.12);
             color: #fff;
             font-weight: 800;
@@ -68,7 +69,7 @@ en            border: 2px solid rgba(255, 0, 0, 0.55);
             margin: 8px 0 16px 0;
             box-shadow: 0 10px 30px rgba(0,0,0,.25);
         }}
-        .maintenance-banner small{{
+        .maintenance-banner small {{
             display:block;
             font-weight: 600;
             font-size: 14px;
@@ -85,19 +86,28 @@ en            border: 2px solid rgba(255, 0, 0, 0.55);
         unsafe_allow_html=True,
     )
 
+def _safe_cookie_delete(name: str):
+    # extra-streamlit-components gooit KeyError als cookie niet bestaat
+    try:
+        if cm.get(name) is not None:
+            cm.delete(name)
+    except Exception:
+        pass
+
 def clear_auth_and_cookies():
     for k in ["access_token", "refresh_token", "user_email", "role", "player_id", "profile_loaded"]:
         st.session_state.pop(k, None)
 
-    cm.delete(COOKIE_ACCESS)
-    cm.delete(COOKIE_REFRESH)
-    cm.delete(COOKIE_EMAIL)
+    _safe_cookie_delete(COOKIE_ACCESS)
+    _safe_cookie_delete(COOKIE_REFRESH)
+    _safe_cookie_delete(COOKIE_EMAIL)
 
 def persist_auth_to_cookies(access_token: str, refresh_token: str, email: str):
-    ttl = COOKIE_TTL_DAYS * 24 * 60 * 60
-    cm.set(COOKIE_ACCESS, access_token, expires_at=ttl)
-    cm.set(COOKIE_REFRESH, refresh_token, expires_at=ttl)
-    cm.set(COOKIE_EMAIL, email, expires_at=ttl)
+    # CookieManager verwacht een datetime voor expires_at (niet een int)
+    exp = datetime.now(timezone.utc) + timedelta(days=COOKIE_TTL_DAYS)
+    cm.set(COOKIE_ACCESS, access_token, expires_at=exp)
+    cm.set(COOKIE_REFRESH, refresh_token, expires_at=exp)
+    cm.set(COOKIE_EMAIL, email, expires_at=exp)
 
 def restore_auth_from_cookies():
     if "access_token" in st.session_state and "refresh_token" in st.session_state:
@@ -120,6 +130,7 @@ def refresh_auth_each_run() -> bool:
 
     try:
         new_sess = sb.auth.refresh_session(rt)
+
         access_token = new_sess.session.access_token
         refresh_token = new_sess.session.refresh_token
 
@@ -137,12 +148,11 @@ def refresh_auth_each_run() -> bool:
             email=st.session_state.get("user_email", ""),
         )
         return True
-
     except Exception:
         return False
 
 def login_ui():
-    # maintenance ook voor inloggen
+    # maintenance vóór inloggen
     maintenance_banner()
 
     st.title("Login")
@@ -165,10 +175,12 @@ def login_ui():
             except Exception:
                 pass
 
+            # reset profiel-cache
             st.session_state.pop("role", None)
             st.session_state.pop("player_id", None)
             st.session_state.pop("profile_loaded", None)
 
+            # persistent opslaan
             persist_auth_to_cookies(access_token, refresh_token, email)
 
             st.rerun()
@@ -281,7 +293,7 @@ st.markdown(
 # Auth bootstrap:
 # - restore from cookies
 # - auto-refresh each run
-# - fallback to login if refresh fails
+# - fallback naar login als refresh faalt
 # ----------------------------
 restore_auth_from_cookies()
 
@@ -306,7 +318,7 @@ st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
 logout_button()
 
-# maintenance ook NA inloggen
+# maintenance óók NA inloggen
 maintenance_banner()
 
 st.title("MVV Dashboard")
