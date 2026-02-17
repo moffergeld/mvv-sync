@@ -12,7 +12,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from gps_import_common import (
+from Subscripts.gps_import_common import (
     GPS_COLS,
     df_to_excel_bytes_single,
     fetch_all_gps_records,
