@@ -1,11 +1,9 @@
 # app.py
 import base64
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 from supabase import create_client
-import extra_streamlit_components as stx  # pip install extra-streamlit-components
 
 # ----------------------------
 # Page config (1x!)
@@ -27,25 +25,6 @@ SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 # ----------------------------
-# Cookie settings
-# ----------------------------
-COOKIE_ACCESS = "mvv_sb_access"
-COOKIE_REFRESH = "mvv_sb_refresh"
-COOKIE_EMAIL = "mvv_sb_email"
-COOKIE_TTL_DAYS = 14  # pas aan (bijv. 7, 30)
-
-# ----------------------------
-# Cookie manager (singleton)
-# ----------------------------
-def cookie_manager() -> stx.CookieManager:
-    if "_cookie_mgr" not in st.session_state:
-        st.session_state["_cookie_mgr"] = stx.CookieManager()
-    return st.session_state["_cookie_mgr"]
-
-cm = cookie_manager()
-cm.get_all()  # initialiseert cookie state
-
-# ----------------------------
 # Helpers
 # ----------------------------
 def img_to_b64(path: str) -> str:
@@ -54,10 +33,11 @@ def img_to_b64(path: str) -> str:
 def maintenance_banner():
     if not MAINTENANCE_MODE:
         return
+
     st.markdown(
         f"""
         <style>
-        .maintenance-banner {{
+        .maintenance-banner{{
             padding: 16px 18px;
             border-radius: 14px;
             border: 2px solid rgba(255, 0, 0, 0.55);
@@ -69,7 +49,7 @@ def maintenance_banner():
             margin: 8px 0 16px 0;
             box-shadow: 0 10px 30px rgba(0,0,0,.25);
         }}
-        .maintenance-banner small {{
+        .maintenance-banner small{{
             display:block;
             font-weight: 600;
             font-size: 14px;
@@ -86,73 +66,8 @@ def maintenance_banner():
         unsafe_allow_html=True,
     )
 
-def _safe_cookie_delete(name: str):
-    # extra-streamlit-components gooit KeyError als cookie niet bestaat
-    try:
-        if cm.get(name) is not None:
-            cm.delete(name)
-    except Exception:
-        pass
-
-def clear_auth_and_cookies():
-    for k in ["access_token", "refresh_token", "user_email", "role", "player_id", "profile_loaded"]:
-        st.session_state.pop(k, None)
-
-    _safe_cookie_delete(COOKIE_ACCESS)
-    _safe_cookie_delete(COOKIE_REFRESH)
-    _safe_cookie_delete(COOKIE_EMAIL)
-
-def persist_auth_to_cookies(access_token: str, refresh_token: str, email: str):
-    # CookieManager verwacht een datetime voor expires_at (niet een int)
-    exp = datetime.now(timezone.utc) + timedelta(days=COOKIE_TTL_DAYS)
-    cm.set(COOKIE_ACCESS, access_token, expires_at=exp)
-    cm.set(COOKIE_REFRESH, refresh_token, expires_at=exp)
-    cm.set(COOKIE_EMAIL, email, expires_at=exp)
-
-def restore_auth_from_cookies():
-    if "access_token" in st.session_state and "refresh_token" in st.session_state:
-        return
-
-    access = cm.get(COOKIE_ACCESS)
-    refresh = cm.get(COOKIE_REFRESH)
-    email = cm.get(COOKIE_EMAIL)
-
-    if access and refresh:
-        st.session_state["access_token"] = access
-        st.session_state["refresh_token"] = refresh
-        if email:
-            st.session_state["user_email"] = email
-
-def refresh_auth_each_run() -> bool:
-    rt = st.session_state.get("refresh_token")
-    if not rt:
-        return False
-
-    try:
-        new_sess = sb.auth.refresh_session(rt)
-
-        access_token = new_sess.session.access_token
-        refresh_token = new_sess.session.refresh_token
-
-        st.session_state["access_token"] = access_token
-        st.session_state["refresh_token"] = refresh_token
-
-        try:
-            sb.postgrest.auth(access_token)
-        except Exception:
-            pass
-
-        persist_auth_to_cookies(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            email=st.session_state.get("user_email", ""),
-        )
-        return True
-    except Exception:
-        return False
-
 def login_ui():
-    # maintenance vóór inloggen
+    # Melding vóór inloggen
     maintenance_banner()
 
     st.title("Login")
@@ -162,16 +77,11 @@ def login_ui():
     if st.button("Sign in", use_container_width=True, key="btn_signin"):
         try:
             res = sb.auth.sign_in_with_password({"email": email, "password": password})
-
-            access_token = res.session.access_token
-            refresh_token = res.session.refresh_token
-
-            st.session_state["access_token"] = access_token
-            st.session_state["refresh_token"] = refresh_token
+            st.session_state["access_token"] = res.session.access_token
             st.session_state["user_email"] = email
 
             try:
-                sb.postgrest.auth(access_token)
+                sb.postgrest.auth(res.session.access_token)
             except Exception:
                 pass
 
@@ -179,9 +89,6 @@ def login_ui():
             st.session_state.pop("role", None)
             st.session_state.pop("player_id", None)
             st.session_state.pop("profile_loaded", None)
-
-            # persistent opslaan
-            persist_auth_to_cookies(access_token, refresh_token, email)
 
             st.rerun()
         except Exception as e:
@@ -193,7 +100,7 @@ def logout_button():
             sb.auth.sign_out()
         except Exception:
             pass
-        clear_auth_and_cookies()
+        st.session_state.clear()
         st.rerun()
 
 def load_profile():
@@ -206,6 +113,7 @@ def load_profile():
     if st.session_state.get("profile_loaded"):
         return
 
+    # user-id ophalen via auth endpoint (werkt met jouw JWT)
     import requests
     headers = {
         "apikey": SUPABASE_ANON_KEY,
@@ -222,6 +130,7 @@ def load_profile():
         st.error("Kon user_id niet bepalen.")
         st.stop()
 
+    # profile uit profiles
     prof = (
         sb.table("profiles")
         .select("user_id, role, player_id")
@@ -234,6 +143,7 @@ def load_profile():
     role = (prof or {}).get("role")
     player_id = (prof or {}).get("player_id")
 
+    # role kan enum zijn -> cast naar str
     st.session_state["role"] = str(role) if role is not None else None
     st.session_state["player_id"] = player_id
     st.session_state["profile_loaded"] = True
@@ -290,25 +200,18 @@ st.markdown(
 )
 
 # ----------------------------
-# Auth bootstrap:
-# - restore from cookies
-# - auto-refresh each run
-# - fallback naar login als refresh faalt
+# Auth gate
 # ----------------------------
-restore_auth_from_cookies()
-
-if "refresh_token" in st.session_state:
-    ok = refresh_auth_each_run()
-    if not ok:
-        clear_auth_and_cookies()
-
 if "access_token" not in st.session_state:
     login_ui()
     st.stop()
 
-# ----------------------------
+try:
+    sb.postgrest.auth(st.session_state["access_token"])
+except Exception:
+    pass
+
 # profiel laden (role + player_id)
-# ----------------------------
 load_profile()
 
 # ----------------------------
@@ -318,7 +221,7 @@ st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
 logout_button()
 
-# maintenance óók NA inloggen
+# Optioneel: ook na inloggen bovenaan tonen
 maintenance_banner()
 
 st.title("MVV Dashboard")
