@@ -1,10 +1,10 @@
 # pages/03_Match_Reports.py
 # ============================================================
-# Updates:
-# - Alle absolute waardes: 0 decimalen
-# - Alle /min kolommen: 2 decimalen
-# - Kolommen (niet de /min) gecentreerd (Player + absolute metric + Max Speed)
-#   (/min blijft rechts uitlijnen voor leesbaarheid; pas aan als je ook center wilt)
+# FIXES:
+# - Absolute waardes: 0 decimalen (ook in de dataframe-weergave)
+# - /min waardes: 2 decimalen (ook in de dataframe-weergave)
+# - Center alignment voor ALLE numerieke kolommen
+# - Player kolom NIET gecentreerd (links)
 # ============================================================
 
 from __future__ import annotations
@@ -37,6 +37,10 @@ SORT_OPTIONS = {
     "25.2+/min": ("high_sprint", "per_min"),
     "Max Speed": ("max_speed", "abs"),
 }
+
+# --- display formats ---
+ABS_FMT_0 = "{:,.0f}"
+PMIN_FMT_2 = "{:,.2f}"
 
 
 def _df(rows) -> pd.DataFrame:
@@ -190,17 +194,16 @@ def agg_for_charts_and_tables(dfe_seg: pd.DataFrame) -> pd.DataFrame:
 
     dur = pd.to_numeric(g["duration"], errors="coerce").replace(0, pd.NA)
 
-    # /min altijd 2 dec
+    # /min (2 dec)
     g["total_distance_min"] = (g["total_distance"] / dur).round(2)
     g["running_min"] = (g["running"] / dur).round(2)
     g["sprint_min"] = (g["sprint"] / dur).round(2)
     g["high_sprint_min"] = (g["high_sprint"] / dur).round(2)
 
-    # absolute waardes altijd 0 dec
+    # absolute (0 dec)
     for c in ["duration", "total_distance", "running", "sprint", "high_sprint"]:
         g[c] = pd.to_numeric(g[c], errors="coerce").round(0)
 
-    # max speed 0 dec (zoals gevraagd: alle getallen 0 dec)
     g["max_speed"] = pd.to_numeric(g["max_speed"], errors="coerce").round(0)
 
     return g
@@ -232,7 +235,9 @@ def plot_sprint_vs_high(df_sorted: pd.DataFrame, segment: str):
         st.info("Geen data voor grafiek.")
         return
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=df_sorted["player_name"], y=df_sorted["sprint"], marker_color="rgba(255,0,51,0.55)", name="sprint"))
+    fig.add_trace(
+        go.Bar(x=df_sorted["player_name"], y=df_sorted["sprint"], marker_color="rgba(255,0,51,0.55)", name="sprint")
+    )
     fig.add_trace(go.Bar(x=df_sorted["player_name"], y=df_sorted["high_sprint"], marker_color=MVV_RED, name="high_sprint"))
     fig.update_layout(
         title=f"Sprint vs High Sprint ({segment})",
@@ -257,15 +262,39 @@ def _metric_header(abs_col: str) -> str:
     return abs_col
 
 
-def _center_non_min_columns(sty: "pd.io.formats.style.Styler") -> "pd.io.formats.style.Styler":
-    # center: Player + absolute metric + Max Speed
-    # /min niet aanpassen (blijft default/rechts), maar kan ook: subset=["/min"]
-    try:
-        cols = list(sty.data.columns)
-        non_min = [c for c in cols if c != "/min"]
-        return sty.set_properties(**{"text-align": "center"}, subset=non_min)
-    except Exception:
-        return sty
+def _format_and_align_table(sty: "pd.io.formats.style.Styler") -> "pd.io.formats.style.Styler":
+    """
+    - 0 dec voor absolute kolom(len)
+    - 2 dec voor /min
+    - numeriek gecentreerd
+    - Player links
+    """
+    df = sty.data
+    cols = list(df.columns)
+
+    # detecteer kolommen
+    player_col = "Player" if "Player" in cols else cols[0]
+    min_col = "/min" if "/min" in cols else None
+
+    # format
+    fmt_map = {}
+    for c in cols:
+        if c == player_col:
+            continue
+        if c == min_col:
+            fmt_map[c] = PMIN_FMT_2
+        else:
+            fmt_map[c] = ABS_FMT_0
+
+    sty = sty.format(fmt_map)
+
+    # alignment
+    sty = sty.set_properties(**{"text-align": "left"}, subset=[player_col])
+    num_cols = [c for c in cols if c != player_col]
+    if num_cols:
+        sty = sty.set_properties(**{"text-align": "center"}, subset=num_cols)
+
+    return sty
 
 
 def build_table_df(df_sorted: pd.DataFrame, metric_key: str) -> Tuple[pd.DataFrame, list[str]]:
@@ -275,14 +304,12 @@ def build_table_df(df_sorted: pd.DataFrame, metric_key: str) -> Tuple[pd.DataFra
     if metric_key == "max_speed":
         out = df_sorted[["player_name", "max_speed"]].copy()
         out.columns = ["Player", "Max Speed"]
-        # Max Speed is absolute metric col => kleuren daarop
         return out, ["Max Speed"]
 
     abs_col = metric_key
     per_min_col = f"{metric_key}_min"
     out = df_sorted[["player_name", abs_col, per_min_col]].copy()
     out.columns = ["Player", _metric_header(abs_col), "/min"]
-    # kleuren alleen op absolute metric, niet op /min
     return out, [_metric_header(abs_col)]
 
 
@@ -298,27 +325,32 @@ def render_tables_row(df_sorted: pd.DataFrame):
 
     with c1:
         tdf, mcols = build_table_df(df_sorted, "total_distance")
-        sty = _center_non_min_columns(_style_metric_cols(tdf, mcols))
+        sty = _style_metric_cols(tdf, mcols)
+        sty = _format_and_align_table(sty)
         st.dataframe(sty, use_container_width=True, hide_index=True, height=h)
 
     with c2:
         tdf, mcols = build_table_df(df_sorted, "running")
-        sty = _center_non_min_columns(_style_metric_cols(tdf, mcols))
+        sty = _style_metric_cols(tdf, mcols)
+        sty = _format_and_align_table(sty)
         st.dataframe(sty, use_container_width=True, hide_index=True, height=h)
 
     with c3:
         tdf, mcols = build_table_df(df_sorted, "sprint")
-        sty = _center_non_min_columns(_style_metric_cols(tdf, mcols))
+        sty = _style_metric_cols(tdf, mcols)
+        sty = _format_and_align_table(sty)
         st.dataframe(sty, use_container_width=True, hide_index=True, height=h)
 
     with c4:
         tdf, mcols = build_table_df(df_sorted, "high_sprint")
-        sty = _center_non_min_columns(_style_metric_cols(tdf, mcols))
+        sty = _style_metric_cols(tdf, mcols)
+        sty = _format_and_align_table(sty)
         st.dataframe(sty, use_container_width=True, hide_index=True, height=h)
 
     with c5:
         tdf, mcols = build_table_df(df_sorted, "max_speed")
-        sty = _center_non_min_columns(_style_metric_cols(tdf, mcols))
+        sty = _style_metric_cols(tdf, mcols)
+        sty = _format_and_align_table(sty)
         st.dataframe(sty, use_container_width=True, hide_index=True, height=h)
 
 
