@@ -1,4 +1,4 @@
-# pages/07_GPS_Data.py
+# pages/02_GPS_Data.py
 # ==========================================================
 # GPS Data pagina (AUTO-LOAD + per-subpagina)
 # - Subpagina's: Session Load, ACWR, FFP
@@ -8,9 +8,13 @@
 # - ACWR: forced Summary-only
 # - FFP: alles (pas aan indien nodig)
 #
+# UI beveiliging:
+# - role=player heeft GEEN toegang tot deze pagina (staff-only)
+#
 # Vereist:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
 #   st.session_state["access_token"] (JWT)
+#   st.session_state["role"] (geladen in app.py na login)
 #
 # Gebruikt modules:
 #   session_load_pages.py  -> session_load_pages_main(df)
@@ -29,6 +33,14 @@ import acwr_pages
 import ffp_pages
 
 st.set_page_config(page_title="GPS Data", layout="wide")
+
+# -------------------------
+# UI access gate (staff-only)
+# -------------------------
+role = (st.session_state.get("role") or "").lower()
+if role == "player":
+    st.error("Geen toegang.")
+    st.stop()
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
