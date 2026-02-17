@@ -184,7 +184,7 @@ is_player = role == "player"
 # ----------------------------
 # Tiles (4 naast elkaar)
 # ----------------------------
-c1, c2, c3, c4, c5, c6 = st.columns(4, gap="large")
+c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
 
 with c1:
     tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
