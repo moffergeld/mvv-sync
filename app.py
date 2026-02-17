@@ -190,10 +190,16 @@ with c1:
     tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
 
 with c2:
+    tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports")
+    
+with c3:
     tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py", disabled=is_player)
 
-with c3:
+with c4:
     tile("gpsimport", "Assets/Afbeeldingen/Script/GPS_Import.PNG", "pages/06_GPS_Import.py", disabled=is_player)
 
-with c4:
+with c5:
     tile("medical", "Assets/Afbeeldingen/Script/Medical.PNG", None, disabled=True)
+
+with c6:
+    tile("accounts", "Assets/Afbeeldingen/Script/Accounts.PNG", None, disabled=True)
