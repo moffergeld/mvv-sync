@@ -820,7 +820,7 @@ def player_pages_main():
         col_asrm, col_rpe = st.columns(2)
 
         with col_asrm:
-            st.subheader("ASRM (Wellbeing)")
+            st.subheader("ASRM (1 = best, 10 = worst)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
             ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
             fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
