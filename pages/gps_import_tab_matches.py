@@ -10,7 +10,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from gps_import_common import (
+from Subscripts.gps_import_common import (
     HOME_AWAY_OPTIONS,
     MATCH_TYPE_OPTIONS,
     TEAM_NAME_MATCHES,
