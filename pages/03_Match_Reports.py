@@ -5,6 +5,10 @@
 # - /min waardes: 2 decimalen (ook in de dataframe-weergave)
 # - Center alignment voor ALLE numerieke kolommen
 # - Player kolom NIET gecentreerd (links)
+#
+# UI beveiliging:
+# - Players (role=player) MOGEN deze pagina zien (en alle spelers in de tabellen).
+# - Geen extra gate nodig; require_auth blijft verplicht.
 # ============================================================
 
 from __future__ import annotations
@@ -272,7 +276,6 @@ def _format_and_align_table(sty: "pd.io.formats.style.Styler") -> "pd.io.formats
     df = sty.data
     cols = list(df.columns)
 
-    # detecteer kolommen
     player_col = "Player" if "Player" in cols else cols[0]
     min_col = "/min" if "/min" in cols else None
 
