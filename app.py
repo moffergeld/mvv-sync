@@ -11,6 +11,13 @@ from supabase import create_client
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
 # ----------------------------
+# Maintenance toggle
+# ----------------------------
+MAINTENANCE_MODE = True
+MAINTENANCE_TITLE = "⚠️ MAINTENANCE"
+MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk (tijdelijk) uitgelogd worden."
+
+# ----------------------------
 # Supabase
 # ----------------------------
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -23,7 +30,46 @@ sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 def img_to_b64(path: str) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode()
 
+def maintenance_banner():
+    if not MAINTENANCE_MODE:
+        return
+
+    st.markdown(
+        f"""
+        <style>
+        .maintenance-banner{{
+            padding: 16px 18px;
+            border-radius: 14px;
+            border: 2px solid rgba(255, 0, 0, 0.55);
+            background: rgba(255, 0, 0, 0.12);
+            color: #fff;
+            font-weight: 800;
+            font-size: 20px;
+            line-height: 1.25;
+            margin: 8px 0 16px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,.25);
+        }}
+        .maintenance-banner small{{
+            display:block;
+            font-weight: 600;
+            font-size: 14px;
+            opacity: .9;
+            margin-top: 6px;
+        }}
+        </style>
+
+        <div class="maintenance-banner">
+            {MAINTENANCE_TITLE}
+            <small>{MAINTENANCE_TEXT}</small>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def login_ui():
+    # Melding vóór inloggen
+    maintenance_banner()
+
     st.title("Login")
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
@@ -175,6 +221,9 @@ st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
 logout_button()
 
+# Optioneel: ook na inloggen bovenaan tonen
+maintenance_banner()
+
 st.title("MVV Dashboard")
 st.write("Klik op een tegel om een module te openen.")
 
@@ -182,7 +231,7 @@ role = (st.session_state.get("role") or "").lower()
 is_player = role == "player"
 
 # ----------------------------
-# Tiles (4 naast elkaar)
+# Tiles (6 naast elkaar)
 # ----------------------------
 c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
 
@@ -191,7 +240,7 @@ with c1:
 
 with c2:
     tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports")
-    
+
 with c3:
     tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py", disabled=is_player)
 
