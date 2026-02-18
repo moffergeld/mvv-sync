@@ -6,7 +6,7 @@
 #     Match/Practice Match = rood
 #     Practice/data        = blauw
 # - Klik op datum of event => selected_day en direct session load plots
-# - Werkt beter op verschillende schermgroottes en mobiel
+# - ✅ geselecteerde dag zichtbaar (highlight + kleine badge)
 #
 # Vereist: streamlit-calendar  -> voeg toe aan requirements.txt
 # ============================================================
@@ -131,7 +131,34 @@ def _build_calendar_events(df: pd.DataFrame) -> list[dict]:
     return events
 
 
+def _css_selected_day_highlight() -> None:
+    # Highlight day cell met data-date="YYYY-MM-DD"
+    # FullCalendar gebruikt .fc-daygrid-day[data-date="..."]
+    st.markdown(
+        """
+        <style>
+        /* subtiele highlight voor geselecteerde dag */
+        .fc .fc-daygrid-day.sl-selected-day {
+            outline: 2px solid rgba(255,255,255,0.55);
+            outline-offset: -2px;
+            border-radius: 6px;
+        }
+        /* kleine badge rechtsboven in cel */
+        .fc .fc-daygrid-day.sl-selected-day .fc-daygrid-day-number {
+            background: rgba(255,255,255,0.15);
+            border-radius: 6px;
+            padding: 2px 6px;
+            font-weight: 800;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -> date:
+    _css_selected_day_highlight()
+
     days_with_data, _ = _compute_day_sets(df)
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
@@ -148,17 +175,23 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "initialDate": selected.isoformat(),
         "height": "auto",
         "firstDay": 1,  # maandag
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "",
-        },
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
+        # ✅ JS hook: zet class op geselecteerde dag zodat CSS kan highlighten
+        "datesSet": (
+            "function(info){"
+            "  const sel = '" + selected.isoformat() + "';"
+            "  document.querySelectorAll('.fc-daygrid-day').forEach(el=>el.classList.remove('sl-selected-day'));"
+            "  const el = document.querySelector('.fc-daygrid-day[data-date=\"'+sel+'\"]');"
+            "  if(el){ el.classList.add('sl-selected-day'); }"
+            "}"
+        ),
     }
 
-    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
+    # Belangrijk: key moet veranderen als selected verandert, anders wordt datesSet niet opnieuw toegepast
+    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc_{selected.isoformat()}")
 
     if result:
         # Klik op lege dag
@@ -176,7 +209,11 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
                 st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
                 st.rerun()
 
-    st.caption(f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}")
+    # Extra: toon gekozen datum duidelijk onder kalender
+    st.caption(
+        f"Geselecteerd: {st.session_state[f'{key_prefix}_selected'].strftime('%d-%m-%Y')}  •  "
+        f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}"
+    )
     return st.session_state[f"{key_prefix}_selected"]
 
 
@@ -346,7 +383,8 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         barmode="group",
         margin=dict(l=10, r=10, t=40, b=80),
     )
-    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
+    fig.update_xaxes(tickangle=90)
+    fig.update_xaxes(tickvals=x, ticktext=players)
     st.plotly_chart(fig, use_container_width=True)
 
 
