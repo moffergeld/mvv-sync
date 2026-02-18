@@ -17,8 +17,8 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 from plotly.subplots import make_subplots
 from streamlit_calendar import calendar as st_calendar
 
@@ -75,9 +75,15 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
 
     numeric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -178,9 +184,15 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
@@ -213,7 +225,8 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     fig.add_bar(
-        x=players, y=vals,
+        x=players,
+        y=vals,
         marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
@@ -222,9 +235,12 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     )
     mean_val = float(np.nanmean(vals)) if len(vals) else 0.0
     fig.add_hline(
-        y=mean_val, line_dash="dot", line_color="black",
+        y=mean_val,
+        line_dash="dot",
+        line_color="black",
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
-        annotation_position="top left", annotation_font_size=10,
+        annotation_position="top left",
+        annotation_font_size=10,
     )
     fig.update_layout(
         title="Total Distance",
@@ -249,13 +265,19 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     x = np.arange(len(players))
     fig = go.Figure()
     fig.add_bar(
-        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
+        x=x - 0.2,
+        y=sprint_vals,
+        width=0.4,
+        name="Sprint",
         marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
     fig.add_bar(
-        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
+        x=x + 0.2,
+        y=hs_vals,
+        width=0.4,
+        name="High Sprint",
         marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
@@ -285,17 +307,37 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     if COL_ACC_TOT in data.columns:
-        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
-                    marker_color="rgba(255,180,180,0.9)")
+        fig.add_bar(
+            x=x - 1.5 * width,
+            y=data[COL_ACC_TOT],
+            width=width,
+            name="Total Accelerations",
+            marker_color="rgba(255,180,180,0.9)",
+        )
     if COL_ACC_HI in data.columns:
-        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations",
-                    marker_color="rgba(200,0,0,0.9)")
+        fig.add_bar(
+            x=x - 0.5 * width,
+            y=data[COL_ACC_HI],
+            width=width,
+            name="High Accelerations",
+            marker_color="rgba(200,0,0,0.9)",
+        )
     if COL_DEC_TOT in data.columns:
-        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations",
-                    marker_color="rgba(180,210,255,0.9)")
+        fig.add_bar(
+            x=x + 0.5 * width,
+            y=data[COL_DEC_TOT],
+            width=width,
+            name="Total Decelerations",
+            marker_color="rgba(180,210,255,0.9)",
+        )
     if COL_DEC_HI in data.columns:
-        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
-                    marker_color="rgba(0,60,180,0.9)")
+        fig.add_bar(
+            x=x + 1.5 * width,
+            y=data[COL_DEC_HI],
+            width=width,
+            name="High Decelerations",
+            marker_color="rgba(0,60,180,0.9)",
+        )
 
     fig.update_layout(
         title="Accelerations / Decelerations",
@@ -335,7 +377,9 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         for idx, z in enumerate(have_hr):
             x = base_x + (start + idx * bar_w)
             fig.add_bar(
-                x=x, y=df_agg[z], name=z,
+                x=x,
+                y=df_agg[z],
+                name=z,
                 marker_color=color_map.get(z, "gray"),
                 width=bar_w * 0.95,
                 secondary_y=False,
@@ -344,8 +388,10 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=base_x, y=df_agg["TRIMP"],
-                mode="lines+markers", name="HR Trimp",
+                x=base_x,
+                y=df_agg["TRIMP"],
+                mode="lines+markers",
+                name="HR Trimp",
                 line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
             ),
             secondary_y=True,
