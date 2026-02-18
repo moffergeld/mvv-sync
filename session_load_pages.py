@@ -1,18 +1,26 @@
 # session_load_pages.py
-# Alleen wijzigingen t.o.v. vorige versie:
-# - gaps tussen tiles “gevuld” door: column-gap bijna 0 + spacer-kolom héél klein (0.06)
-# - tiles iets hoger: min-height + padding omhoog
+# ============================================================
+# Session Load (Streamlit)
+# ✅ Optie C: FullCalendar maand view + direct Session Load
+# - Maand kalender (dayGridMonth) met kleuren:
+#     Match/Practice Match = rood
+#     Practice/data        = blauw
+# - Klik op datum of event => selected_day en direct session load plots
+# - Werkt beter op verschillende schermgroottes en mobiel
+#
+# Vereist: streamlit-calendar  -> voeg toe aan requirements.txt
+# ============================================================
 
 from __future__ import annotations
 
-import calendar
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from streamlit_calendar import calendar as st_calendar
 
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
@@ -32,62 +40,6 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
-
-
-def _calendar_css_compact() -> None:
-    st.markdown(
-        """
-        <style>
-        .sl-range { opacity: .7; font-size: 12px; white-space: nowrap; margin-top:-6px; text-align:right; }
-
-        .sl-legend { display:flex; gap:16px; align-items:center; margin: 6px 0 10px 0; font-size: 12px; opacity:.9; }
-        .sl-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:7px; }
-        .sl-dot.match { background:#FF0033; }
-        .sl-dot.practice { background:#4AA3FF; }
-        .sl-dot.none { background: rgba(180,180,180,0.45); }
-
-        .sl-dow { font-size: 12px; font-weight: 700; opacity: .85; margin-bottom: 2px; }
-
-        /* ✅ tiles iets hoger */
-        div[data-testid="stButton"] button {
-            width: 100% !important;
-            border-radius: 10px !important;
-            padding: 5px 6px !important;
-            min-height: 34px !important;     /* was 26 */
-            line-height: 1 !important;
-            border: 1px solid rgba(255,255,255,0.12) !important;
-            background: rgba(255,255,255,0.03) !important;
-            font-weight: 800 !important;
-            font-size: 12px !important;
-            white-space: nowrap !important;
-
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            gap: 6px !important;
-        }
-        div[data-testid="stButton"] button:hover {
-            border: 1px solid rgba(255,255,255,0.22) !important;
-            background: rgba(255,255,255,0.05) !important;
-        }
-
-        /* ✅ gaps “gevuld”: bijna geen ruimte tussen kolommen/rijen */
-        div[data-testid="stVerticalBlock"] > div { gap: 0.08rem; }
-        section.main div[data-testid="stHorizontalBlock"] { gap: 0.02rem !important; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-NL_MONTHS = [
-    "Januari", "Februari", "Maart", "April", "Mei", "Juni",
-    "Juli", "Augustus", "September", "Oktober", "November", "December"
-]
-
-
-def _month_label_nl(y: int, m: int) -> str:
-    return f"{NL_MONTHS[m - 1]} {y}"
 
 
 def _normalize_event(e: str) -> str:
@@ -114,6 +66,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["_event_norm"] == "summary"].copy()
 
+    # TRIMP kolom zoeken
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -153,104 +106,71 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
     return days_with_data, match_days
 
 
-def calendar_day_picker(df: pd.DataFrame, key_prefix: str = "sl") -> date:
-    _calendar_css_compact()
-
+def _build_calendar_events(df: pd.DataFrame) -> list[dict]:
     days_with_data, match_days = _compute_day_sets(df)
 
+    events: list[dict] = []
+    for d in sorted(days_with_data):
+        is_match = d in match_days
+        events.append(
+            {
+                "title": "Match" if is_match else "Training",
+                "start": d.isoformat(),
+                "allDay": True,
+                "color": MVV_RED if is_match else PRACTICE_BLUE,
+                "textColor": "#ffffff",
+                "extendedProps": {"day": d.isoformat()},
+            }
+        )
+    return events
+
+
+def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -> date:
+    days_with_data, _ = _compute_day_sets(df)
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
 
     if f"{key_prefix}_selected" not in st.session_state:
         st.session_state[f"{key_prefix}_selected"] = max_day
-    if f"{key_prefix}_ym" not in st.session_state:
-        sel0: date = st.session_state[f"{key_prefix}_selected"]
-        st.session_state[f"{key_prefix}_ym"] = (sel0.year, sel0.month)
 
-    y, m = st.session_state[f"{key_prefix}_ym"]
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    c1, c2, c3, c4 = st.columns([0.9, 2.8, 0.9, 1.0])
-    with c1:
-        if st.button("‹", key=f"{key_prefix}_prev", use_container_width=True):
-            first = date(y, m, 1)
-            prev_last = first - timedelta(days=1)
-            st.session_state[f"{key_prefix}_ym"] = (prev_last.year, prev_last.month)
-            y, m = st.session_state[f"{key_prefix}_ym"]
-    with c2:
-        st.markdown(
-            f"<div style='text-align:center;font-weight:800;font-size:16px;'>{_month_label_nl(y, m)}</div>",
-            unsafe_allow_html=True,
-        )
-    with c3:
-        if st.button("›", key=f"{key_prefix}_next", use_container_width=True):
-            last_day = calendar.monthrange(y, m)[1]
-            nxt = date(y, m, last_day) + timedelta(days=1)
-            st.session_state[f"{key_prefix}_ym"] = (nxt.year, nxt.month)
-            y, m = st.session_state[f"{key_prefix}_ym"]
-    with c4:
-        if st.button("today", key=f"{key_prefix}_today", use_container_width=True):
-            t = date.today()
-            st.session_state[f"{key_prefix}_ym"] = (t.year, t.month)
-            st.session_state[f"{key_prefix}_selected"] = t
-            y, m = st.session_state[f"{key_prefix}_ym"]
-            selected = t
+    events = _build_calendar_events(df)
 
-    st.markdown(
-        f"<div class='sl-range'>Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}</div>",
-        unsafe_allow_html=True,
-    )
+    options = {
+        "initialView": "dayGridMonth",
+        "initialDate": selected.isoformat(),
+        "height": "auto",
+        "firstDay": 1,  # maandag
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "",
+        },
+        "fixedWeekCount": False,
+        "dayMaxEvents": True,
+        "eventDisplay": "block",
+    }
 
-    st.markdown(
-        """
-        <div class="sl-legend">
-          <span><span class="sl-dot match"></span>Match/Practice Match</span>
-          <span><span class="sl-dot practice"></span>Practice/data</span>
-          <span><span class="sl-dot none"></span>geen data</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    cal = calendar.Calendar(firstweekday=0)
-    month_days = list(cal.itermonthdates(y, m))
-    weeks = [month_days[i:i + 7] for i in range(0, len(month_days), 7)]
+    if result:
+        # Klik op lege dag
+        if result.get("dateClick"):
+            ds = result["dateClick"].get("dateStr")
+            if ds:
+                st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
+                st.rerun()
 
-    dows = ["ma", "di", "wo", "do", "vr", "za", "zo"]
-    header_cols = st.columns(7)
-    for i, name in enumerate(dows):
-        with header_cols[i]:
-            st.markdown(f"<div class='sl-dow'>{name}</div>", unsafe_allow_html=True)
+        # Klik op event
+        if result.get("eventClick"):
+            ev = result["eventClick"].get("event", {})
+            ds = ev.get("start")
+            if ds:
+                st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
+                st.rerun()
 
-    # ✅ spacer bijna 0 => “gaps” lijken gevuld, maar tiles blijven half breed
-    for week in weeks:
-        cols = st.columns([1, 0.06] * 7)
-        for i, d in enumerate(week):
-            in_month = (d.month == m)
-            disabled = not in_month
-
-            if d in match_days:
-                dot = "🔴"
-            elif d in days_with_data:
-                dot = "🔵"
-            else:
-                dot = "⚪"
-
-            label = f"{dot} {d.day}"
-            if d == selected:
-                label = f"✅ {dot} {d.day}"
-
-            bkey = f"{key_prefix}_d_{d.isoformat()}"
-
-            with cols[i * 2]:
-                if st.button(label, key=bkey, disabled=disabled, use_container_width=True):
-                    st.session_state[f"{key_prefix}_selected"] = d
-                    st.session_state[f"{key_prefix}_ym"] = (d.year, d.month)
-                    selected = d
-
-            with cols[i * 2 + 1]:
-                st.write("")
-
+    st.caption(f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}")
     return st.session_state[f"{key_prefix}_selected"]
 
 
@@ -286,6 +206,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden.")
         return
+
     data = df_agg.sort_values(COL_TD, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
     vals = data[COL_TD].to_numpy()
@@ -305,8 +226,12 @@ def _plot_total_distance(df_agg: pd.DataFrame):
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
         annotation_position="top left", annotation_font_size=10,
     )
-    fig.update_layout(title="Total Distance", yaxis_title="Total Distance (m)", xaxis_title=None,
-                      margin=dict(l=10, r=10, t=40, b=80))
+    fig.update_layout(
+        title="Total Distance",
+        yaxis_title="Total Distance (m)",
+        xaxis_title=None,
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -315,6 +240,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
         st.info("Sprint / High Sprint kolommen niet compleet.")
         return
+
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
     players = data[COL_PLAYER].astype(str).tolist()
     sprint_vals = data[COL_SPRINT].to_numpy()
@@ -322,14 +248,25 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
 
     x = np.arange(len(players))
     fig = go.Figure()
-    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
-                marker_color="rgba(255,180,180,0.9)",
-                text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals], textposition="outside")
-    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
-                marker_color="rgba(150,0,0,0.9)",
-                text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals], textposition="outside")
-    fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="Distance (m)", xaxis_title=None,
-                      barmode="group", margin=dict(l=10, r=10, t=40, b=80))
+    fig.add_bar(
+        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
+        marker_color="rgba(255,180,180,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
+        textposition="outside",
+    )
+    fig.add_bar(
+        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
+        marker_color="rgba(150,0,0,0.9)",
+        text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
+        textposition="outside",
+    )
+    fig.update_layout(
+        title="Sprint & High Sprint Distance",
+        yaxis_title="Distance (m)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -360,8 +297,13 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
                     marker_color="rgba(0,60,180,0.9)")
 
-    fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None,
-                      barmode="group", margin=dict(l=10, r=10, t=40, b=80))
+    fig.update_layout(
+        title="Accelerations / Decelerations",
+        yaxis_title="Aantal (N)",
+        xaxis_title=None,
+        barmode="group",
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
@@ -392,8 +334,12 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         start = -group_w / 2 + bar_w / 2
         for idx, z in enumerate(have_hr):
             x = base_x + (start + idx * bar_w)
-            fig.add_bar(x=x, y=df_agg[z], name=z, marker_color=color_map.get(z, "gray"),
-                        width=bar_w * 0.95, secondary_y=False)
+            fig.add_bar(
+                x=x, y=df_agg[z], name=z,
+                marker_color=color_map.get(z, "gray"),
+                width=bar_w * 0.95,
+                secondary_y=False,
+            )
 
     if has_trimp:
         fig.add_trace(
@@ -405,8 +351,13 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
             secondary_y=True,
         )
 
-    fig.update_layout(title="Time in HR zone", xaxis_title=None, barmode="group", bargap=0.15,
-                      margin=dict(l=10, r=10, t=40, b=80))
+    fig.update_layout(
+        title="Time in HR zone",
+        xaxis_title=None,
+        barmode="group",
+        bargap=0.15,
+        margin=dict(l=10, r=10, t=40, b=80),
+    )
     fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
     fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
     if has_trimp:
@@ -428,7 +379,8 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden (controleer Event='Summary' en Datum/Speler).")
         return
 
-    selected_day = calendar_day_picker(df, key_prefix="sl")
+    # ✅ FullCalendar maand view (mobielvriendelijk)
+    selected_day = calendar_day_picker_fullcalendar(df, key_prefix="sl")
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
     if df_day_all.empty:
