@@ -1,29 +1,32 @@
 # pages/03_Match_Reports.py
 # ============================================================
 # Match Reports (Streamlit)
-# - Opponent dropdown (A->Z) + Date dropdown (YYYY-MM-DD (H/A))
-# - Header: beide logo's zelfde grootte, gecentreerd, scorecard-achtige tekst (mooier)
-# - Data uit public.matches + view public.v_gps_match_events (met match_id)
-# - Halve selectie: Full match / First half / Second half
-# - 2 Plotly charts (zelfde stijl als player pages): TD bar + Sprint vs High Sprint
-# - Tables: 1 rij met 5 aparte tabellen (TD, 14.4–19.7, 19.8–25.1, 25.2+, Max Speed)
-# - In tables: géén Duration, géén index/nummering
-# - Sort dropdown op per-minute metric
-# - Kleur op percentielen van ABSOLUTE waardes (niet /min)
-# - Formatting: absolute getallen 0 decimaal, /min 2 decimaal
-# - Alignment: numerieke kolommen gecentreerd, Player niet gecentreerd
+# - Opponent dropdown (A-Z) + Date dropdown (YYYY-MM-DD (H/A))
+# - Header: logoszelfde grootte, horizontaal gecentreerd, wisselen bij Away:
+#     Away  -> opponent links, MVV rechts
+#     Home  -> MVV links, opponent rechts
+# - Data uit:
+#     public.matches
+#     public.v_gps_match_events  (events: First Half / Second Half)
+# - Tabellen:
+#     1 rij met 5 tabellen (geen duration, geen index)
+#     per tabel sorteren op eigen /min (hoog -> laag)
+#     waarden: 0 decimalen, /min: 2 decimalen
+#     kleuren op percentielen van ABSOLUTE kolom (niet op /min)
+# - Grafieken: Plotly (zelfde stijl als Player Pages), rood
 # ============================================================
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 import plotly.graph_objects as go
+import streamlit as st
 
 from roles import get_sb, require_auth, get_profile
 
@@ -31,402 +34,482 @@ from roles import get_sb, require_auth, get_profile
 # -----------------------------
 # Config
 # -----------------------------
-MATCHES_TABLE = "matches"
-EVENTS_VIEW = "v_gps_match_events"
-
-TEAM_LOGO_DIR = Path("Assets/Afbeeldingen/Team_Logos")  # repo pad
+LOGO_DIR = Path("Assets/Afbeeldingen/Team_Logos")  # repo pad
 MVV_TEAM_NAME = "MVV Maastricht"
 
-# Metrics (kolommen in v_gps_match_events)
-METRICS = {
-    "TD": "total_distance",
-    "14.4–19.7": "running",
-    "19.8–25.1": "sprint",
-    "25.2+": "high_sprint",
-    "Max Speed": "max_speed",
+EVENT_FULL = "Full match"
+EVENT_FIRST = "First Half"
+EVENT_SECOND = "Second Half"
+
+EVENT_MAP = {
+    EVENT_FULL: ["First Half", "Second Half"],
+    EVENT_FIRST: ["First Half"],
+    EVENT_SECOND: ["Second Half"],
 }
-PER_MIN_SORT_OPTIONS = [
-    ("Total Distance/min", "total_distance"),
-    ("14.4–19.7 km/h/min", "running"),
-    ("19.8–25.1 km/h/min", "sprint"),
-    ("25.2+ km/h/min", "high_sprint"),
-]
+
+# Tabellen (labels)
+COL_PLAYER = "player_name"
+COL_TD = "total_distance"
+COL_RUN = "running"
+COL_SPR = "sprint"
+COL_HSPR = "high_sprint"
+COL_MAX = "max_speed"
+COL_DUR = "duration"
+
+LABEL_TD = "TD"
+LABEL_RUN = "14.4–19.7"
+LABEL_SPR = "19.8–25.1"
+LABEL_HSPR = "25.2+"
+LABEL_MAX = "Max Speed"
+LABEL_PERMIN = "/min"
+
+ROW_HEIGHT = 32
+HEADER_HEIGHT = 34
+PAD_HEIGHT = 18
 
 
 # -----------------------------
 # Helpers
 # -----------------------------
-def _home_away_short(v: Any) -> str:
-    s = (str(v or "")).strip().lower()
-    if s.startswith("h"):
-        return "H"
-    if s.startswith("a"):
-        return "A"
-    return ""
-
-
-def _safe_int(v: Any, default: int = 0) -> int:
-    try:
-        if v is None or (isinstance(v, float) and np.isnan(v)):
-            return default
-        return int(v)
-    except Exception:
-        return default
-
-
-def _fmt_score(gf: Any, ga: Any) -> str:
-    return f"{_safe_int(gf)} - {_safe_int(ga)}"
-
-
 def _df_from_rows(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
 
-def _coerce_date_series(s: pd.Series) -> pd.Series:
-    return pd.to_datetime(s, errors="coerce").dt.date
+def _safe_num(s: pd.Series) -> pd.Series:
+    return pd.to_numeric(s, errors="coerce")
 
 
-def _normalize_team_name(name: str) -> str:
-    # probeer bestand te matchen met minimale normalisatie
-    return (
-        name.replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "")
-        .replace("*", "")
-        .replace("?", "")
-        .replace('"', "")
-        .replace("<", "")
-        .replace(">", "")
-        .replace("|", "")
+def _calc_height(n_rows: int) -> int:
+    # voldoende hoog zodat geen interne scroll ontstaat
+    # (Streamlit DataFrame scrollt als height te klein is)
+    return int(HEADER_HEIGHT + PAD_HEIGHT + max(1, n_rows) * ROW_HEIGHT)
+
+
+def _build_logo_index() -> Dict[str, Path]:
+    # indexeer alle png's in LOGO_DIR
+    idx: Dict[str, Path] = {}
+    if LOGO_DIR.exists():
+        for p in LOGO_DIR.glob("*.png"):
+            idx[p.stem.strip().lower()] = p
+    return idx
+
+
+_LOGO_INDEX = _build_logo_index()
+
+
+def _logo_path_for_team(team: str) -> Optional[Path]:
+    if not team:
+        return None
+    key = team.strip().lower()
+    # 1) exacte match op bestandsnaam
+    if key in _LOGO_INDEX:
+        return _LOGO_INDEX[key]
+
+    # 2) simpele normalisaties
+    key2 = (
+        key.replace("  ", " ")
+        .replace("-", " ")
+        .replace("_", " ")
+        .replace(".", "")
         .strip()
     )
-
-
-def _find_logo_path(team_name: str) -> Optional[Path]:
-    if not TEAM_LOGO_DIR.exists():
-        return None
-
-    candidates = [
-        TEAM_LOGO_DIR / f"{team_name}.png",
-        TEAM_LOGO_DIR / f"{_normalize_team_name(team_name)}.png",
-    ]
-
-    for p in candidates:
-        if p.exists():
+    # probeer contains match
+    for k, p in _LOGO_INDEX.items():
+        if k == key2:
             return p
-
-    # fallback: case-insensitive search
-    target = _normalize_team_name(team_name).lower()
-    for p in TEAM_LOGO_DIR.glob("*.png"):
-        if _normalize_team_name(p.stem).lower() == target:
+    for k, p in _LOGO_INDEX.items():
+        if key2 in k or k in key2:
             return p
-
     return None
 
 
-def _center_image(path: Optional[Path], width: int = 155):
-    if not path or not Path(path).exists():
-        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-        return
-    st.image(str(path), width=width, use_container_width=False)
+def _read_image_bytes(p: Path) -> bytes:
+    return p.read_bytes()
 
 
-def _header_css():
-    st.markdown(
-        """
-        <style>
-        .mr-wrap { text-align:center; }
-        .mr-date { font-size:16px; font-weight:700; opacity:0.95; margin: 0 0 6px 0; }
-        .mr-fixture { font-size:26px; font-weight:900; margin:0 0 6px 0; }
-        .mr-score { font-size:56px; font-weight:950; line-height:1; margin: 6px 0 10px 0; }
-        .mr-meta { font-size:14px; opacity:0.85; margin: 4px 0; }
-        .mr-pill { display:inline-block; padding: 4px 10px; border-radius: 999px;
-                   background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10);
-                   font-size: 13px; opacity: 0.9; }
-        .mr-subline { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top: 6px; }
-        .mr-teamname { font-size:14px; font-weight:800; margin-top: 8px; opacity: 0.95; text-align:center; }
+def _fmt_int(x: Any) -> str:
+    if pd.isna(x):
+        return ""
+    try:
+        return f"{int(round(float(x), 0)):,}".replace(",", ",")
+    except Exception:
+        return ""
 
-        /* tables: minder padding zodat alles past, geen "in-table" scroll gevoel */
-        div[data-testid="stDataFrame"] { border-radius: 12px; }
-        </style>
-        """,
-        unsafe_allow_html=True,
+
+def _fmt_min(x: Any) -> str:
+    if pd.isna(x):
+        return ""
+    try:
+        return f"{float(x):.2f}"
+    except Exception:
+        return ""
+
+
+def _percentile_color(val: float, q25: float, q50: float, q75: float) -> str:
+    """
+    Kleur op percentielen (laag=rood, midden=amber, hoog=groen).
+    """
+    if np.isnan(val):
+        return ""
+    # kleuren (donker, passend bij dark theme)
+    red = "rgba(180, 20, 40, 0.55)"
+    amber = "rgba(190, 140, 20, 0.45)"
+    green = "rgba(20, 140, 60, 0.55)"
+
+    if val <= q25:
+        return red
+    if val <= q50:
+        return "rgba(180, 80, 40, 0.45)"
+    if val <= q75:
+        return amber
+    return green
+
+
+def _style_table(df: pd.DataFrame, abs_col: str, per_min_col: Optional[str]) -> "pd.io.formats.style.Styler":
+    """
+    - Player links uitlijnen
+    - ABS kolom: percentiel-kleuren + 0 decimal
+    - /min kolom: 2 decimal, geen kleur
+    - overige numeric: center
+    """
+    dff = df.copy()
+
+    # quantiles op ABS kolom
+    abs_vals = _safe_num(dff[abs_col]).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(abs_vals) >= 2:
+        q25, q50, q75 = abs_vals.quantile([0.25, 0.50, 0.75]).tolist()
+    else:
+        q25 = q50 = q75 = float(abs_vals.iloc[0]) if len(abs_vals) == 1 else 0.0
+
+    def _bg_abs(s: pd.Series) -> List[str]:
+        out = []
+        for v in _safe_num(s).tolist():
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                out.append("")
+            else:
+                out.append(f"background-color: {_percentile_color(float(v), q25, q50, q75)};")
+        return out
+
+    # format mapping
+    fmt: Dict[str, Any] = {abs_col: _fmt_int}
+    if per_min_col:
+        fmt[per_min_col] = _fmt_min
+
+    sty = (
+        dff.style.format(fmt)
+        .apply(_bg_abs, subset=[abs_col])
+        .set_properties(subset=[COL_PLAYER], **{"text-align": "left"})
     )
 
+    # center voor numeric behalve player
+    numeric_cols = [c for c in dff.columns if c != COL_PLAYER]
+    sty = sty.set_properties(subset=numeric_cols, **{"text-align": "center"})
 
-def _header_block(
-    match_date: date,
-    home_away: str,
-    opponent: str,
-    match_type: str,
-    season: str,
-    fixture: str,
-    gf: Any,
-    ga: Any,
-):
-    ha = "Home" if _home_away_short(home_away) == "H" else "Away"
-    score = _fmt_score(gf, ga)
-
-    st.markdown("<div class='mr-wrap'>", unsafe_allow_html=True)
-
-    st.markdown(f"<div class='mr-date'>{match_date.isoformat()}</div>", unsafe_allow_html=True)
-
-    # Fixture regel (mooier en los van score)
-    fixture_txt = fixture or f"{MVV_TEAM_NAME} - {opponent}"
-    st.markdown(f"<div class='mr-fixture'>{fixture_txt}</div>", unsafe_allow_html=True)
-
-    st.markdown(f"<div class='mr-score'>{score}</div>", unsafe_allow_html=True)
-
-    pills = []
-    if ha:
-        pills.append(ha)
-    if match_type:
-        pills.append(str(match_type))
-    if season:
-        pills.append(str(season))
-
-    st.markdown(
-        "<div class='mr-subline'>"
-        + "".join([f"<span class='mr-pill'>{p}</span>" for p in pills])
-        + "</div>",
-        unsafe_allow_html=True,
+    # header style
+    sty = sty.set_table_styles(
+        [
+            {"selector": "th", "props": [("text-align", "left"), ("font-weight", "600")]},
+            {"selector": "td", "props": [("border-color", "rgba(255,255,255,0.06)")]},
+        ]
     )
 
-    st.markdown(f"<div class='mr-meta'>Opponent: {opponent}</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    return sty
 
 
 # -----------------------------
 # Supabase fetch
 # -----------------------------
-def fetch_matches(sb, limit: int = 1500) -> pd.DataFrame:
-    try:
-        rows = (
-            sb.table(MATCHES_TABLE)
-            .select("match_id,match_date,fixture,home_away,opponent,match_type,season,result,goals_for,goals_against")
-            .order("match_date", desc=True)
-            .limit(limit)
-            .execute()
-            .data
-            or []
-        )
-        df = _df_from_rows(rows)
-        if df.empty:
-            return df
-        df["match_date"] = _coerce_date_series(df["match_date"])
-        df["opponent"] = df["opponent"].fillna("").astype(str)
-        df["home_away_short"] = df["home_away"].apply(_home_away_short)
+@st.cache_data(show_spinner=False, ttl=60)
+def fetch_matches_rows(limit: int = 1000) -> pd.DataFrame:
+    sb = get_sb()
+    rows = (
+        sb.table("matches")
+        .select("match_id,match_date,fixture,home_away,opponent,match_type,season,result,goals_for,goals_against")
+        .order("match_date", desc=True)
+        .limit(limit)
+        .execute()
+        .data
+        or []
+    )
+    df = _df_from_rows(rows)
+    if df.empty:
         return df
-    except Exception:
-        return pd.DataFrame()
+    df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce").dt.date
+    return df
 
 
-def fetch_match_events(sb, match_id: int) -> pd.DataFrame:
-    # Verwacht dat v_gps_match_events match_id bevat
-    try:
-        rows = (
-            sb.table(EVENTS_VIEW)
-            .select(
-                "match_id,player_name,event,duration,total_distance,running,sprint,high_sprint,max_speed"
-            )
-            .eq("match_id", match_id)
-            .in_("event", ["First Half", "Second Half"])
-            .execute()
-            .data
-            or []
+@st.cache_data(show_spinner=False, ttl=60)
+def fetch_match_events_for_date(match_date: date) -> pd.DataFrame:
+    """
+    v_gps_match_events heeft (volgens jouw schema):
+    gps_id, player_id, player_name, datum, week, year, type, event,
+    duration, total_distance, running, sprint, high_sprint, max_speed, ...
+    """
+    sb = get_sb()
+    # Let op: sommige views hebben ook match_id. Als die bestaat, is filter op datum voldoende.
+    rows = (
+        sb.table("v_gps_match_events")
+        .select(
+            "gps_id,player_id,player_name,datum,type,event,duration,total_distance,running,sprint,high_sprint,max_speed"
         )
-        df = _df_from_rows(rows)
-        if df.empty:
-            return df
-        df["duration"] = pd.to_numeric(df["duration"], errors="coerce").fillna(0.0)
-        for c in ["total_distance", "running", "sprint", "high_sprint", "max_speed"]:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-        df["player_name"] = df["player_name"].fillna("").astype(str)
-        df["event"] = df["event"].fillna("").astype(str)
+        .eq("datum", match_date.isoformat())
+        .execute()
+        .data
+        or []
+    )
+    df = _df_from_rows(rows)
+    if df.empty:
         return df
-    except Exception:
-        return pd.DataFrame()
+
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
+    for c in [COL_DUR, COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX]:
+        if c in df.columns:
+            df[c] = _safe_num(df[c]).fillna(0.0)
+    return df
 
 
 # -----------------------------
-# Aggregation
+# Data prep (per phase)
 # -----------------------------
-def _aggregate_for_period(df_events: pd.DataFrame, period: str) -> pd.DataFrame:
-    """
-    period: 'Full match' / 'First half' / 'Second half'
-    Returns per player:
-      duration_sum, sums for distance-buckets, max for max_speed
-    """
+def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
     if df_events.empty:
         return df_events
 
-    if period == "First half":
-        dff = df_events[df_events["event"] == "First Half"].copy()
-    elif period == "Second half":
-        dff = df_events[df_events["event"] == "Second Half"].copy()
-    else:
-        dff = df_events.copy()
+    events_keep = EVENT_MAP.get(phase, ["First Half", "Second Half"])
+
+    dff = df_events.copy()
+    # alleen Match events
+    if "type" in dff.columns:
+        dff = dff[dff["type"].astype(str).str.lower().eq("match")]
+
+    dff = dff[dff["event"].isin(events_keep)]
 
     if dff.empty:
-        return pd.DataFrame()
+        return dff
 
-    agg = (
-        dff.groupby("player_name", as_index=False)
-        .agg(
-            duration=("duration", "sum"),
-            total_distance=("total_distance", "sum"),
-            running=("running", "sum"),
-            sprint=("sprint", "sum"),
-            high_sprint=("high_sprint", "sum"),
-            max_speed=("max_speed", "max"),
-        )
-        .copy()
+    # aggregate per player (som van halves)
+    g = dff.groupby(COL_PLAYER, as_index=False).agg(
+        duration=(COL_DUR, "sum"),
+        total_distance=(COL_TD, "sum"),
+        running=(COL_RUN, "sum"),
+        sprint=(COL_SPR, "sum"),
+        high_sprint=(COL_HSPR, "sum"),
+        max_speed=(COL_MAX, "max"),  # max speed is max
     )
 
     # per minute
-    dur = agg["duration"].replace(0, np.nan)
-    for k in ["total_distance", "running", "sprint", "high_sprint"]:
-        agg[f"{k}_per_min"] = (agg[k] / dur).astype(float)
-    agg["max_speed_per_min"] = np.nan  # niet gebruikt, maar handig consistent
+    dur_min = g["duration"].replace(0, np.nan)
+    g["td_per_min"] = g["total_distance"] / dur_min
+    g["run_per_min"] = g["running"] / dur_min
+    g["spr_per_min"] = g["sprint"] / dur_min
+    g["hspr_per_min"] = g["high_sprint"] / dur_min
 
-    # duration terug naar 0 waar NaN (na deling)
-    agg["duration"] = agg["duration"].fillna(0.0)
-    for c in [f"{k}_per_min" for k in ["total_distance", "running", "sprint", "high_sprint"]]:
-        agg[c] = agg[c].fillna(0.0)
-
-    return agg
-
-
-# -----------------------------
-# Styling (percentile colors + formatting)
-# -----------------------------
-def _percentile_thresholds(vals: pd.Series) -> Tuple[float, float, float, float]:
-    v = pd.to_numeric(vals, errors="coerce").dropna()
-    if v.empty:
-        return (0, 0, 0, 0)
-    return tuple(np.percentile(v, [20, 40, 60, 80]).tolist())  # type: ignore
-
-
-def _cell_bg_color(val: Any, p20: float, p40: float, p60: float, p80: float) -> str:
-    try:
-        x = float(val)
-    except Exception:
-        return ""
-    # low = rood, high = groen (zoals jouw screenshot)
-    if x <= p20:
-        return "background-color: rgba(255, 0, 51, 0.28);"
-    if x <= p40:
-        return "background-color: rgba(255, 0, 51, 0.18);"
-    if x <= p60:
-        return "background-color: rgba(255, 204, 0, 0.16);"
-    if x <= p80:
-        return "background-color: rgba(0, 200, 0, 0.16);"
-    return "background-color: rgba(0, 200, 0, 0.26);"
-
-
-def _style_table(df: pd.DataFrame, abs_col: str, per_min_col: Optional[str] = None) -> "pd.io.formats.style.Styler":
-    """
-    - abs_col: kleur op percentielen (absolute)
-    - per_min_col: 2 decimaal, geen kleur
-    - alignment: Player left, numeriek center
-    - formatting: abs 0 dec, /min 2 dec
-    """
-    show = df.copy()
-
-    # formatting helpers
-    fmt: Dict[str, Any] = {}
-    if abs_col in show.columns:
-        fmt[abs_col] = "{:,.0f}"
-    if per_min_col and per_min_col in show.columns:
-        fmt[per_min_col] = "{:,.2f}"
-
-    # thresholds for coloring (ABSOLUTE)
-    p20, p40, p60, p80 = _percentile_thresholds(show[abs_col]) if abs_col in show.columns else (0, 0, 0, 0)
-
-    def _apply_abs_bg(s: pd.Series):
-        return [
-            _cell_bg_color(v, p20, p40, p60, p80) if s.name == abs_col else ""
-            for v in s.values
-        ]
-
-    sty = show.style
-
-    # kleur alleen op absolute kolom
-    if abs_col in show.columns:
-        sty = sty.apply(_apply_abs_bg, axis=0, subset=[abs_col])
-
-    # format
-    if fmt:
-        sty = sty.format(fmt)
-
-    # alignments
-    numeric_cols = [c for c in show.columns if c != "Player"]
-    if numeric_cols:
-        sty = sty.set_properties(subset=numeric_cols, **{"text-align": "center"})
-    sty = sty.set_properties(subset=["Player"], **{"text-align": "left", "font-weight": "700"})
-
-    return sty
-
-
-def _table_height_from_rows(n_rows: int) -> int:
-    # Geen interne scroll: maak de dataframe hoog genoeg voor alle rijen
-    # (pagina mag wél scrollen, maar de tabel zelf niet)
-    header = 36
-    row_h = 28
-    pad = 14
-    return max(220, header + n_rows * row_h + pad)
+    g = g.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    return g
 
 
 # -----------------------------
 # Plotly charts
 # -----------------------------
-def plot_total_distance_bar(df_agg: pd.DataFrame, period_label: str):
-    if df_agg.empty:
+def plot_td_bar(df: pd.DataFrame, title: str):
+    if df.empty:
         st.info("Geen data voor grafiek.")
         return
-
-    dff = df_agg.sort_values("total_distance", ascending=False).copy()
-    fig = go.Figure()
-    fig.add_trace(
-        go.Bar(
-            x=dff["player_name"],
-            y=dff["total_distance"],
-            marker=dict(color="#FF0033"),
-        )
+    dff = df.sort_values("td_per_min", ascending=False).copy()
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=dff[COL_PLAYER],
+                y=dff[COL_TD],
+                marker=dict(color="#FF0033"),
+                name="TD",
+            )
+        ]
     )
     fig.update_layout(
-        title=f"Total Distance ({period_label})",
+        height=330,
         margin=dict(l=10, r=10, t=40, b=10),
-        height=320,
-        xaxis_title="",
-        yaxis_title="",
+        title=title,
         showlegend=False,
     )
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
 
-def plot_sprint_vs_highsprint(df_agg: pd.DataFrame, period_label: str):
-    if df_agg.empty:
+def plot_sprint_vs_high(df: pd.DataFrame, title: str):
+    if df.empty:
         st.info("Geen data voor grafiek.")
         return
+    dff = df.sort_values("spr_per_min", ascending=False).copy()
 
-    dff = df_agg.sort_values("sprint", ascending=False).copy()
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=dff["player_name"], y=dff["sprint"], name="sprint", marker=dict(color="rgba(255,0,51,0.55)")))
-    fig.add_trace(go.Bar(x=dff["player_name"], y=dff["high_sprint"], name="high_sprint", marker=dict(color="#FF0033")))
+    fig.add_trace(go.Bar(x=dff[COL_PLAYER], y=dff[COL_SPR], name="sprint", marker=dict(color="rgba(255,0,51,0.85)")))
+    fig.add_trace(go.Bar(x=dff[COL_PLAYER], y=dff[COL_HSPR], name="high_sprint", marker=dict(color="rgba(255,0,51,0.45)")))
+
     fig.update_layout(
-        title=f"Sprint vs High Sprint ({period_label})",
         barmode="group",
+        height=330,
         margin=dict(l=10, r=10, t=40, b=10),
-        height=320,
-        xaxis_title="",
-        yaxis_title="",
+        title=title,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
+
+
+# -----------------------------
+# Tables (5 in one row)
+# -----------------------------
+def render_tables_row(df_phase: pd.DataFrame, sort_mode: str):
+    """
+    sort_mode: welke /min wordt gebruikt als hoofd-sort bij het kiezen van speler-volgorde.
+    Maar: per tabel sorteren we op zijn EIGEN /min, zoals gevraagd.
+    """
+    if df_phase.empty:
+        st.info("Geen data voor tabellen.")
+        return
+
+    # Maak 5 kleine tabellen (Player + ABS + /min), behalve Max Speed (geen /min)
+    base = df_phase[[COL_PLAYER, "duration", COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX,
+                     "td_per_min", "run_per_min", "spr_per_min", "hspr_per_min"]].copy()
+
+    # helper om 1 tabel te bouwen
+    def _make_tbl(abs_col: str, per_col: Optional[str], label_abs: str) -> Tuple[pd.DataFrame, str, Optional[str]]:
+        cols = [COL_PLAYER, abs_col]
+        if per_col:
+            cols.append(per_col)
+        out = base[cols].copy()
+        # rename
+        rename = {abs_col: label_abs}
+        if per_col:
+            rename[per_col] = LABEL_PERMIN
+        out = out.rename(columns=rename)
+        return out, label_abs, (LABEL_PERMIN if per_col else None)
+
+    # per tabel eigen sort
+    t1, abs1, per1 = _make_tbl(COL_TD, "td_per_min", LABEL_TD)
+    t1 = t1.sort_values(LABEL_PERMIN, ascending=False)
+
+    t2, abs2, per2 = _make_tbl(COL_RUN, "run_per_min", LABEL_RUN)
+    t2 = t2.sort_values(LABEL_PERMIN, ascending=False)
+
+    t3, abs3, per3 = _make_tbl(COL_SPR, "spr_per_min", LABEL_SPR)
+    t3 = t3.sort_values(LABEL_PERMIN, ascending=False)
+
+    t4, abs4, per4 = _make_tbl(COL_HSPR, "hspr_per_min", LABEL_HSPR)
+    t4 = t4.sort_values(LABEL_PERMIN, ascending=False)
+
+    t5, abs5, per5 = _make_tbl(COL_MAX, None, LABEL_MAX)
+    t5 = t5.sort_values(LABEL_MAX, ascending=False)
+
+    tables = [
+        (t1, abs1, per1),
+        (t2, abs2, per2),
+        (t3, abs3, per3),
+        (t4, abs4, per4),
+        (t5, abs5, per5),
+    ]
+
+    cols = st.columns(5, gap="large")
+    for i, (tbl, abs_label, per_label) in enumerate(tables):
+        with cols[i]:
+            # style verwacht de kolomnamen in tbl (Player, ABS_LABEL, /min?)
+            abs_col_name = abs_label
+            per_col_name = per_label
+
+            sty = _style_table(tbl, abs_col=abs_col_name, per_min_col=per_col_name)
+
+            # dataframe height zodat alles zichtbaar is
+            h = _calc_height(len(tbl))
+
+            st.dataframe(
+                sty,
+                use_container_width=True,
+                hide_index=True,
+                height=h,
+            )
+
+
+# -----------------------------
+# Header UI
+# -----------------------------
+def render_match_header(match_row: pd.Series):
+    match_date: date = match_row["match_date"]
+    opponent: str = str(match_row.get("opponent") or "").strip()
+    fixture: str = str(match_row.get("fixture") or "").strip()
+    home_away: str = str(match_row.get("home_away") or "").strip()  # "Home"/"Away"
+    match_type: str = str(match_row.get("match_type") or "").strip()
+    season: str = str(match_row.get("season") or "").strip()
+
+    gf = match_row.get("goals_for", None)
+    ga = match_row.get("goals_against", None)
+
+    # score veilig
+    try:
+        gf_i = int(gf) if pd.notna(gf) else None
+    except Exception:
+        gf_i = None
+    try:
+        ga_i = int(ga) if pd.notna(ga) else None
+    except Exception:
+        ga_i = None
+
+    score_txt = f"{gf_i} - {ga_i}" if (gf_i is not None and ga_i is not None) else "-"
+
+    is_away = home_away.lower().startswith("a")
+
+    # team labels + logo wissel
+    left_team = opponent if is_away else MVV_TEAM_NAME
+    right_team = MVV_TEAM_NAME if is_away else opponent
+
+    left_logo = _logo_path_for_team(left_team)
+    right_logo = _logo_path_for_team(right_team)
+
+    # titel regel (zoals voorbeeld image)
+    if is_away:
+        title_line = f"{match_date.isoformat()}  •  {opponent} - {MVV_TEAM_NAME}"
+    else:
+        title_line = f"{match_date.isoformat()}  •  {MVV_TEAM_NAME} - {opponent}"
+
+    # 3 kolommen (logo - center info - logo), alles gecentreerd
+    c1, c2, c3 = st.columns([1.2, 2.2, 1.2], vertical_alignment="center")
+
+    logo_w = 170  # zelfde grootte links/rechts
+    with c1:
+        if left_logo and left_logo.exists():
+            st.image(_read_image_bytes(left_logo), width=logo_w)
+        st.markdown(
+            f"<div style='text-align:center; font-weight:600; opacity:.9; margin-top:6px;'>{left_team}</div>",
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        st.markdown(
+            f"""
+            <div style="text-align:center; margin-top:6px;">
+              <div style="opacity:.85; font-weight:600; font-size:14px;">{match_date.isoformat()}</div>
+              <div style="font-weight:800; font-size:26px; margin-top:4px;">{fixture or title_line}</div>
+              <div style="font-weight:900; font-size:44px; margin-top:8px;">{score_txt}</div>
+
+              <div style="margin-top:10px; display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
+                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:600;">{home_away or ""}</span>
+                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:600;">{match_type or ""}</span>
+                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:600;">{season or ""}</span>
+              </div>
+
+              <div style="opacity:.70; margin-top:10px;">Opponent: {opponent}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c3:
+        if right_logo and right_logo.exists():
+            st.image(_read_image_bytes(right_logo), width=logo_w)
+        st.markdown(
+            f"<div style='text-align:center; font-weight:600; opacity:.9; margin-top:6px;'>{right_team}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 # -----------------------------
@@ -439,166 +522,80 @@ def main():
         st.error("Supabase client niet beschikbaar.")
         st.stop()
 
-    _header_css()
+    _ = get_profile(sb)
 
     st.title("Match Reports")
 
-    # ---- Load matches
-    matches = fetch_matches(sb, limit=2000)
-    if matches.empty:
-        st.info("Geen matches gevonden.")
+    matches_df = fetch_matches_rows(limit=1000)
+    if matches_df.empty:
+        st.info("Geen matches gevonden in public.matches.")
         st.stop()
 
-    # ---- Opponent dropdown (A->Z)
-    opps = sorted([o for o in matches["opponent"].unique().tolist() if str(o).strip() != ""], key=lambda x: str(x).lower())
-    if not opps:
-        st.info("Geen opponents gevonden in matches.")
-        st.stop()
+    # Opponent dropdown (A->Z)
+    opponents = sorted([o for o in matches_df["opponent"].dropna().astype(str).unique().tolist() if o.strip()])
+    default_opp = opponents[0] if opponents else ""
+    top_l, top_r = st.columns([1.2, 2.0])
 
-    c1, c2 = st.columns([1, 2], vertical_alignment="bottom")
-    with c1:
-        opp_sel = st.selectbox("Opponent", options=opps, index=0, key="mr_opp")
+    with top_l:
+        sel_opp = st.selectbox("Opponent", options=opponents, index=0, key="mr_opp")
 
-    # ---- Date dropdown for selected opponent (with H/A)
-    m_opp = matches[matches["opponent"] == opp_sel].copy()
-    m_opp = m_opp.sort_values("match_date", ascending=False)
+    df_opp = matches_df[matches_df["opponent"].astype(str) == str(sel_opp)].copy()
+    df_opp = df_opp.sort_values("match_date", ascending=False)
 
-    def _date_label(row) -> str:
-        d = row["match_date"]
-        ha = row.get("home_away_short", "")
-        return f"{d.isoformat()} ({ha})"
+    # Date dropdown met (H)/(A)
+    def _ha_tag(x: str) -> str:
+        if not isinstance(x, str):
+            return ""
+        x2 = x.strip().lower()
+        return "A" if x2.startswith("a") else "H"
 
-    m_opp["date_label"] = m_opp.apply(_date_label, axis=1)
+    date_options = []
+    for _, r in df_opp.iterrows():
+        ha = _ha_tag(str(r.get("home_away") or ""))
+        date_options.append(f"{r['match_date'].isoformat()} ({ha})")
 
-    # map label -> match_id (if duplicates, keep latest row order)
-    label_to_match: Dict[str, int] = {}
-    for _, r in m_opp.iterrows():
-        label_to_match[r["date_label"]] = int(r["match_id"])
+    with top_r:
+        sel_date_label = st.selectbox("Date", options=date_options, index=0, key="mr_date")
 
-    date_labels = list(label_to_match.keys())
-    with c2:
-        date_sel = st.selectbox("Date", options=date_labels, index=0, key="mr_date")
+    # pak geselecteerde match row
+    sel_date = date.fromisoformat(sel_date_label.split(" ")[0])
+    match_row = df_opp[df_opp["match_date"] == sel_date].iloc[0]
 
-    match_id = label_to_match[date_sel]
-    match_row = m_opp[m_opp["match_id"] == match_id].iloc[0].to_dict()
-
-    # ---- Header: logos same size + centered, nicer text
-    match_date = match_row.get("match_date")
-    fixture = str(match_row.get("fixture") or "").strip()
-    home_away = str(match_row.get("home_away") or "").strip()
-    match_type = str(match_row.get("match_type") or "").strip()
-    season = str(match_row.get("season") or "").strip()
-    gf = match_row.get("goals_for")
-    ga = match_row.get("goals_against")
-
-    # logos
-    mvv_logo = _find_logo_path(MVV_TEAM_NAME)
-    opp_logo = _find_logo_path(opp_sel)
-
-    left, mid, right = st.columns([1.1, 1.8, 1.1], vertical_alignment="center")
-
-    with left:
-        _center_image(mvv_logo, width=155)
-        st.markdown(f"<div class='mr-teamname'>{MVV_TEAM_NAME}</div>", unsafe_allow_html=True)
-
-    with mid:
-        _header_block(
-            match_date=match_date,
-            home_away=home_away,
-            opponent=opp_sel,
-            match_type=match_type,
-            season=season,
-            fixture=fixture,
-            gf=gf,
-            ga=ga,
-        )
-
-    with right:
-        _center_image(opp_logo, width=155)
-        st.markdown(f"<div class='mr-teamname'>{opp_sel}</div>", unsafe_allow_html=True)
+    # Header
+    render_match_header(match_row)
 
     st.divider()
 
-    # ---- Controls
-    sort_label, sort_key = st.selectbox(
-        "Sort tables on (per minute)",
-        options=PER_MIN_SORT_OPTIONS,
-        index=0,
-        format_func=lambda x: x[0],
-        key="mr_sort",
-    )
-    sort_metric = sort_key  # like "total_distance"
+    # Phase radio (full/first/second)
+    phase = st.radio("Tables", [EVENT_FULL, EVENT_FIRST, EVENT_SECOND], horizontal=True, key="mr_phase")
 
-    st.markdown("**Tables**")
-    period = st.radio(" ", ["Full match", "First half", "Second half"], horizontal=True, key="mr_period")
+    # Sort dropdown (per minute)
+    sort_opts = [
+        "Total Distance/min",
+        "14.4–19.7/min",
+        "19.8–25.1/min",
+        "25.2+/min",
+    ]
+    sort_choice = st.selectbox("Sort tables on (per minute)", options=sort_opts, index=0, key="mr_sort")
 
-    # ---- Load + aggregate events for this match
-    events = fetch_match_events(sb, match_id=match_id)
-    if events.empty:
-        st.info("Geen match events gevonden (v_gps_match_events).")
+    st.markdown("")
+
+    df_events = fetch_match_events_for_date(sel_date)
+    if df_events.empty:
+        st.info("Geen match events gevonden in v_gps_match_events voor deze datum.")
         st.stop()
 
-    agg = _aggregate_for_period(events, period=period)
-    if agg.empty:
-        st.info("Geen data voor deze selectie.")
-        st.stop()
+    df_phase = build_phase_df(df_events, phase)
 
-    # ---- Sorting (per minute)
-    sort_col = f"{sort_metric}_per_min"
-    if sort_col in agg.columns:
-        agg = agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
-
-    # ---- Charts row (match selection)
-    ch_l, ch_r = st.columns(2)
-    with ch_l:
-        plot_total_distance_bar(agg, period_label=period)
-    with ch_r:
-        plot_sprint_vs_highsprint(agg, period_label=period)
+    # Grafieken (zelfde tab als tabellen)
+    left, right = st.columns(2)
+    with left:
+        plot_td_bar(df_phase, title=f"Total Distance ({phase})")
+    with right:
+        plot_sprint_vs_high(df_phase, title=f"Sprint vs High Sprint ({phase})")
 
     st.markdown("## Tables")
-
-    # Build small tables (1 row, 5 columns)
-    # Table content: Player + ABS + /min (except Max Speed)
-    base = agg.copy()
-    base = base.rename(columns={"player_name": "Player"})
-
-    # TD table
-    td_df = base[["Player", "total_distance", "total_distance_per_min"]].rename(
-        columns={"total_distance": "TD", "total_distance_per_min": "/min"}
-    )
-    td_sty = _style_table(td_df, abs_col="TD", per_min_col="/min")
-
-    # 14.4–19.7
-    r_df = base[["Player", "running", "running_per_min"]].rename(columns={"running": "14.4–19.7", "running_per_min": "/min"})
-    r_sty = _style_table(r_df, abs_col="14.4–19.7", per_min_col="/min")
-
-    # 19.8–25.1
-    s_df = base[["Player", "sprint", "sprint_per_min"]].rename(columns={"sprint": "19.8–25.1", "sprint_per_min": "/min"})
-    s_sty = _style_table(s_df, abs_col="19.8–25.1", per_min_col="/min")
-
-    # 25.2+
-    hs_df = base[["Player", "high_sprint", "high_sprint_per_min"]].rename(columns={"high_sprint": "25.2+", "high_sprint_per_min": "/min"})
-    hs_sty = _style_table(hs_df, abs_col="25.2+", per_min_col="/min")
-
-    # Max speed (0 decimals)
-    ms_df = base[["Player", "max_speed"]].rename(columns={"max_speed": "Max Speed"})
-    ms_sty = _style_table(ms_df, abs_col="Max Speed", per_min_col=None).format({"Max Speed": "{:,.0f}"})
-
-    # Heights: force show all players without internal scroll
-    n_rows = int(len(base))
-    h = _table_height_from_rows(n_rows)
-
-    t1, t2, t3, t4, t5 = st.columns([1.05, 1.0, 1.0, 1.0, 1.0], gap="small")
-    with t1:
-        st.dataframe(td_sty, use_container_width=True, hide_index=True, height=h)
-    with t2:
-        st.dataframe(r_sty, use_container_width=True, hide_index=True, height=h)
-    with t3:
-        st.dataframe(s_sty, use_container_width=True, hide_index=True, height=h)
-    with t4:
-        st.dataframe(hs_sty, use_container_width=True, hide_index=True, height=h)
-    with t5:
-        st.dataframe(ms_sty, use_container_width=True, hide_index=True, height=h)
+    render_tables_row(df_phase, sort_mode=sort_choice)
 
 
 if __name__ == "__main__":
