@@ -5,8 +5,8 @@
 # - Maand kalender (dayGridMonth) met kleuren:
 #     Match/Practice Match = rood
 #     Practice/data        = blauw
-# - Klik op datum of event => selected_day en direct session load plots
-# - ✅ geselecteerde dag zichtbaar via "background event" (geen JS hooks)
+# - Klik op dag-cel (ook als er een event-bar ligt) => selected_day en direct session load plots
+# - Highlight geselecteerde dag (feller) via background event
 #
 # Vereist: streamlit-calendar  -> voeg toe aan requirements.txt
 # ============================================================
@@ -17,8 +17,8 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
+import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from streamlit_calendar import calendar as st_calendar
 
@@ -41,9 +41,6 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
-# highlight kleur voor geselecteerde dag (subtiel op dark theme)
-SELECT_BG = "rgba(255,0,51,0.22)"
-SELECT_BORDER = "rgba(255,0,51,0.95)"
 
 def _normalize_event(e: str) -> str:
     s = str(e).strip().lower()
@@ -110,25 +107,27 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
 
 
 def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
+    """
+    - Normale events (Training/Match) met kleuren
+    - Extra background event voor geselecteerde dag (felle highlight)
+    """
     days_with_data, match_days = _compute_day_sets(df)
 
     events: list[dict] = []
 
-    # 1) highlight geselecteerde dag als background event
-    #    (dit is de stabiele manier zonder JS callbacks)
-    events.append(
-        {
-            "title": "",  # geen tekst
-            "start": selected.isoformat(),
-            "allDay": True,
-            "display": "background",
-            "backgroundColor": SELECT_BG,
-            "borderColor": SELECT_BORDER,
-            "overlap": True,
-        }
-    )
+    # ✅ highlight (background) — feller dan eerst
+    if selected:
+        events.append(
+            {
+                "title": "",
+                "start": selected.isoformat(),
+                "allDay": True,
+                "display": "background",
+                # fel geel/goud (pas aan als je wilt)
+                "color": "rgba(255, 215, 0, 0.55)",
+            }
+        )
 
-    # 2) normale events (Match/Training)
     for d in sorted(days_with_data):
         is_match = d in match_days
         events.append(
@@ -138,10 +137,8 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
                 "allDay": True,
                 "color": MVV_RED if is_match else PRACTICE_BLUE,
                 "textColor": "#ffffff",
-                "extendedProps": {"day": d.isoformat()},
             }
         )
-
     return events
 
 
@@ -155,6 +152,24 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
 
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
+    # ✅ CSS:
+    # 1) events niet klikbaar -> klik valt door naar dag-cel (dateClick)
+    # 2) highlight iets “feller” + ronding
+    st.markdown(
+        """
+        <style>
+          .fc .fc-event { pointer-events: none !important; }
+          .fc .fc-event-main { pointer-events: none !important; }
+
+          /* optioneel: iets strakker uiterlijk */
+          .fc .fc-daygrid-day-frame { border-radius: 10px; }
+          .fc .fc-daygrid-day { border-color: rgba(255,255,255,0.10) !important; }
+          .fc .fc-col-header-cell { border-color: rgba(255,255,255,0.10) !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     events = _build_calendar_events(df, selected=selected)
 
     options = {
@@ -162,37 +177,27 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "initialDate": selected.isoformat(),
         "height": "auto",
         "firstDay": 1,  # maandag
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
+        "headerToolbar": {
+            "left": "prev,next today",
+            "center": "title",
+            "right": "",
+        },
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
-        # background highlight + normale events
-        "eventOrder": "start,title",
+        # ✅ belangrijk: dateClick activeren
+        "dateClick": True,
     }
 
-    # key mag constant blijven; events veranderen toch per rerun
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    if result:
-        # Klik op lege dag
-        if result.get("dateClick"):
-            ds = result["dateClick"].get("dateStr")
-            if ds:
-                st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
-                st.rerun()
+    if result and result.get("dateClick"):
+        ds = result["dateClick"].get("dateStr")
+        if ds:
+            st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
+            st.rerun()
 
-        # Klik op event
-        if result.get("eventClick"):
-            ev = result["eventClick"].get("event", {})
-            ds = ev.get("start")
-            if ds:
-                st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
-                st.rerun()
-
-    st.caption(
-        f"Geselecteerd: {st.session_state[f'{key_prefix}_selected'].strftime('%d-%m-%Y')}  •  "
-        f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}"
-    )
+    st.caption(f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}")
     return st.session_state[f"{key_prefix}_selected"]
 
 
@@ -404,6 +409,9 @@ def session_load_pages_main(df_gps: pd.DataFrame):
     # ✅ FullCalendar maand view (mobielvriendelijk)
     selected_day = calendar_day_picker_fullcalendar(df, key_prefix="sl")
 
+    # toon gekozen dag
+    st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
+
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
     if df_day_all.empty:
         st.info(f"Geen data op {selected_day.strftime('%d-%m-%Y')}.")
@@ -447,5 +455,3 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
-
-
