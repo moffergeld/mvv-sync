@@ -42,10 +42,8 @@ MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
 # highlight kleur voor geselecteerde dag (subtiel op dark theme)
-SELECT_BG = "rgba(255,255,255,0.40)"
-SELECT_BORDER = "rgba(255,0,51,1.00)"
-
-
+SELECT_BG = "rgba(255,0,51,0.22)"
+SELECT_BORDER = "rgba(255,0,51,0.95)"
 
 def _normalize_event(e: str) -> str:
     s = str(e).strip().lower()
@@ -449,4 +447,5 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
 
