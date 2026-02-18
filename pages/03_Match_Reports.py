@@ -1,14 +1,10 @@
 # pages/03_Match_Reports.py
 # ============================================================
-# FIXES:
-# - Absolute waardes: 0 decimalen (ook in de dataframe-weergave)
-# - /min waardes: 2 decimalen (ook in de dataframe-weergave)
-# - Center alignment voor ALLE numerieke kolommen
-# - Player kolom NIET gecentreerd (links)
-#
-# UI beveiliging:
-# - Players (role=player) MOGEN deze pagina zien (en alle spelers in de tabellen).
-# - Geen extra gate nodig; require_auth blijft verplicht.
+# UPDATE (requested):
+# - 2-step selection:
+#   1) Dropdown Opponent (A->Z)
+#   2) Dropdown Date list for that opponent, with (H)/(A) suffix
+# - Uses matches table: opponent + match_date + home_away
 # ============================================================
 
 from __future__ import annotations
@@ -27,6 +23,7 @@ MVV_RED = "#FF0033"
 TEAM_LOGOS_DIR = os.path.join("Assets", "Afbeeldingen", "Team_Logos")
 MVV_LOGO_CANDIDATES = [
     os.path.join(TEAM_LOGOS_DIR, "MVV Maastricht.png"),
+    os.path.join(TEAM_LOGOS_DIR, "MVV.png"),
     os.path.join("Assets", "Afbeeldingen", "Script", "MVV.png"),
     os.path.join("Assets", "Afbeeldingen", "Script", "MVV_logo.png"),
 ]
@@ -42,7 +39,6 @@ SORT_OPTIONS = {
     "Max Speed": ("max_speed", "abs"),
 }
 
-# --- display formats ---
 ABS_FMT_0 = "{:,.0f}"
 PMIN_FMT_2 = "{:,.2f}"
 
@@ -61,6 +57,15 @@ def _safe_int(x) -> Optional[int]:
         return int(float(s))
     except Exception:
         return None
+
+
+def _ha_suffix(home_away: str) -> str:
+    s = (home_away or "").strip().lower()
+    if s.startswith("h"):
+        return "H"
+    if s.startswith("a"):
+        return "A"
+    return ""
 
 
 def _find_logo_path(team_name: str) -> Optional[str]:
@@ -90,8 +95,7 @@ def _find_mvv_logo() -> Optional[str]:
     for p in MVV_LOGO_CANDIDATES:
         if os.path.exists(p):
             return p
-    p = os.path.join(TEAM_LOGOS_DIR, "MVV.png")
-    return p if os.path.exists(p) else None
+    return None
 
 
 def _percentile_color(v: float, p33: float, p66: float) -> str:
@@ -126,7 +130,7 @@ def _style_metric_cols(df: pd.DataFrame, metric_cols: list[str]) -> "pd.io.forma
 
 
 def _table_height_for_n(n_rows: int) -> int:
-    return int(35 * (n_rows + 1) + 10)
+    return int(33 * (n_rows + 1) + 14)
 
 
 def fetch_matches(sb, limit: int = 500) -> pd.DataFrame:
@@ -143,15 +147,18 @@ def fetch_matches(sb, limit: int = 500) -> pd.DataFrame:
     if dfm.empty:
         return dfm
     dfm["match_date"] = pd.to_datetime(dfm["match_date"], errors="coerce").dt.date
+    dfm["opponent"] = dfm["opponent"].fillna("").astype(str).str.strip()
+    dfm["home_away"] = dfm["home_away"].fillna("").astype(str).str.strip()
+    dfm["season"] = dfm["season"].fillna("").astype(str).str.strip()
+    dfm["fixture"] = dfm["fixture"].fillna("").astype(str).str.strip()
+    dfm["match_type"] = dfm["match_type"].fillna("").astype(str).str.strip()
     return dfm
 
 
 def fetch_match_events(sb, match_id: int) -> pd.DataFrame:
     rows = (
         sb.table(MATCH_EVENTS_VIEW)
-        .select(
-            "match_id,player_id,player_name,event,duration,total_distance,running,sprint,high_sprint,max_speed"
-        )
+        .select("match_id,player_name,event,duration,total_distance,running,sprint,high_sprint,max_speed")
         .eq("match_id", match_id)
         .execute()
         .data
@@ -198,16 +205,13 @@ def agg_for_charts_and_tables(dfe_seg: pd.DataFrame) -> pd.DataFrame:
 
     dur = pd.to_numeric(g["duration"], errors="coerce").replace(0, pd.NA)
 
-    # /min (2 dec)
     g["total_distance_min"] = (g["total_distance"] / dur).round(2)
     g["running_min"] = (g["running"] / dur).round(2)
     g["sprint_min"] = (g["sprint"] / dur).round(2)
     g["high_sprint_min"] = (g["high_sprint"] / dur).round(2)
 
-    # absolute (0 dec)
     for c in ["duration", "total_distance", "running", "sprint", "high_sprint"]:
         g[c] = pd.to_numeric(g[c], errors="coerce").round(0)
-
     g["max_speed"] = pd.to_numeric(g["max_speed"], errors="coerce").round(0)
 
     return g
@@ -267,19 +271,12 @@ def _metric_header(abs_col: str) -> str:
 
 
 def _format_and_align_table(sty: "pd.io.formats.style.Styler") -> "pd.io.formats.style.Styler":
-    """
-    - 0 dec voor absolute kolom(len)
-    - 2 dec voor /min
-    - numeriek gecentreerd
-    - Player links
-    """
     df = sty.data
     cols = list(df.columns)
 
     player_col = "Player" if "Player" in cols else cols[0]
     min_col = "/min" if "/min" in cols else None
 
-    # format
     fmt_map = {}
     for c in cols:
         if c == player_col:
@@ -291,7 +288,6 @@ def _format_and_align_table(sty: "pd.io.formats.style.Styler") -> "pd.io.formats
 
     sty = sty.format(fmt_map)
 
-    # alignment
     sty = sty.set_properties(**{"text-align": "left"}, subset=[player_col])
     num_cols = [c for c in cols if c != player_col]
     if num_cols:
@@ -383,8 +379,9 @@ def render_header(match_row: Dict[str, Any]):
         mid_lines.append(opp)
 
     sub = []
-    if home_away:
-        sub.append(home_away)
+    ha = _ha_suffix(home_away)
+    if ha:
+        sub.append("Home" if ha == "H" else "Away")
     if match_type:
         sub.append(match_type)
     if season:
@@ -395,7 +392,7 @@ def render_header(match_row: Dict[str, Any]):
 
     with left:
         if mvv_logo and os.path.exists(mvv_logo):
-            st.image(mvv_logo, width=160)
+            st.image(mvv_logo, width=150)
     with mid:
         st.markdown(f"### {' • '.join([x for x in mid_lines if x])}")
         st.markdown("**" + " • ".join([x for x in sub if x]) + "**")
@@ -403,7 +400,7 @@ def render_header(match_row: Dict[str, Any]):
             st.caption(f"Tegenstander: {opp}")
     with right:
         if opp_logo and os.path.exists(opp_logo):
-            st.image(opp_logo, width=160)
+            st.image(opp_logo, width=150)
 
 
 def main():
@@ -422,28 +419,38 @@ def main():
         st.info("Geen matches gevonden in public.matches.")
         return
 
-    def _label(r: pd.Series) -> str:
-        d = r.get("match_date")
-        opp = r.get("opponent") or ""
-        fixture = r.get("fixture") or ""
-        ha = r.get("home_away") or ""
-        season = r.get("season") or ""
-        gf = _safe_int(r.get("goals_for"))
-        ga = _safe_int(r.get("goals_against"))
-        score = f"{gf}-{ga}" if (gf is not None and ga is not None) else "–"
-        core = fixture if fixture else opp
-        return f"{d} · {core} · {ha} · {season} · {score}"
+    # ---- NEW: Opponent dropdown A->Z ----
+    opp_list = sorted([o for o in matches_df["opponent"].unique().tolist() if o], key=lambda x: x.lower())
+    if not opp_list:
+        st.info("Geen opponents gevonden (matches.opponent is leeg).")
+        return
 
-    options = matches_df["match_id"].tolist()
-    labels = {int(r["match_id"]): _label(r) for _, r in matches_df.iterrows()}
+    c_opp, c_date = st.columns([1, 2])
 
-    sel_match_id = st.selectbox(
-        "Select match",
-        options=options,
-        format_func=lambda mid: labels.get(int(mid), str(mid)),
-        index=0,
-        key="mr_match_select",
+    with c_opp:
+        sel_opp = st.selectbox("Opponent", opp_list, index=0, key="mr_opp_select")
+
+    # ---- NEW: Dates dropdown for selected opponent ----
+    df_opp = matches_df[matches_df["opponent"] == sel_opp].copy()
+    df_opp = df_opp.sort_values("match_date", ascending=False)
+
+    df_opp["ha_suffix"] = df_opp["home_away"].apply(_ha_suffix)
+    df_opp["date_label"] = df_opp.apply(
+        lambda r: f"{r['match_date']} ({r['ha_suffix']})" if r["ha_suffix"] else f"{r['match_date']}",
+        axis=1,
     )
+
+    date_options = df_opp["match_id"].tolist()
+    date_labels = {int(r["match_id"]): str(r["date_label"]) for _, r in df_opp.iterrows()}
+
+    with c_date:
+        sel_match_id = st.selectbox(
+            "Date",
+            options=date_options,
+            format_func=lambda mid: date_labels.get(int(mid), str(mid)),
+            index=0,
+            key="mr_match_by_opp_date",
+        )
 
     match_row = matches_df[matches_df["match_id"] == sel_match_id].iloc[0].to_dict()
     render_header(match_row)
