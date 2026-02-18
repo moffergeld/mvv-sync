@@ -5,7 +5,7 @@
 # - Header: logos zelfde grootte, horizontaal gecentreerd, wisselen bij Away:
 #     Away  -> opponent links, MVV rechts
 #     Home  -> MVV links, opponent rechts
-# - Clubnamen onder de logo's: verticaal gecentreerd t.o.v. de logo’s
+# - Clubnamen onder de logo's: VERWIJDERD (staan al in het midden)
 # - Data uit:
 #     public.matches
 #     public.v_gps_match_events  (events: First Half / Second Half)
@@ -68,39 +68,15 @@ HEADER_HEIGHT = 34
 PAD_HEIGHT = 22
 
 LOGO_W = 170
-TEAM_BLOCK_H = 240  # totaal blok (logo + naam) om naam verticaal te centreren t.o.v. logo
 
 # -----------------------------
 # Global CSS
 # -----------------------------
 st.markdown(
-    f"""
+    """
 <style>
-.block-container {{ padding-top: 1.3rem; }}
-
-/* probeer dataframe overflow te verminderen */
-[data-testid="stDataFrame"] div {{ overflow: visible !important; }}
-
-/* header team block: logo + naam */
-.team-block {{
-  height: {TEAM_BLOCK_H}px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}}
-.team-logo {{
-  width: {LOGO_W}px;
-}}
-/* naam verticaal centreren binnen resterende ruimte */
-.team-name {{
-  flex: 1;
-  display: flex;
-  align-items: center;     /* verticaal */
-  justify-content: center; /* horizontaal */
-  width: 100%;
-  font-weight: 700;
-  opacity: .9;
-}}
+.block-container { padding-top: 1.3rem; }
+[data-testid="stDataFrame"] div { overflow: visible !important; }
 </style>
 """,
     unsafe_allow_html=True,
@@ -317,9 +293,7 @@ def plot_td_bar(df: pd.DataFrame, title: str):
         st.info("Geen data voor grafiek.")
         return
     dff = df.sort_values(COL_TD, ascending=False).copy()
-    fig = go.Figure(
-        data=[go.Bar(x=dff[COL_PLAYER], y=dff[COL_TD], marker=dict(color="#FF0033"), name="TD")]
-    )
+    fig = go.Figure(data=[go.Bar(x=dff[COL_PLAYER], y=dff[COL_TD], marker=dict(color="#FF0033"), name="TD")])
     fig.update_layout(height=330, margin=dict(l=10, r=10, t=40, b=10), title=title, showlegend=False)
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
@@ -393,7 +367,7 @@ def render_tables_row(df_phase: pd.DataFrame):
 
 
 # -----------------------------
-# Header (met verticaal gecentreerde clubnaam)
+# Header (zonder clubnamen onder logo’s)
 # -----------------------------
 def render_match_header(match_row: pd.Series):
     match_date: date = match_row["match_date"]
@@ -429,12 +403,8 @@ def render_match_header(match_row: pd.Series):
     c1, c2, c3 = st.columns([1.2, 2.2, 1.2], vertical_alignment="center")
 
     with c1:
-        st.markdown("<div class='team-block'>", unsafe_allow_html=True)
         if left_logo and left_logo.exists():
             st.image(_read_image_bytes(left_logo), width=LOGO_W)
-        else:
-            st.markdown(f"<div style='height:{LOGO_W}px;'></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='team-name'>{left_team}</div></div>", unsafe_allow_html=True)
 
     with c2:
         st.markdown(
@@ -455,12 +425,8 @@ def render_match_header(match_row: pd.Series):
         )
 
     with c3:
-        st.markdown("<div class='team-block'>", unsafe_allow_html=True)
         if right_logo and right_logo.exists():
             st.image(_read_image_bytes(right_logo), width=LOGO_W)
-        else:
-            st.markdown(f"<div style='height:{LOGO_W}px;'></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='team-name'>{right_team}</div></div>", unsafe_allow_html=True)
 
 
 # -----------------------------
