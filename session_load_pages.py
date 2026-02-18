@@ -6,7 +6,7 @@
 #     Match/Practice Match = rood
 #     Practice/data        = blauw
 # - Klik op datum of event => selected_day en direct session load plots
-# - ✅ geselecteerde dag zichtbaar (highlight + kleine badge)
+# - ✅ geselecteerde dag zichtbaar via "background event" (geen JS hooks)
 #
 # Vereist: streamlit-calendar  -> voeg toe aan requirements.txt
 # ============================================================
@@ -40,6 +40,10 @@ TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
 MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
+
+# highlight kleur voor geselecteerde dag (subtiel op dark theme)
+SELECT_BG = "rgba(255,255,255,0.12)"
+SELECT_BORDER = "rgba(255,255,255,0.45)"
 
 
 def _normalize_event(e: str) -> str:
@@ -75,15 +79,9 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
 
     numeric_cols = [
-        COL_TD,
-        COL_SPRINT,
-        COL_HS,
-        COL_ACC_TOT,
-        COL_ACC_HI,
-        COL_DEC_TOT,
-        COL_DEC_HI,
-        *HR_COLS,
-        "TRIMP",
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -112,10 +110,26 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
     return days_with_data, match_days
 
 
-def _build_calendar_events(df: pd.DataFrame) -> list[dict]:
+def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
     days_with_data, match_days = _compute_day_sets(df)
 
     events: list[dict] = []
+
+    # 1) highlight geselecteerde dag als background event
+    #    (dit is de stabiele manier zonder JS callbacks)
+    events.append(
+        {
+            "title": "",  # geen tekst
+            "start": selected.isoformat(),
+            "allDay": True,
+            "display": "background",
+            "backgroundColor": SELECT_BG,
+            "borderColor": SELECT_BORDER,
+            "overlap": True,
+        }
+    )
+
+    # 2) normale events (Match/Training)
     for d in sorted(days_with_data):
         is_match = d in match_days
         events.append(
@@ -128,37 +142,11 @@ def _build_calendar_events(df: pd.DataFrame) -> list[dict]:
                 "extendedProps": {"day": d.isoformat()},
             }
         )
+
     return events
 
 
-def _css_selected_day_highlight() -> None:
-    # Highlight day cell met data-date="YYYY-MM-DD"
-    # FullCalendar gebruikt .fc-daygrid-day[data-date="..."]
-    st.markdown(
-        """
-        <style>
-        /* subtiele highlight voor geselecteerde dag */
-        .fc .fc-daygrid-day.sl-selected-day {
-            outline: 2px solid rgba(255,255,255,0.55);
-            outline-offset: -2px;
-            border-radius: 6px;
-        }
-        /* kleine badge rechtsboven in cel */
-        .fc .fc-daygrid-day.sl-selected-day .fc-daygrid-day-number {
-            background: rgba(255,255,255,0.15);
-            border-radius: 6px;
-            padding: 2px 6px;
-            font-weight: 800;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -> date:
-    _css_selected_day_highlight()
-
     days_with_data, _ = _compute_day_sets(df)
     min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
@@ -168,7 +156,7 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
 
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    events = _build_calendar_events(df)
+    events = _build_calendar_events(df, selected=selected)
 
     options = {
         "initialView": "dayGridMonth",
@@ -179,19 +167,12 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
-        # ✅ JS hook: zet class op geselecteerde dag zodat CSS kan highlighten
-        "datesSet": (
-            "function(info){"
-            "  const sel = '" + selected.isoformat() + "';"
-            "  document.querySelectorAll('.fc-daygrid-day').forEach(el=>el.classList.remove('sl-selected-day'));"
-            "  const el = document.querySelector('.fc-daygrid-day[data-date=\"'+sel+'\"]');"
-            "  if(el){ el.classList.add('sl-selected-day'); }"
-            "}"
-        ),
+        # background highlight + normale events
+        "eventOrder": "start,title",
     }
 
-    # Belangrijk: key moet veranderen als selected verandert, anders wordt datesSet niet opnieuw toegepast
-    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc_{selected.isoformat()}")
+    # key mag constant blijven; events veranderen toch per rerun
+    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
     if result:
         # Klik op lege dag
@@ -209,7 +190,6 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
                 st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
                 st.rerun()
 
-    # Extra: toon gekozen datum duidelijk onder kalender
     st.caption(
         f"Geselecteerd: {st.session_state[f'{key_prefix}_selected'].strftime('%d-%m-%Y')}  •  "
         f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}"
@@ -221,15 +201,9 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     metric_cols = [
-        COL_TD,
-        COL_SPRINT,
-        COL_HS,
-        COL_ACC_TOT,
-        COL_ACC_HI,
-        COL_DEC_TOT,
-        COL_DEC_HI,
-        *HR_COLS,
-        "TRIMP",
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
@@ -262,8 +236,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     fig.add_bar(
-        x=players,
-        y=vals,
+        x=players, y=vals,
         marker_color="rgba(255,150,150,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in vals],
         textposition="inside",
@@ -272,12 +245,9 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     )
     mean_val = float(np.nanmean(vals)) if len(vals) else 0.0
     fig.add_hline(
-        y=mean_val,
-        line_dash="dot",
-        line_color="black",
+        y=mean_val, line_dash="dot", line_color="black",
         annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
-        annotation_position="top left",
-        annotation_font_size=10,
+        annotation_position="top left", annotation_font_size=10,
     )
     fig.update_layout(
         title="Total Distance",
@@ -302,19 +272,13 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
     x = np.arange(len(players))
     fig = go.Figure()
     fig.add_bar(
-        x=x - 0.2,
-        y=sprint_vals,
-        width=0.4,
-        name="Sprint",
+        x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint",
         marker_color="rgba(255,180,180,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in sprint_vals],
         textposition="outside",
     )
     fig.add_bar(
-        x=x + 0.2,
-        y=hs_vals,
-        width=0.4,
-        name="High Sprint",
+        x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint",
         marker_color="rgba(150,0,0,0.9)",
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
@@ -344,37 +308,17 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     if COL_ACC_TOT in data.columns:
-        fig.add_bar(
-            x=x - 1.5 * width,
-            y=data[COL_ACC_TOT],
-            width=width,
-            name="Total Accelerations",
-            marker_color="rgba(255,180,180,0.9)",
-        )
+        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations",
+                    marker_color="rgba(255,180,180,0.9)")
     if COL_ACC_HI in data.columns:
-        fig.add_bar(
-            x=x - 0.5 * width,
-            y=data[COL_ACC_HI],
-            width=width,
-            name="High Accelerations",
-            marker_color="rgba(200,0,0,0.9)",
-        )
+        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations",
+                    marker_color="rgba(200,0,0,0.9)")
     if COL_DEC_TOT in data.columns:
-        fig.add_bar(
-            x=x + 0.5 * width,
-            y=data[COL_DEC_TOT],
-            width=width,
-            name="Total Decelerations",
-            marker_color="rgba(180,210,255,0.9)",
-        )
+        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations",
+                    marker_color="rgba(180,210,255,0.9)")
     if COL_DEC_HI in data.columns:
-        fig.add_bar(
-            x=x + 1.5 * width,
-            y=data[COL_DEC_HI],
-            width=width,
-            name="High Decelerations",
-            marker_color="rgba(0,60,180,0.9)",
-        )
+        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
+                    marker_color="rgba(0,60,180,0.9)")
 
     fig.update_layout(
         title="Accelerations / Decelerations",
@@ -383,8 +327,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         barmode="group",
         margin=dict(l=10, r=10, t=40, b=80),
     )
-    fig.update_xaxes(tickangle=90)
-    fig.update_xaxes(tickvals=x, ticktext=players)
+    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -415,9 +358,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         for idx, z in enumerate(have_hr):
             x = base_x + (start + idx * bar_w)
             fig.add_bar(
-                x=x,
-                y=df_agg[z],
-                name=z,
+                x=x, y=df_agg[z], name=z,
                 marker_color=color_map.get(z, "gray"),
                 width=bar_w * 0.95,
                 secondary_y=False,
@@ -426,10 +367,8 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     if has_trimp:
         fig.add_trace(
             go.Scatter(
-                x=base_x,
-                y=df_agg["TRIMP"],
-                mode="lines+markers",
-                name="HR Trimp",
+                x=base_x, y=df_agg["TRIMP"],
+                mode="lines+markers", name="HR Trimp",
                 line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
             ),
             secondary_y=True,
