@@ -5,9 +5,9 @@
 # - Maand kalender (dayGridMonth) met kleuren:
 #     Match/Practice Match = rood
 #     Practice/data        = blauw
-# - Klik op event => selected_day en direct session load plots
-# - Highlight selected day (feller) via background event
-# - Legenda boven de grafieken (horizontaal) ZONDER over titels
+# - Klik op datum OF event => selected_day en direct session load plots
+# - Highlight selected day (fel) via background event
+# - Legenda direct onder de titel (boven de plot) zonder overlap
 # - Bereik-tekst onder kalender weggehaald
 # ============================================================
 
@@ -159,7 +159,7 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
           .fc .fc-toolbar-title { font-weight: 800; }
           .fc .fc-button { border-radius: 8px; }
           .fc .fc-daygrid-day-number { opacity: .9; font-weight: 700; }
-          .fc .fc-daygrid-day-frame { cursor: pointer; }
+          .fc .fc-daygrid-day-frame { cursor: pointer; } /* hele tile klikbaar (dateClick) */
           .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 700; }
         </style>
         """,
@@ -226,13 +226,13 @@ def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> p
     return df_day
 
 
-def _legend_top_no_overlap(fig: go.Figure, *, n_items: int, y: float = 1.02) -> None:
+def _legend_directly_under_title(fig: go.Figure, *, n_items: int) -> None:
     """
-    Zet legenda bovenin, maar buiten de titel-area (dus geen overlap).
-    We maken extra top-margin en plaatsen legend net onder de titel.
+    Legenda net onder de titel:
+    - y=1.06..1.10 (paper coords) => boven plot, onder titel
+    - extra top margin zodat het altijd past
     """
-    # extra ruimte bovenin voor titel + legenda
-    top_margin = 90 if n_items <= 3 else 110 if n_items <= 6 else 135
+    top_margin = 84 if n_items <= 2 else 96 if n_items <= 4 else 112 if n_items <= 6 else 128
 
     fig.update_layout(
         margin=dict(l=10, r=10, t=top_margin, b=80),
@@ -241,7 +241,8 @@ def _legend_top_no_overlap(fig: go.Figure, *, n_items: int, y: float = 1.02) -> 
             xanchor="left",
             x=0.0,
             yanchor="top",
-            y=y,  # net onder titel
+            y=1.085,  # ✅ net onder de titel
+            tracegroupgap=8,
         ),
     )
 
@@ -279,7 +280,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
         xaxis_title=None,
     )
     fig.update_xaxes(tickangle=90)
-    _legend_top_no_overlap(fig, n_items=1, y=0.98)
+    _legend_directly_under_title(fig, n_items=1)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -316,7 +317,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
         barmode="group",
     )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _legend_top_no_overlap(fig, n_items=2, y=0.98)
+    _legend_directly_under_title(fig, n_items=2)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -354,7 +355,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         barmode="group",
     )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _legend_top_no_overlap(fig, n_items=4, y=0.98)
+    _legend_directly_under_title(fig, n_items=4)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -413,7 +414,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     if has_trimp:
         fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
 
-    _legend_top_no_overlap(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)), y=0.985)
+    _legend_directly_under_title(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)))
     st.plotly_chart(fig, use_container_width=True)
 
 
