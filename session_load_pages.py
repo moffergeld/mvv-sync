@@ -7,18 +7,8 @@
 #     Practice/data        = blauw
 # - Klik op event => selected_day en direct session load plots
 # - Highlight selected day (feller) via background event
-# - Legenda boven de grafieken (horizontaal)
+# - Legenda boven de grafieken (horizontaal) ZONDER over titels
 # - Bereik-tekst onder kalender weggehaald
-#
-# Vereist:
-#   pip install streamlit-calendar
-#   + voeg "streamlit-calendar" toe aan requirements.txt
-#
-# Let op:
-# FullCalendar (via streamlit-calendar) geeft standaard alleen click-events op
-# day-cells door aan de component als er een dateClick callback wordt getriggerd.
-# In de praktijk is het meestal "eventClick" (dus op de balk klikken).
-# "Hele tile klikbaar" is in deze component niet 100% af te dwingen zonder custom JS.
 # ============================================================
 
 from __future__ import annotations
@@ -52,7 +42,7 @@ MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
 # Selected-day highlight (fel)
-SELECT_BG = "rgba(255, 215, 0, 0.55)"   # goud/amber, feller
+SELECT_BG = "rgba(255, 215, 0, 0.55)"   # goud/amber
 SELECT_BORDER = "rgba(255, 215, 0, 1.0)"
 
 
@@ -80,7 +70,6 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["_event_norm"] == "summary"].copy()
 
-    # TRIMP kolom zoeken
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -125,12 +114,11 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
 
     events: list[dict] = []
 
-    # ✅ selected day highlight (achtergrond)
+    # selected day highlight (achtergrond)
     events.append(
         {
             "title": "",
             "start": selected.isoformat(),
-            "end": selected.isoformat(),
             "allDay": True,
             "display": "background",
             "backgroundColor": SELECT_BG,
@@ -138,7 +126,6 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
         }
     )
 
-    # balk-events (training/match)
     for d in sorted(days_with_data):
         is_match = d in match_days
         events.append(
@@ -163,20 +150,16 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
 
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    # events incl. highlight
     events = _build_calendar_events(df, selected)
 
-    # CSS: nettere kalender + duidelijker selected background
     st.markdown(
         """
         <style>
-          /* FullCalendar: iets meer spacing en betere leesbaarheid op dark */
           .fc { font-size: 13px; }
           .fc .fc-toolbar-title { font-weight: 800; }
           .fc .fc-button { border-radius: 8px; }
           .fc .fc-daygrid-day-number { opacity: .9; font-weight: 700; }
-          .fc .fc-daygrid-day-frame { cursor: pointer; } /* hint: tile lijkt klikbaar */
-          /* Events */
+          .fc .fc-daygrid-day-frame { cursor: pointer; }
           .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 700; }
         </style>
         """,
@@ -187,30 +170,23 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "initialView": "dayGridMonth",
         "initialDate": selected.isoformat(),
         "height": "auto",
-        "firstDay": 1,  # maandag
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "",
-        },
+        "firstDay": 1,
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
-        # dateClick werkt soms alleen als de cell echt leeg is; met events is eventClick leidend
         "selectable": True,
     }
 
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
     if result:
-        # Klik op lege dag (werkt niet altijd als er events in de cell staan)
         dc = result.get("dateClick")
         if dc and dc.get("dateStr"):
             ds = dc["dateStr"]
             st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
             st.rerun()
 
-        # Klik op event (werkt altijd op de balk)
         ec = result.get("eventClick")
         if ec:
             ev = ec.get("event", {}) or {}
@@ -250,14 +226,22 @@ def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> p
     return df_day
 
 
-def _apply_legend_top(fig: go.Figure, *, x: float = 0.0, y: float = 1.15) -> None:
+def _legend_top_no_overlap(fig: go.Figure, *, n_items: int, y: float = 1.02) -> None:
+    """
+    Zet legenda bovenin, maar buiten de titel-area (dus geen overlap).
+    We maken extra top-margin en plaatsen legend net onder de titel.
+    """
+    # extra ruimte bovenin voor titel + legenda
+    top_margin = 90 if n_items <= 3 else 110 if n_items <= 6 else 135
+
     fig.update_layout(
+        margin=dict(l=10, r=10, t=top_margin, b=80),
         legend=dict(
             orientation="h",
             xanchor="left",
-            x=x,
-            yanchor="bottom",
-            y=y,
+            x=0.0,
+            yanchor="top",
+            y=y,  # net onder titel
         ),
     )
 
@@ -293,10 +277,9 @@ def _plot_total_distance(df_agg: pd.DataFrame):
         title="Total Distance",
         yaxis_title="Total Distance (m)",
         xaxis_title=None,
-        margin=dict(l=10, r=10, t=90, b=80),
     )
     fig.update_xaxes(tickangle=90)
-    _apply_legend_top(fig, y=1.12)
+    _legend_top_no_overlap(fig, n_items=1, y=0.98)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -331,10 +314,9 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
         yaxis_title="Distance (m)",
         xaxis_title=None,
         barmode="group",
-        margin=dict(l=10, r=10, t=95, b=80),
     )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _apply_legend_top(fig, y=1.15)
+    _legend_top_no_overlap(fig, n_items=2, y=0.98)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -370,10 +352,9 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         yaxis_title="Aantal (N)",
         xaxis_title=None,
         barmode="group",
-        margin=dict(l=10, r=10, t=105, b=80),
     )
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _apply_legend_top(fig, y=1.18)
+    _legend_top_no_overlap(fig, n_items=4, y=0.98)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -389,7 +370,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     base_x = np.arange(len(players))
 
     fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
-
     color_map = {
         "HRzone1": "rgba(180,180,180,0.9)",
         "HRzone2": "rgba(150,200,255,0.9)",
@@ -427,14 +407,13 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         xaxis_title=None,
         barmode="group",
         bargap=0.15,
-        margin=dict(l=10, r=10, t=130, b=80),
     )
     fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
     fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
     if has_trimp:
         fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
 
-    _apply_legend_top(fig, y=1.24)  # veel items → iets hoger
+    _legend_top_no_overlap(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)), y=0.985)
     st.plotly_chart(fig, use_container_width=True)
 
 
