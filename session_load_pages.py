@@ -3,11 +3,12 @@
 # Session Load (Streamlit)
 # ✅ Optie C: FullCalendar maand view + direct Session Load
 # ✅ Team selectie (Aan/Uit):
-#    - Vaste selectie (XI) + Wisselspelers + (optioneel) Alle spelers
-#    - Spelers toevoegen/verwijderen via dropdowns (multiselect)
-#    - Mediaan-lijnen per groep:
-#        * Total Distance: medianen per groep
-#        * Sprint & High Sprint: altijd medianen (team + groepen indien selectie aan)
+#    - Vaste selectie (XI) + Wisselspelers
+#    - "Select all" als optie IN de dropdowns (geen aparte toggle)
+#    - Layout: Team selectie aan + beide dropdowns naast elkaar (zelfde rij)
+#    - Mediaan-lijnen:
+#        * Total Distance: mediaan team + (optioneel) vaste/wissels
+#        * Sprint & High Sprint: altijd medianen + (optioneel) vaste/wissels
 # ============================================================
 
 from __future__ import annotations
@@ -43,6 +44,9 @@ PRACTICE_BLUE = "#4AA3FF"
 # Selected-day highlight (fel)
 SELECT_BG = "rgba(255, 215, 0, 0.55)"
 SELECT_BORDER = "rgba(255, 215, 0, 1.0)"
+
+# Dropdown "select all" option label
+SELECT_ALL_OPT = "— Select all —"
 
 
 # -------------------------
@@ -270,6 +274,74 @@ def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
     )
 
 
+def _resolve_select_all(selected: list[str], players_all: list[str]) -> list[str]:
+    # If "Select all" chosen, return all players; otherwise filter valid
+    if any(s == SELECT_ALL_OPT for s in selected):
+        return players_all
+    return [p for p in selected if p in players_all]
+
+
+def _team_selection_ui_inline(players_all: list[str]) -> tuple[bool, list[str], list[str]]:
+    """
+    Inline layout:
+      [Team selectie aan toggle] [Vaste selectie multiselect] [Wisselspelers multiselect]
+    Select all is an option inside both dropdowns.
+    Returns: enabled, starters, subs
+    """
+    st.markdown("### Team selectie")
+
+    # persistent defaults
+    if "sl_team_sel_on" not in st.session_state:
+        st.session_state["sl_team_sel_on"] = False
+    if "sl_starters_raw" not in st.session_state:
+        st.session_state["sl_starters_raw"] = []
+    if "sl_subs_raw" not in st.session_state:
+        st.session_state["sl_subs_raw"] = []
+
+    opt_all = [SELECT_ALL_OPT] + players_all
+
+    c1, c2, c3 = st.columns([0.9, 3.0, 3.0], vertical_alignment="center")
+    with c1:
+        enabled = st.toggle("Aan", value=st.session_state["sl_team_sel_on"], key="sl_team_sel_on")
+
+    if not enabled:
+        # still render empty placeholders for stable layout
+        with c2:
+            st.multiselect("Vaste selectie", options=opt_all, default=[], key="sl_starters_raw_disabled")
+        with c3:
+            st.multiselect("Wisselspelers", options=opt_all, default=[], key="sl_subs_raw_disabled")
+        return False, [], []
+
+    with c2:
+        starters_raw = st.multiselect(
+            "Vaste selectie",
+            options=opt_all,
+            default=[p for p in st.session_state["sl_starters_raw"] if p in opt_all],
+            key="sl_starters_raw",
+        )
+
+    # subs options should exclude starters (unless Select all is chosen in subs)
+    starters_resolved = _resolve_select_all(starters_raw, players_all)
+    subs_pool = [p for p in players_all if p not in set(starters_resolved)]
+    opt_all_subs = [SELECT_ALL_OPT] + subs_pool
+
+    with c3:
+        subs_raw = st.multiselect(
+            "Wisselspelers",
+            options=opt_all_subs,
+            default=[p for p in st.session_state["sl_subs_raw"] if p in opt_all_subs],
+            key="sl_subs_raw",
+        )
+
+    subs_resolved = _resolve_select_all(subs_raw, subs_pool)
+
+    # final safety: no overlap
+    starters_final = starters_resolved
+    subs_final = [p for p in subs_resolved if p not in set(starters_final)]
+
+    return True, starters_final, subs_final
+
+
 def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden.")
@@ -290,26 +362,19 @@ def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] |
         showlegend=True,
     )
 
-    # ✅ altijd team-mediaan
     med_team = _median_safe(vals)
     if med_team is not None:
         _add_median_line(fig, med_team, f"Mediaan (team): {med_team:,.0f} m".replace(",", " "))
 
-    # ✅ per selectie mediaan
     if groups:
         for gname, gplayers in groups.items():
             med = _median_for_players(df_agg, gplayers, COL_TD)
             if med is not None:
                 _add_median_line(fig, med, f"Mediaan ({gname}): {med:,.0f} m".replace(",", " "))
 
-    fig.update_layout(
-        title="Total Distance",
-        yaxis_title="Total Distance (m)",
-        xaxis_title=None,
-    )
+    fig.update_layout(title="Total Distance", yaxis_title="Total Distance (m)", xaxis_title=None)
     fig.update_xaxes(tickangle=90)
     _legend_directly_under_title(fig, n_items=1)
-
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -338,7 +403,6 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None
         textposition="outside",
     )
 
-    # ✅ altijd medianen (team) voor beide metrics
     med_s_team = _median_safe(sprint_vals)
     med_h_team = _median_safe(hs_vals)
     if med_s_team is not None:
@@ -346,7 +410,6 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None
     if med_h_team is not None:
         _add_median_line(fig, med_h_team, f"Mediaan High Sprint (team): {med_h_team:,.0f} m".replace(",", " "))
 
-    # ✅ per selectie: medianen voor beide metrics
     if groups:
         for gname, gplayers in groups.items():
             ms = _median_for_players(df_agg, gplayers, COL_SPRINT)
@@ -356,15 +419,9 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None
             if mh is not None:
                 _add_median_line(fig, mh, f"Mediaan High Sprint ({gname}): {mh:,.0f} m".replace(",", " "))
 
-    fig.update_layout(
-        title="Sprint & High Sprint Distance",
-        yaxis_title="Distance (m)",
-        xaxis_title=None,
-        barmode="group",
-    )
+    fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="Distance (m)", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     _legend_directly_under_title(fig, n_items=2)
-
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -394,15 +451,9 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
         fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations",
                     marker_color="rgba(0,60,180,0.9)")
 
-    fig.update_layout(
-        title="Accelerations / Decelerations",
-        yaxis_title="Aantal (N)",
-        xaxis_title=None,
-        barmode="group",
-    )
+    fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     _legend_directly_under_title(fig, n_items=4)
-
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -449,12 +500,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
             secondary_y=True,
         )
 
-    fig.update_layout(
-        title="Time in HR zone",
-        xaxis_title=None,
-        barmode="group",
-        bargap=0.15,
-    )
+    fig.update_layout(title="Time in HR zone", xaxis_title=None, barmode="group", bargap=0.15)
     fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
     fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
     if has_trimp:
@@ -462,43 +508,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
 
     _legend_directly_under_title(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)))
     st.plotly_chart(fig, use_container_width=True)
-
-
-def _team_selection_ui(players_all: list[str]) -> tuple[bool, bool, list[str], list[str]]:
-    """
-    Returns:
-      enabled, use_all_players_mode, starters, subs
-    """
-    st.markdown("### Team selectie")
-    enabled = st.toggle("Team selectie aan", value=False, key="sl_team_sel_on")
-
-    if not enabled:
-        return False, False, [], []
-
-    use_all = st.toggle("Alle spelers selectie (negeer vaste/wissels)", value=False, key="sl_team_sel_all")
-
-    # persistent defaults
-    if "sl_starters" not in st.session_state:
-        st.session_state["sl_starters"] = []
-    if "sl_subs" not in st.session_state:
-        st.session_state["sl_subs"] = []
-
-    starters = st.multiselect(
-        "Vaste selectie",
-        options=players_all,
-        default=[p for p in st.session_state["sl_starters"] if p in players_all],
-        key="sl_starters",
-    )
-
-    subs_opts = [p for p in players_all if p not in starters]
-    subs = st.multiselect(
-        "Wisselspelers",
-        options=subs_opts,
-        default=[p for p in st.session_state["sl_subs"] if p in subs_opts],
-        key="sl_subs",
-    )
-
-    return True, use_all, starters, subs
 
 
 def session_load_pages_main(df_gps: pd.DataFrame):
@@ -544,7 +553,6 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     st.caption("Beschikbare sessie op deze dag: " + (", ".join(types_day) if types_day else "—"))
 
-    # aggregate per player
     df_agg = _agg_by_player(df_day)
     if df_agg.empty:
         st.warning("Geen data om te aggregeren per speler.")
@@ -552,25 +560,17 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     players_all = sorted(df_agg[COL_PLAYER].astype(str).unique().tolist())
 
-    # --- Team selectie UI ---
-    team_on, all_players_mode, starters, subs = _team_selection_ui(players_all)
+    # Team selectie UI inline + select all in dropdown
+    team_on, starters, subs = _team_selection_ui_inline(players_all)
 
     groups: dict[str, list[str]] | None = None
     if team_on:
-        if all_players_mode:
-            # alleen 1 groep: All Players (handig als je later wilt vergelijken met subsets)
-            groups = {"Alle spelers": players_all}
-        else:
-            # force unique + filter bestaand
-            starters_u = [p for p in starters if p in players_all]
-            subs_u = [p for p in subs if p in players_all and p not in starters_u]
-            groups = {}
-            if starters_u:
-                groups["Vaste selectie"] = starters_u
-            if subs_u:
-                groups["Wissels"] = subs_u
+        groups = {}
+        if starters:
+            groups["Vaste selectie"] = starters
+        if subs:
+            groups["Wissels"] = subs
 
-    # --- Plots ---
     col_top1, col_top2 = st.columns(2)
     with col_top1:
         _plot_total_distance(df_agg, groups=groups)
