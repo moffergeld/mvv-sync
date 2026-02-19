@@ -28,9 +28,9 @@ import pandas as pd
 import requests
 import streamlit as st
 
-import session_load_pages
-import acwr_pages
-import ffp_pages
+import pages.Subscripts.session_load_pages
+import pages.Subscripts.acwr_pages
+import pages.Subscripts.ffp_pages
 
 st.set_page_config(page_title="GPS Data", layout="wide")
 
