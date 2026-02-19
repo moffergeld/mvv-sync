@@ -2,13 +2,12 @@
 # ============================================================
 # Session Load (Streamlit)
 # ✅ Optie C: FullCalendar maand view + direct Session Load
-# - Maand kalender (dayGridMonth) met kleuren:
-#     Match/Practice Match = rood
-#     Practice/data        = blauw
-# - Klik op datum OF event => selected_day en direct session load plots
-# - Highlight selected day (fel) via background event
-# - Legenda direct onder de titel (boven de plot) zonder overlap
-# - Bereik-tekst onder kalender weggehaald
+# ✅ Team selectie (Aan/Uit):
+#    - Vaste selectie (XI) + Wisselspelers + (optioneel) Alle spelers
+#    - Spelers toevoegen/verwijderen via dropdowns (multiselect)
+#    - Mediaan-lijnen per groep:
+#        * Total Distance: medianen per groep
+#        * Sprint & High Sprint: altijd medianen (team + groepen indien selectie aan)
 # ============================================================
 
 from __future__ import annotations
@@ -42,10 +41,13 @@ MVV_RED = "#FF0033"
 PRACTICE_BLUE = "#4AA3FF"
 
 # Selected-day highlight (fel)
-SELECT_BG = "rgba(255, 215, 0, 0.55)"   # goud/amber
+SELECT_BG = "rgba(255, 215, 0, 0.55)"
 SELECT_BORDER = "rgba(255, 215, 0, 1.0)"
 
 
+# -------------------------
+# Helpers
+# -------------------------
 def _normalize_event(e: str) -> str:
     s = str(e).strip().lower()
     return "summary" if s == "summary" else s
@@ -135,7 +137,6 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
                 "allDay": True,
                 "color": MVV_RED if is_match else PRACTICE_BLUE,
                 "textColor": "#ffffff",
-                "extendedProps": {"day": d.isoformat()},
             }
         )
     return events
@@ -150,8 +151,6 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
 
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    events = _build_calendar_events(df, selected)
-
     st.markdown(
         """
         <style>
@@ -159,8 +158,8 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
           .fc .fc-toolbar-title { font-weight: 800; }
           .fc .fc-button { border-radius: 8px; }
           .fc .fc-daygrid-day-number { opacity: .9; font-weight: 700; }
-          .fc .fc-daygrid-day-frame { cursor: pointer; } /* hele tile klikbaar (dateClick) */
-          .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 700; }
+          .fc .fc-daygrid-day-frame { cursor: pointer; }
+          .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 800; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -178,6 +177,7 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "selectable": True,
     }
 
+    events = _build_calendar_events(df, selected)
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
     if result:
@@ -227,13 +227,7 @@ def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> p
 
 
 def _legend_directly_under_title(fig: go.Figure, *, n_items: int) -> None:
-    """
-    Legenda net onder de titel:
-    - y=1.06..1.10 (paper coords) => boven plot, onder titel
-    - extra top margin zodat het altijd past
-    """
     top_margin = 84 if n_items <= 2 else 96 if n_items <= 4 else 112 if n_items <= 6 else 128
-
     fig.update_layout(
         margin=dict(l=10, r=10, t=top_margin, b=80),
         legend=dict(
@@ -241,13 +235,42 @@ def _legend_directly_under_title(fig: go.Figure, *, n_items: int) -> None:
             xanchor="left",
             x=0.0,
             yanchor="top",
-            y=1.085,  # ✅ net onder de titel
+            y=1.085,
             tracegroupgap=8,
         ),
     )
 
 
-def _plot_total_distance(df_agg: pd.DataFrame):
+def _median_safe(a: np.ndarray) -> float | None:
+    a = np.asarray(a, dtype=float)
+    a = a[~np.isnan(a)]
+    if a.size == 0:
+        return None
+    return float(np.median(a))
+
+
+def _median_for_players(df_agg: pd.DataFrame, players: list[str], col: str) -> float | None:
+    if df_agg.empty or col not in df_agg.columns:
+        return None
+    sub = df_agg[df_agg[COL_PLAYER].astype(str).isin(players)]
+    if sub.empty:
+        return None
+    return _median_safe(sub[col].to_numpy())
+
+
+def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
+    fig.add_hline(
+        y=y,
+        line_dash="dot",
+        line_width=2,
+        line_color="rgba(255,255,255,0.55)",
+        annotation_text=label,
+        annotation_position="top left",
+        annotation_font_size=10,
+    )
+
+
+def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden.")
         return
@@ -267,12 +290,17 @@ def _plot_total_distance(df_agg: pd.DataFrame):
         showlegend=True,
     )
 
-    mean_val = float(np.nanmean(vals)) if len(vals) else 0.0
-    fig.add_hline(
-        y=mean_val, line_dash="dot", line_color="black",
-        annotation_text=f"Gem.: {mean_val:,.0f} m".replace(",", " "),
-        annotation_position="top left", annotation_font_size=10,
-    )
+    # ✅ altijd team-mediaan
+    med_team = _median_safe(vals)
+    if med_team is not None:
+        _add_median_line(fig, med_team, f"Mediaan (team): {med_team:,.0f} m".replace(",", " "))
+
+    # ✅ per selectie mediaan
+    if groups:
+        for gname, gplayers in groups.items():
+            med = _median_for_players(df_agg, gplayers, COL_TD)
+            if med is not None:
+                _add_median_line(fig, med, f"Mediaan ({gname}): {med:,.0f} m".replace(",", " "))
 
     fig.update_layout(
         title="Total Distance",
@@ -285,7 +313,7 @@ def _plot_total_distance(df_agg: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _plot_sprint_hs(df_agg: pd.DataFrame):
+def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
         st.info("Sprint / High Sprint kolommen niet compleet.")
         return
@@ -309,6 +337,24 @@ def _plot_sprint_hs(df_agg: pd.DataFrame):
         text=[f"{v:,.0f}".replace(",", " ") for v in hs_vals],
         textposition="outside",
     )
+
+    # ✅ altijd medianen (team) voor beide metrics
+    med_s_team = _median_safe(sprint_vals)
+    med_h_team = _median_safe(hs_vals)
+    if med_s_team is not None:
+        _add_median_line(fig, med_s_team, f"Mediaan Sprint (team): {med_s_team:,.0f} m".replace(",", " "))
+    if med_h_team is not None:
+        _add_median_line(fig, med_h_team, f"Mediaan High Sprint (team): {med_h_team:,.0f} m".replace(",", " "))
+
+    # ✅ per selectie: medianen voor beide metrics
+    if groups:
+        for gname, gplayers in groups.items():
+            ms = _median_for_players(df_agg, gplayers, COL_SPRINT)
+            mh = _median_for_players(df_agg, gplayers, COL_HS)
+            if ms is not None:
+                _add_median_line(fig, ms, f"Mediaan Sprint ({gname}): {ms:,.0f} m".replace(",", " "))
+            if mh is not None:
+                _add_median_line(fig, mh, f"Mediaan High Sprint ({gname}): {mh:,.0f} m".replace(",", " "))
 
     fig.update_layout(
         title="Sprint & High Sprint Distance",
@@ -418,6 +464,43 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
+def _team_selection_ui(players_all: list[str]) -> tuple[bool, bool, list[str], list[str]]:
+    """
+    Returns:
+      enabled, use_all_players_mode, starters, subs
+    """
+    st.markdown("### Team selectie")
+    enabled = st.toggle("Team selectie aan", value=False, key="sl_team_sel_on")
+
+    if not enabled:
+        return False, False, [], []
+
+    use_all = st.toggle("Alle spelers selectie (negeer vaste/wissels)", value=False, key="sl_team_sel_all")
+
+    # persistent defaults
+    if "sl_starters" not in st.session_state:
+        st.session_state["sl_starters"] = []
+    if "sl_subs" not in st.session_state:
+        st.session_state["sl_subs"] = []
+
+    starters = st.multiselect(
+        "Vaste selectie",
+        options=players_all,
+        default=[p for p in st.session_state["sl_starters"] if p in players_all],
+        key="sl_starters",
+    )
+
+    subs_opts = [p for p in players_all if p not in starters]
+    subs = st.multiselect(
+        "Wisselspelers",
+        options=subs_opts,
+        default=[p for p in st.session_state["sl_subs"] if p in subs_opts],
+        key="sl_subs",
+    )
+
+    return True, use_all, starters, subs
+
+
 def session_load_pages_main(df_gps: pd.DataFrame):
     st.header("Session Load")
 
@@ -461,16 +544,38 @@ def session_load_pages_main(df_gps: pd.DataFrame):
 
     st.caption("Beschikbare sessie op deze dag: " + (", ".join(types_day) if types_day else "—"))
 
+    # aggregate per player
     df_agg = _agg_by_player(df_day)
     if df_agg.empty:
         st.warning("Geen data om te aggregeren per speler.")
         return
 
+    players_all = sorted(df_agg[COL_PLAYER].astype(str).unique().tolist())
+
+    # --- Team selectie UI ---
+    team_on, all_players_mode, starters, subs = _team_selection_ui(players_all)
+
+    groups: dict[str, list[str]] | None = None
+    if team_on:
+        if all_players_mode:
+            # alleen 1 groep: All Players (handig als je later wilt vergelijken met subsets)
+            groups = {"Alle spelers": players_all}
+        else:
+            # force unique + filter bestaand
+            starters_u = [p for p in starters if p in players_all]
+            subs_u = [p for p in subs if p in players_all and p not in starters_u]
+            groups = {}
+            if starters_u:
+                groups["Vaste selectie"] = starters_u
+            if subs_u:
+                groups["Wissels"] = subs_u
+
+    # --- Plots ---
     col_top1, col_top2 = st.columns(2)
     with col_top1:
-        _plot_total_distance(df_agg)
+        _plot_total_distance(df_agg, groups=groups)
     with col_top2:
-        _plot_sprint_hs(df_agg)
+        _plot_sprint_hs(df_agg, groups=groups)
 
     col_bot1, col_bot2 = st.columns(2)
     with col_bot1:
