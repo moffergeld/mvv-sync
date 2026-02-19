@@ -5,10 +5,11 @@
 # - Maand kalender (dayGridMonth) met kleuren:
 #     Match/Practice Match = rood
 #     Practice/data        = blauw
-# - Klik op dag-cel (ook als er een event-bar ligt) => selected_day en direct session load plots
-# - Highlight geselecteerde dag (feller) via background event
+# - Selectie via eventClick (meest betrouwbaar in streamlit-calendar)
+# - Highlight geselecteerde dag via background event (feller)
+# - Bereik-tekst onder kalender verwijderd
 #
-# Vereist: streamlit-calendar  -> voeg toe aan requirements.txt
+# Vereist: streamlit-calendar  -> requirements.txt
 # ============================================================
 
 from __future__ import annotations
@@ -107,36 +108,35 @@ def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
 
 
 def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
-    """
-    - Normale events (Training/Match) met kleuren
-    - Extra background event voor geselecteerde dag (felle highlight)
-    """
     days_with_data, match_days = _compute_day_sets(df)
 
     events: list[dict] = []
 
-    # ✅ highlight (background) — feller dan eerst
+    # ✅ highlight (background)
     if selected:
         events.append(
             {
+                "id": f"sel_{selected.isoformat()}",
                 "title": "",
                 "start": selected.isoformat(),
                 "allDay": True,
                 "display": "background",
-                # fel geel/goud (pas aan als je wilt)
-                "color": "rgba(255, 215, 0, 0.55)",
+                "color": "rgba(255, 215, 0, 0.65)",  # feller
             }
         )
 
+    # ✅ “click targets”: per dag 1 event dat je kan klikken
     for d in sorted(days_with_data):
         is_match = d in match_days
         events.append(
             {
+                "id": f"day_{d.isoformat()}",
                 "title": "Match" if is_match else "Training",
                 "start": d.isoformat(),
                 "allDay": True,
                 "color": MVV_RED if is_match else PRACTICE_BLUE,
                 "textColor": "#ffffff",
+                "extendedProps": {"day": d.isoformat()},
             }
         )
     return events
@@ -144,7 +144,6 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
 
 def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -> date:
     days_with_data, _ = _compute_day_sets(df)
-    min_day = min(days_with_data) if days_with_data else date.today()
     max_day = max(days_with_data) if days_with_data else date.today()
 
     if f"{key_prefix}_selected" not in st.session_state:
@@ -152,19 +151,29 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
 
     selected: date = st.session_state[f"{key_prefix}_selected"]
 
-    # ✅ CSS:
-    # 1) events niet klikbaar -> klik valt door naar dag-cel (dateClick)
-    # 2) highlight iets “feller” + ronding
+    # ✅ CSS: maak de event-bar groot zodat het praktisch “hele tile klikbaar” voelt
+    # (echte klik op lege cel is afhankelijk van component support voor dateClick)
     st.markdown(
         """
         <style>
-          .fc .fc-event { pointer-events: none !important; }
-          .fc .fc-event-main { pointer-events: none !important; }
-
-          /* optioneel: iets strakker uiterlijk */
-          .fc .fc-daygrid-day-frame { border-radius: 10px; }
+          /* overall borders iets subtieler */
           .fc .fc-daygrid-day { border-color: rgba(255,255,255,0.10) !important; }
           .fc .fc-col-header-cell { border-color: rgba(255,255,255,0.10) !important; }
+
+          /* event als brede “badge” die makkelijk te klikken is */
+          .fc .fc-daygrid-event {
+            border-radius: 8px !important;
+            padding: 8px 10px !important;
+            margin: 6px 6px 0 6px !important;
+            font-weight: 800 !important;
+            font-size: 12px !important;
+          }
+
+          /* probeer hoogte te vergroten zodat het bijna een tile wordt */
+          .fc .fc-daygrid-day-events { min-height: 44px !important; }
+
+          /* cursor hint */
+          .fc .fc-daygrid-event { cursor: pointer !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -176,28 +185,33 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         "initialView": "dayGridMonth",
         "initialDate": selected.isoformat(),
         "height": "auto",
-        "firstDay": 1,  # maandag
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "",
-        },
+        "firstDay": 1,
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
-        # ✅ belangrijk: dateClick activeren
-        "dateClick": True,
     }
 
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    if result and result.get("dateClick"):
-        ds = result["dateClick"].get("dateStr")
+    # ✅ Betrouwbaar: eventClick
+    if result and result.get("eventClick"):
+        ev = (result["eventClick"] or {}).get("event", {}) or {}
+        ds = None
+
+        # soms: extendedProps.day
+        ext = ev.get("extendedProps") or {}
+        if isinstance(ext, dict):
+            ds = ext.get("day")
+
+        # fallback: start
+        if not ds:
+            ds = ev.get("start")
+
         if ds:
             st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
             st.rerun()
 
-    st.caption(f"Bereik: {min_day.strftime('%d-%m-%Y')} – {max_day.strftime('%d-%m-%Y')}")
     return st.session_state[f"{key_prefix}_selected"]
 
 
@@ -406,10 +420,7 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen bruikbare GPS-data gevonden (controleer Event='Summary' en Datum/Speler).")
         return
 
-    # ✅ FullCalendar maand view (mobielvriendelijk)
     selected_day = calendar_day_picker_fullcalendar(df, key_prefix="sl")
-
-    # toon gekozen dag
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
