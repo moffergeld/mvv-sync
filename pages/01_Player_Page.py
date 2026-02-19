@@ -1,19 +1,16 @@
-# player_pages.py
+# 01_Player_Page.py
 # ============================================================
 # Checklist tab FIX + UI security:
 # - Players (role=player) kunnen GEEN andere speler kiezen:
 #   Data + Forms altijd eigen player_id uit profile.
 # - Checklist tab is alleen zichtbaar voor staff.
 #
-# Checklist tab FIX:
-# - Gebruik created_at (datum + tijd hh:mm) voor ingevuld-tijd.
-# - Voor RPE: neem created_at uit rpe_sessions (laatste per speler op die dag),
-#   omdat jij daar de timestamps hebt.
-# - Voor Wellness: neem created_at uit asrm_entries (als aanwezig).
-#
-# NB:
-# - Als asrm_entries geen created_at heeft, blijft Wellness time leeg.
-# - RPE "ingevuld" = er bestaat minimaal 1 rpe_sessions record voor die speler op die dag.
+# Forms UX:
+# - Gebruik st.form zodat sliders/toggles NIET elke wijziging een rerun doen.
+# - Alleen bij datum-wissel halen we bestaande data op.
+# - In RPE-form blijven Session 2 + Injury velden altijd zichtbaar (geen conditionele UI),
+#   zodat toggles binnen de form direct “werken” zonder rerun.
+#   We gebruiken toggles alleen om te bepalen wat we opslaan.
 # ============================================================
 
 from __future__ import annotations
@@ -815,169 +812,185 @@ def player_pages_main():
     # FORMS
     with tab_forms:
         st.header("Forms")
-
-        # Alleen opnieuw laden uit Supabase als datum verandert (niet bij elke slider change)
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
 
-        cache_key = f"forms_cache__{target_player_id}__{entry_date.isoformat()}"
-        if st.session_state.get("forms_cache_date") != entry_date or st.session_state.get("forms_cache_player") != target_player_id:
-            # datum of speler gewijzigd -> refresh cache
-            existing_asrm = load_asrm(sb, target_player_id, entry_date) or None
-            rpe_header, rpe_sessions = load_rpe(sb, target_player_id, entry_date)
-            st.session_state[cache_key] = {
-                "asrm": existing_asrm,
-                "rpe_header": rpe_header or None,
-                "rpe_sessions": rpe_sessions or [],
-            }
-            st.session_state["forms_cache_date"] = entry_date
-            st.session_state["forms_cache_player"] = target_player_id
+        # Fetch existing ONLY when date/player changes (rerun happens on date change)
+        existing_asrm = load_asrm(sb, target_player_id, entry_date) or {}
+        rpe_header, rpe_sessions = load_rpe(sb, target_player_id, entry_date)
+        rpe_header = rpe_header or {}
+        rpe_sessions = rpe_sessions or []
 
-        cache = st.session_state.get(cache_key, {})
-        existing_asrm = cache.get("asrm") or {}
-        rpe_header = cache.get("rpe_header") or {}
-        rpe_sessions = cache.get("rpe_sessions") or []
+        has_wellness = bool(existing_asrm)
+        has_rpe = bool(rpe_header)
 
         col_asrm, col_rpe = st.columns(2)
 
-        # -----------------------------
-        # ASRM (Wellness)
-        # -----------------------------
         with col_asrm:
             st.subheader("ASRM (1 = best, 10 = worst)")
 
-            if existing_asrm:
-                st.success(f"✅ Wellness al ingevuld: {_fmt_dt_hhmm(existing_asrm.get('created_at'))}")
+            if has_wellness:
+                st.success("✅ Wellness is al ingevuld voor deze dag.")
             else:
-                st.info("❌ Wellness nog niet ingevuld voor deze dag.")
+                st.info("ℹ️ Wellness is nog niet ingevuld voor deze dag.")
 
-            with st.form(key=f"asrm_form__{target_player_id}__{entry_date.isoformat()}", clear_on_submit=False):
-                ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing_asrm.get("muscle_soreness", 5)), key="asrm_ms")
+            with st.form("asrm_form", clear_on_submit=False):
+                ms = st.slider(
+                    "Muscle soreness (1–10)",
+                    1,
+                    10,
+                    value=int(existing_asrm.get("muscle_soreness", 5)),
+                    key="asrm_ms",
+                )
                 fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing_asrm.get("fatigue", 5)), key="asrm_fat")
-                sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing_asrm.get("sleep_quality", 5)), key="asrm_sleep")
+                sleep = st.slider(
+                    "Sleep quality (1–10)",
+                    1,
+                    10,
+                    value=int(existing_asrm.get("sleep_quality", 5)),
+                    key="asrm_sleep",
+                )
                 stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
                 mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
 
-                submit_asrm = st.form_submit_button("ASRM opslaan", use_container_width=True)
+                asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
 
-            if submit_asrm:
+            if asrm_submit:
                 try:
                     save_asrm(sb, target_player_id, entry_date, ms, fat, sleep, stress, mood)
-
-                    # refresh cache na opslaan
-                    refreshed = load_asrm(sb, target_player_id, entry_date) or None
-                    cache["asrm"] = refreshed
-                    st.session_state[cache_key] = cache
                     st.success("ASRM opgeslagen.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-        # -----------------------------
-        # RPE
-        # -----------------------------
         with col_rpe:
             st.subheader("RPE (Session)")
 
-            # Status (al ingevuld?)
-            if rpe_header:
-                latest_ts = None
-                for s in (rpe_sessions or []):
-                    ts = s.get("created_at")
-                    if ts is None:
-                        continue
-                    try:
-                        dt = pd.to_datetime(ts)
-                    except Exception:
-                        dt = None
-                    if dt is not None and (latest_ts is None or dt > latest_ts):
-                        latest_ts = dt
-                st.success(f"✅ RPE al ingevuld: {_fmt_dt_hhmm(latest_ts)}")
+            if has_rpe:
+                st.success("✅ RPE is al ingevuld voor deze dag.")
             else:
-                st.info("❌ RPE nog niet ingevuld voor deze dag.")
+                st.info("ℹ️ RPE is nog niet ingevuld voor deze dag.")
 
-            with st.form(key=f"rpe_form__{target_player_id}__{entry_date.isoformat()}", clear_on_submit=False):
-                # ---- Session 1 (altijd zichtbaar) ----
-                st.markdown("### Sessie 1")
+            INJURY_LOCATIONS_EN = [
+                "None",
+                "Foot",
+                "Ankle",
+                "Lower leg",
+                "Knee",
+                "Upper leg",
+                "Hip",
+                "Groin",
+                "Glute",
+                "Lower back",
+                "Abdomen",
+                "Chest",
+                "Shoulder",
+                "Upper arm",
+                "Elbow",
+                "Forearm",
+                "Wrist",
+                "Hand",
+                "Neck",
+                "Head",
+                "Other",
+            ]
 
-                def _sess(idx: int, key: str, default: int) -> int:
-                    hit = next((s for s in (rpe_sessions or []) if int(s.get("session_index", 0) or 0) == idx), None)
-                    if not hit:
-                        return default
-                    v = hit.get(key)
-                    return int(v) if v is not None else default
+            def _sess(idx: int, key: str, default: int) -> int:
+                hit = next((s for s in rpe_sessions if int(s.get("session_index", 0) or 0) == idx), None)
+                if not hit:
+                    return default
+                v = hit.get(key)
+                return int(v) if v is not None else default
 
-                s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
+            # Defaults from existing
+            has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in rpe_sessions)
+            injury_default = bool(rpe_header.get("injury", False))
+
+            existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
+            if existing_loc not in INJURY_LOCATIONS_EN:
+                existing_loc = "Other"
+
+            with st.form("rpe_form", clear_on_submit=False):
+                st.markdown("### Session 1")
+                s1_dur = st.number_input(
+                    "[1] Duration (min)",
+                    0,
+                    600,
+                    value=_sess(1, "duration_min", 0),
+                    key="rpe_s1_dur",
+                )
                 s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
-                # ---- Toggle sessie 2 onder sessie 1 ----
-                has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in (rpe_sessions or []))
-                enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key="rpe_enable_s2")
-
-                if enable_s2:
-                    st.markdown("### Sessie 2")
-                    s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
-                    s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
-                else:
-                    s2_dur, s2_rpe = 0, 0
+                # Toggle blijft in de form, maar UI blijft altijd zichtbaar
+                enable_s2 = st.toggle("Add 2nd session?", value=has_s2, key="rpe_enable_s2")
 
                 st.divider()
+                st.markdown("### Session 2")
+                s2_dur = st.number_input(
+                    "[2] Duration (min)",
+                    0,
+                    600,
+                    value=_sess(2, "duration_min", 0),
+                    key="rpe_s2_dur",
+                )
+                s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
 
-                # ---- Injury helemaal onderaan ----
+                st.divider()
                 st.markdown("### Injury")
-                injury_default = bool(rpe_header.get("injury", False))
+
+                # Toggle blijft in de form, maar velden blijven altijd zichtbaar
                 injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
 
-                injury_parts = ['Voet', 'Enkel', 'Onderbeen', 'Knie', 'Bovenbeen', 'Heup', 'Lies', 'Bil', 'Rug', 'Buik', 'Borst', 'Schouder', 'Bovenarm', 'Elleboog', 'Onderarm', 'Pols', 'Hand', 'Nek', 'Hoofd', 'Overig']
-                # huidige waarde normaliseren naar opties
-                current_part = str(rpe_header.get("injury_type") or "").strip()
-                if current_part and current_part not in injury_parts:
-                    injury_parts = [current_part] + injury_parts
+                # Dropdown naast pain slider (zoals gevraagd)
+                loc_col, pain_col = st.columns([1.2, 2.0])
+                with loc_col:
+                    injury_loc = st.selectbox(
+                        "Location",
+                        options=INJURY_LOCATIONS_EN,
+                        index=INJURY_LOCATIONS_EN.index(existing_loc),
+                        key="rpe_injury_loc",
+                    )
+                with pain_col:
+                    injury_pain = st.slider(
+                        "Pain (0–10)",
+                        0,
+                        10,
+                        value=int(rpe_header.get("injury_pain", 0) or 0),
+                        key="rpe_pain",
+                    )
 
-                injury_type = st.selectbox(
-                    "Injury location",
-                    options=injury_parts,
-                    index=(injury_parts.index(current_part) if current_part in injury_parts else 0),
-                    disabled=not injury,
-                    key="rpe_injury_type",
-                )
+                notes = st.text_area("Notes (optional)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
 
-                injury_pain = st.slider(
-                    "Pain (0–10)",
-                    0,
-                    10,
-                    value=int(rpe_header.get("injury_pain", 0) or 0),
-                    disabled=not injury,
-                    key="rpe_pain",
-                )
-                notes = st.text_area("Notes (optioneel)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
+                rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
 
-                submit_rpe = st.form_submit_button("RPE opslaan", use_container_width=True)
-
-            if submit_rpe:
+            if rpe_submit:
                 try:
                     sessions_payload: List[Dict[str, int]] = []
-                    if s1_dur > 0:
+
+                    # Sessie 1: alleen opslaan als duration > 0
+                    if int(s1_dur) > 0:
                         sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
-                    if enable_s2 and s2_dur > 0:
+
+                    # Sessie 2: alleen opslaan als toggle aan én duration > 0
+                    if bool(enable_s2) and int(s2_dur) > 0:
                         sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
+
+                    # Injury: alleen opslaan als toggle aan; Location default None
+                    injury_type_to_save = None
+                    injury_pain_to_save = None
+                    if bool(injury):
+                        injury_type_to_save = None if injury_loc == "None" else injury_loc
+                        injury_pain_to_save = int(injury_pain)
 
                     save_rpe(
                         sb,
                         player_id=target_player_id,
                         entry_date=entry_date,
-                        injury=injury,
-                        injury_type=(str(injury_type).strip() or None) if injury else None,
-                        injury_pain=int(injury_pain) if injury else None,
+                        injury=bool(injury),
+                        injury_type=injury_type_to_save,
+                        injury_pain=injury_pain_to_save,
                         notes=notes,
                         sessions=sessions_payload,
                     )
-
-                    # refresh cache na opslaan
-                    rpe_header2, rpe_sessions2 = load_rpe(sb, target_player_id, entry_date)
-                    cache["rpe_header"] = rpe_header2 or None
-                    cache["rpe_sessions"] = rpe_sessions2 or []
-                    st.session_state[cache_key] = cache
-
                     st.success("RPE opgeslagen.")
                     st.rerun()
                 except Exception as e:
