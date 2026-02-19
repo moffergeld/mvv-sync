@@ -14,6 +14,9 @@
 # NB:
 # - Als asrm_entries geen created_at heeft, blijft Wellness time leeg.
 # - RPE "ingevuld" = er bestaat minimaal 1 rpe_sessions record voor die speler op die dag.
+#
+# ✅ Optie 1 tegen “page reload bij sliders”:
+# - Zet de widgets in st.form zodat er pas een rerun is bij “Opslaan”.
 # ============================================================
 
 from __future__ import annotations
@@ -815,6 +818,8 @@ def player_pages_main():
     # FORMS
     with tab_forms:
         st.header("Forms")
+
+        # ✅ Optie 1: widgets in forms -> geen rerun bij elke slider/toggle wijziging.
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
 
         col_asrm, col_rpe = st.columns(2)
@@ -822,13 +827,47 @@ def player_pages_main():
         with col_asrm:
             st.subheader("ASRM (1 = best, 10 = worst)")
             existing = load_asrm(sb, target_player_id, entry_date) or {}
-            ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing.get("muscle_soreness", 5)), key="asrm_ms")
-            fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing.get("fatigue", 5)), key="asrm_fat")
-            sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing.get("sleep_quality", 5)), key="asrm_sleep")
-            stress = st.slider("Stress (1–10)", 1, 10, value=int(existing.get("stress", 5)), key="asrm_stress")
-            mood = st.slider("Mood (1–10)", 1, 10, value=int(existing.get("mood", 5)), key="asrm_mood")
 
-            if st.button("ASRM opslaan", use_container_width=True, key="asrm_save"):
+            with st.form("asrm_form", clear_on_submit=False):
+                ms = st.slider(
+                    "Muscle soreness (1–10)",
+                    1,
+                    10,
+                    value=int(existing.get("muscle_soreness", 5)),
+                    key="asrm_ms",
+                )
+                fat = st.slider(
+                    "Fatigue (1–10)",
+                    1,
+                    10,
+                    value=int(existing.get("fatigue", 5)),
+                    key="asrm_fat",
+                )
+                sleep = st.slider(
+                    "Sleep quality (1–10)",
+                    1,
+                    10,
+                    value=int(existing.get("sleep_quality", 5)),
+                    key="asrm_sleep",
+                )
+                stress = st.slider(
+                    "Stress (1–10)",
+                    1,
+                    10,
+                    value=int(existing.get("stress", 5)),
+                    key="asrm_stress",
+                )
+                mood = st.slider(
+                    "Mood (1–10)",
+                    1,
+                    10,
+                    value=int(existing.get("mood", 5)),
+                    key="asrm_mood",
+                )
+
+                asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
+
+            if asrm_submit:
                 try:
                     save_asrm(sb, target_player_id, entry_date, ms, fat, sleep, stress, mood)
                     st.success("ASRM opgeslagen.")
@@ -841,30 +880,6 @@ def player_pages_main():
             header = header or {}
             sessions = sessions or []
 
-            has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in sessions)
-            enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key="rpe_enable_s2")
-
-            injury_default = bool(header.get("injury", False))
-            injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
-
-            injury_type = st.text_input(
-                "Injury type",
-                value=str(header.get("injury_type") or ""),
-                disabled=not injury,
-                key="rpe_injury_type",
-            )
-            injury_pain = st.slider(
-                "Pain (0–10)",
-                0,
-                10,
-                value=int(header.get("injury_pain", 0) or 0),
-                disabled=not injury,
-                key="rpe_pain",
-            )
-            notes = st.text_area("Notes (optioneel)", value=str(header.get("notes") or ""), key="rpe_notes")
-
-            st.markdown("### Sessions")
-
             def _sess(idx: int, key: str, default: int) -> int:
                 hit = next((s for s in sessions if int(s.get("session_index", 0) or 0) == idx), None)
                 if not hit:
@@ -872,22 +887,73 @@ def player_pages_main():
                 v = hit.get(key)
                 return int(v) if v is not None else default
 
-            s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
-            s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
+            with st.form("rpe_form", clear_on_submit=False):
+                has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in sessions)
+                enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key="rpe_enable_s2")
 
-            if enable_s2:
-                s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
-                s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
-            else:
-                s2_dur, s2_rpe = 0, 0
+                injury_default = bool(header.get("injury", False))
+                injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
 
-            sessions_payload: List[Dict[str, int]] = []
-            if s1_dur > 0:
-                sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
-            if enable_s2 and s2_dur > 0:
-                sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
+                injury_type = st.text_input(
+                    "Injury type",
+                    value=str(header.get("injury_type") or ""),
+                    disabled=not injury,
+                    key="rpe_injury_type",
+                )
+                injury_pain = st.slider(
+                    "Pain (0–10)",
+                    0,
+                    10,
+                    value=int(header.get("injury_pain", 0) or 0),
+                    disabled=not injury,
+                    key="rpe_pain",
+                )
+                notes = st.text_area("Notes (optioneel)", value=str(header.get("notes") or ""), key="rpe_notes")
 
-            if st.button("RPE opslaan", use_container_width=True, key="rpe_save"):
+                st.markdown("### Sessions")
+
+                s1_dur = st.number_input(
+                    "[1] Duration (min)",
+                    0,
+                    600,
+                    value=_sess(1, "duration_min", 0),
+                    key="rpe_s1_dur",
+                )
+                s1_rpe = st.slider(
+                    "[1] RPE (1–10)",
+                    1,
+                    10,
+                    value=_sess(1, "rpe", 5),
+                    key="rpe_s1_rpe",
+                )
+
+                if enable_s2:
+                    s2_dur = st.number_input(
+                        "[2] Duration (min)",
+                        0,
+                        600,
+                        value=_sess(2, "duration_min", 0),
+                        key="rpe_s2_dur",
+                    )
+                    s2_rpe = st.slider(
+                        "[2] RPE (1–10)",
+                        1,
+                        10,
+                        value=_sess(2, "rpe", 5),
+                        key="rpe_s2_rpe",
+                    )
+                else:
+                    s2_dur, s2_rpe = 0, 0
+
+                rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
+
+            if rpe_submit:
+                sessions_payload: List[Dict[str, int]] = []
+                if s1_dur > 0:
+                    sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
+                if enable_s2 and s2_dur > 0:
+                    sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
+
                 try:
                     save_rpe(
                         sb,
