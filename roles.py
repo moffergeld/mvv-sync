@@ -17,7 +17,7 @@ except Exception:
 
 
 # Zet op True om UI-logica open te zetten (iedereen = staff in de UI)
-OPEN_MODE = False
+OPEN_MODE = True
 
 STAFF_ROLES = {
     "staff",
