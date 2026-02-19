@@ -1,16 +1,8 @@
 # 01_Player_Page.py
 # ============================================================
-# Checklist tab FIX + UI security:
-# - Players (role=player) kunnen GEEN andere speler kiezen:
-#   Data + Forms altijd eigen player_id uit profile.
-# - Checklist tab is alleen zichtbaar voor staff.
-#
-# Forms UX:
-# - Gebruik st.form zodat sliders/toggles NIET elke wijziging een rerun doen.
-# - Alleen bij datum-wissel halen we bestaande data op.
-# - In RPE-form blijven Session 2 + Injury velden altijd zichtbaar (geen conditionele UI),
-#   zodat toggles binnen de form direct “werken” zonder rerun.
-#   We gebruiken toggles alleen om te bepalen wat we opslaan.
+# Update:
+# - In RPE form: "Add 2nd session?" toggle staat nu ONDER de divider-lijn
+#   (dus bovenaan Session 2 sectie, onder de lijn).
 # ============================================================
 
 from __future__ import annotations
@@ -24,9 +16,6 @@ import streamlit as st
 
 from roles import get_sb, require_auth, get_profile, pick_target_player
 
-# -----------------------------
-# Utils
-# -----------------------------
 CHART_H = 340
 
 
@@ -79,9 +68,6 @@ def _strip_titles(fig: go.Figure):
     return fig
 
 
-# -----------------------------
-# Players (actief)
-# -----------------------------
 def fetch_active_players(sb) -> pd.DataFrame:
     try:
         rows = (
@@ -113,9 +99,6 @@ def _fetch_player_name(sb, player_id: str) -> str:
         return "Player"
 
 
-# -----------------------------
-# GPS (v_gps_summary)
-# -----------------------------
 GPS_TABLE = "v_gps_summary"
 
 GPS_METRICS = [
@@ -196,9 +179,6 @@ def plot_gps_over_time(df_summed: pd.DataFrame, metric_label: str, metric_key: s
     st.plotly_chart(fig, use_container_width=True)
 
 
-# -----------------------------
-# ASRM (Wellness)
-# -----------------------------
 ASRM_COLS = [
     ("Muscle soreness", "muscle_soreness"),
     ("Fatigue", "fatigue"),
@@ -291,9 +271,6 @@ def plot_asrm_session(row: Dict[str, Any]):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# -----------------------------
-# RPE
-# -----------------------------
 def load_rpe(sb, player_id: str, entry_date: date) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     header = None
     sessions: List[Dict[str, Any]] = []
@@ -565,13 +542,7 @@ def plot_rpe_session(sessions_df: pd.DataFrame):
     st.plotly_chart(fig, use_container_width=True)
 
 
-# -----------------------------
-# Checklist (per datum)
-# -----------------------------
 def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
-    """
-    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op asrm_entries.created_at
-    """
     try:
         rows = (
             sb.table("asrm_entries")
@@ -605,9 +576,6 @@ def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
 
 
 def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
-    """
-    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op LAATSTE rpe_sessions.created_at van die dag.
-    """
     try:
         headers = (
             sb.table("rpe_entries")
@@ -707,9 +675,6 @@ def build_checklist_table(sb, d: date) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# -----------------------------
-# UI
-# -----------------------------
 def player_pages_main():
     require_auth()
     sb = get_sb()
@@ -721,7 +686,6 @@ def player_pages_main():
     role = str(profile.get("role") or "").lower()
     my_player_id = profile.get("player_id")
 
-    # Player: forceer eigen speler, geen dropdown
     if role == "player":
         if not my_player_id:
             st.error("Je profiel is niet gekoppeld aan een speler (player_id ontbreekt).")
@@ -736,7 +700,6 @@ def player_pages_main():
 
     st.title(f"Player: {target_player_name}")
 
-    # Tabs: Checklist alleen staff
     tab_names = ["Data", "Forms"] + (["Checklist"] if role != "player" else [])
     tabs = st.tabs(tab_names)
 
@@ -744,7 +707,6 @@ def player_pages_main():
     tab_forms = tabs[1]
     tab_checklist = tabs[tab_names.index("Checklist")] if "Checklist" in tab_names else None
 
-    # DATA
     with tab_data:
         left, right = st.columns(2)
 
@@ -809,12 +771,10 @@ def player_pages_main():
                 else:
                     plot_rpe_over_time_daily(daily)
 
-    # FORMS
     with tab_forms:
         st.header("Forms")
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
 
-        # Fetch existing ONLY when date/player changes (rerun happens on date change)
         existing_asrm = load_asrm(sb, target_player_id, entry_date) or {}
         rpe_header, rpe_sessions = load_rpe(sb, target_player_id, entry_date)
         rpe_header = rpe_header or {}
@@ -827,31 +787,16 @@ def player_pages_main():
 
         with col_asrm:
             st.subheader("ASRM (1 = best, 10 = worst)")
-
-            if has_wellness:
-                st.success("✅ Wellness is al ingevuld voor deze dag.")
-            else:
-                st.info("ℹ️ Wellness is nog niet ingevuld voor deze dag.")
+            st.success("✅ Wellness is al ingevuld voor deze dag.") if has_wellness else st.info(
+                "ℹ️ Wellness is nog niet ingevuld voor deze dag."
+            )
 
             with st.form("asrm_form", clear_on_submit=False):
-                ms = st.slider(
-                    "Muscle soreness (1–10)",
-                    1,
-                    10,
-                    value=int(existing_asrm.get("muscle_soreness", 5)),
-                    key="asrm_ms",
-                )
+                ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing_asrm.get("muscle_soreness", 5)), key="asrm_ms")
                 fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing_asrm.get("fatigue", 5)), key="asrm_fat")
-                sleep = st.slider(
-                    "Sleep quality (1–10)",
-                    1,
-                    10,
-                    value=int(existing_asrm.get("sleep_quality", 5)),
-                    key="asrm_sleep",
-                )
+                sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing_asrm.get("sleep_quality", 5)), key="asrm_sleep")
                 stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
                 mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
-
                 asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
 
             if asrm_submit:
@@ -864,11 +809,7 @@ def player_pages_main():
 
         with col_rpe:
             st.subheader("RPE (Session)")
-
-            if has_rpe:
-                st.success("✅ RPE is al ingevuld voor deze dag.")
-            else:
-                st.info("ℹ️ RPE is nog niet ingevuld voor deze dag.")
+            st.success("✅ RPE is al ingevuld voor deze dag.") if has_rpe else st.info("ℹ️ RPE is nog niet ingevuld voor deze dag.")
 
             INJURY_LOCATIONS_EN = [
                 "None",
@@ -901,7 +842,6 @@ def player_pages_main():
                 v = hit.get(key)
                 return int(v) if v is not None else default
 
-            # Defaults from existing
             has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in rpe_sessions)
             injury_default = bool(rpe_header.get("injury", False))
 
@@ -911,36 +851,22 @@ def player_pages_main():
 
             with st.form("rpe_form", clear_on_submit=False):
                 st.markdown("### Session 1")
-                s1_dur = st.number_input(
-                    "[1] Duration (min)",
-                    0,
-                    600,
-                    value=_sess(1, "duration_min", 0),
-                    key="rpe_s1_dur",
-                )
+                s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
                 s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
-                # Toggle blijft in de form, maar UI blijft altijd zichtbaar
+                st.divider()
+
+                # ✅ Toggle staat nu onder de lijn
                 enable_s2 = st.toggle("Add 2nd session?", value=has_s2, key="rpe_enable_s2")
 
-                st.divider()
                 st.markdown("### Session 2")
-                s2_dur = st.number_input(
-                    "[2] Duration (min)",
-                    0,
-                    600,
-                    value=_sess(2, "duration_min", 0),
-                    key="rpe_s2_dur",
-                )
+                s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
                 s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
 
                 st.divider()
                 st.markdown("### Injury")
-
-                # Toggle blijft in de form, maar velden blijven altijd zichtbaar
                 injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
 
-                # Dropdown naast pain slider (zoals gevraagd)
                 loc_col, pain_col = st.columns([1.2, 2.0])
                 with loc_col:
                     injury_loc = st.selectbox(
@@ -950,31 +876,19 @@ def player_pages_main():
                         key="rpe_injury_loc",
                     )
                 with pain_col:
-                    injury_pain = st.slider(
-                        "Pain (0–10)",
-                        0,
-                        10,
-                        value=int(rpe_header.get("injury_pain", 0) or 0),
-                        key="rpe_pain",
-                    )
+                    injury_pain = st.slider("Pain (0–10)", 0, 10, value=int(rpe_header.get("injury_pain", 0) or 0), key="rpe_pain")
 
                 notes = st.text_area("Notes (optional)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
-
                 rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
 
             if rpe_submit:
                 try:
                     sessions_payload: List[Dict[str, int]] = []
-
-                    # Sessie 1: alleen opslaan als duration > 0
                     if int(s1_dur) > 0:
                         sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
-
-                    # Sessie 2: alleen opslaan als toggle aan én duration > 0
                     if bool(enable_s2) and int(s2_dur) > 0:
                         sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
 
-                    # Injury: alleen opslaan als toggle aan; Location default None
                     injury_type_to_save = None
                     injury_pain_to_save = None
                     if bool(injury):
@@ -996,7 +910,6 @@ def player_pages_main():
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-    # CHECKLIST (alleen staff)
     if tab_checklist is not None:
         with tab_checklist:
             st.header("Checklist")
