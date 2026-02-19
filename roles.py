@@ -1,113 +1,91 @@
 # roles.py
 # ============================================================
-# Centrale helpers voor auth/role/profile + player picker
-# - Robuuste token retrieval (access_token of sb_session.access_token)
-# - Robuuste PostgREST auth header injectie (supabase-py versieverschillen)
-# - get_profile(): haalt role + player_id uit public.profiles
-# - pick_target_player(): staff dropdown, player forced eigen player_id
+# Centrale role/auth helpers voor alle pagina's
+#
+# Belangrijk:
+# - profiles.team is verwijderd -> NIET selecteren.
+# - uid ophalen via sb.auth.get_user(token) zodat uid klopt.
+# - Role altijd normalizen (enum/qualified strings).
+# - OPEN_MODE standaard UIT (False), anders wordt iedereen "staff" in de UI.
 # ============================================================
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import streamlit as st
-from supabase import create_client
+
+try:
+    from supabase import create_client  # type: ignore
+except Exception:
+    create_client = None
 
 
-# -----------------------------
-# Supabase init (singleton)
-# -----------------------------
+# Zet op True om UI-gates te omzeilen (iedereen = staff in UI).
+# Laat dit in productie op False.
+OPEN_MODE = False
+
+STAFF_ROLES = {
+    "staff",
+    "performance_coach",
+    "data_scientist",
+    "technical_director",
+    "physio",
+    "admin",
+}
+
+
+def normalize_role(v: Any) -> str:
+    """
+    Normaliseert role-waardes zoals:
+    - "player"
+    - "public.user_role_v2.player"
+    - "player::something"
+    """
+    if v is None:
+        return "player"
+    s = str(v).strip().lower()
+    if "." in s:
+        s = s.split(".")[-1]
+    if "::" in s:
+        s = s.split("::")[0]
+    s = s.strip()
+    return s or "player"
+
+
 @st.cache_resource(show_spinner=False)
-def _get_supabase_client():
-    url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
-    if not url or not key:
-        raise RuntimeError("Missing secrets: SUPABASE_URL / SUPABASE_ANON_KEY")
-    return create_client(url, key)
-
-
 def get_sb():
-    try:
-        return _get_supabase_client()
-    except Exception:
+    if create_client is None:
         return None
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
 
 
-# -----------------------------
-# Auth helpers
-# -----------------------------
 def require_auth() -> None:
-    """
-    UI-gate: zorg dat er een sessie is.
-    """
-    if st.session_state.get("access_token"):
-        return
-    sess = st.session_state.get("sb_session")
-    tok = getattr(sess, "access_token", None) if sess is not None else None
-    if tok:
-        st.session_state["access_token"] = tok
-        return
-
-    st.error("Niet ingelogd.")
-    st.stop()
+    if not st.session_state.get("access_token"):
+        st.error("Niet ingelogd.")
+        st.stop()
 
 
 def get_access_token() -> str:
     require_auth()
-    tok = st.session_state.get("access_token")
-    if tok:
-        return str(tok)
-
-    sess = st.session_state.get("sb_session")
-    tok2 = getattr(sess, "access_token", None) if sess is not None else None
-    if tok2:
-        st.session_state["access_token"] = str(tok2)
-        return str(tok2)
-
-    st.error("Niet ingelogd (access_token ontbreekt).")
-    st.stop()
-    return ""
+    return str(st.session_state["access_token"])
 
 
-def _ensure_postgrest_auth(sb) -> None:
+def sb_postgrest_auth(sb) -> None:
     """
-    Zorgt dat sb.table(...).select(...) calls de JWT gebruiken.
-    Supabase-py heeft meerdere varianten; daarom meerdere fallbacks.
+    Zet Authorization header voor PostgREST table() calls.
     """
     token = get_access_token()
-
-    # 1) supabase-py: sb.postgrest.auth(token)
     try:
         sb.postgrest.auth(token)
-        return
     except Exception:
-        pass
-
-    # 2) fallback: session headers (httpx session)
-    try:
-        # veel supabase-py builds hebben sb.postgrest.session.headers
-        hdrs = sb.postgrest.session.headers
-        hdrs["Authorization"] = f"Bearer {token}"
-        # apikey is vaak al gezet, maar voor zekerheid:
-        ak = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
-        if ak:
-            hdrs["apikey"] = ak
-        return
-    except Exception:
-        pass
-
-    # 3) laatste poging: supabase auth set_session als beschikbaar
-    try:
-        sb.auth.set_session(token, token)  # refresh token onbekend; toch soms genoeg
-    except Exception:
+        # Sommige supabase-py versies gooien hier soms een error; dan werkt het alsnog vaak.
         pass
 
 
 def get_auth_uid(sb) -> Optional[str]:
     """
-    Haal user_id uit GoTrue op basis van token.
+    Haalt user_id op via GoTrue met token.
     """
     token = get_access_token()
     try:
@@ -117,103 +95,117 @@ def get_auth_uid(sb) -> Optional[str]:
         return None
 
 
-# -----------------------------
-# Profile / role
-# -----------------------------
-def normalize_role(v) -> str:
+def get_profile(sb) -> Optional[Dict[str, Any]]:
     """
-    Normaliseert role strings zoals:
-    - "player"
-    - "user_role_v2.player"
-    - "player::something"
-    """
-    if v is None:
-        return ""
-    s = str(v).strip().lower()
-    if "." in s:
-        s = s.split(".")[-1]
-    if "::" in s:
-        s = s.split("::")[0]
-    return s.strip()
+    Leest public.profiles voor de huidige user.
 
-
-def get_profile(sb) -> dict:
+    Verwacht kolommen:
+    - user_id (uuid)
+    - role (user_role_v2 / text)
+    - player_id (uuid, nullable)
     """
-    Leest public.profiles (user_id, role, player_id).
-    Verwacht dat profiles.user_id = auth.uid()
-    """
-    _ensure_postgrest_auth(sb)
-
+    sb_postgrest_auth(sb)
     uid = get_auth_uid(sb)
     if not uid:
-        return {}
+        return None
 
     try:
         resp = (
             sb.table("profiles")
-            .select("user_id,role,player_id,created_at")
+            .select("user_id,role,player_id")
             .eq("user_id", uid)
             .maybe_single()
             .execute()
         )
-        p = resp.data or {}
-        p["role"] = normalize_role(p.get("role"))
-        return p
+        prof = resp.data or None
+        if prof is None:
+            return None
+
+        # Normaliseer role direct en zet ook in session_state (handig voor UI gates)
+        prof["role"] = normalize_role(prof.get("role"))
+        st.session_state["role"] = prof["role"]
+        if prof.get("player_id"):
+            st.session_state["player_id"] = str(prof["player_id"])
+        return prof
     except Exception:
-        return {}
+        return None
 
 
-# -----------------------------
-# Players list + picker
-# -----------------------------
-def list_players(sb) -> pd.DataFrame:
+def is_staff_user(profile: Optional[Dict[str, Any]]) -> bool:
+    if OPEN_MODE:
+        return True
+    if not profile:
+        return False
+    role = normalize_role(profile.get("role"))
+    return role in STAFF_ROLES
+
+
+def list_players(sb) -> List[Dict[str, Any]]:
     """
-    Actieve spelers voor staff dropdown.
+    Returns actieve spelers (player_id, full_name).
     """
-    _ensure_postgrest_auth(sb)
+    sb_postgrest_auth(sb)
     try:
-        rows = (
+        resp = (
             sb.table("players")
             .select("player_id,full_name,is_active")
             .eq("is_active", True)
             .order("full_name")
             .execute()
-            .data
-            or []
         )
-        df = pd.DataFrame(rows)
-        if df.empty:
-            return pd.DataFrame(columns=["player_id", "full_name", "is_active"])
-        df["full_name"] = df["full_name"].astype(str).str.strip()
-        return df
+        rows = resp.data or []
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            # extra guard
+            if r.get("is_active") is False:
+                continue
+            out.append(r)
+        return out
     except Exception:
-        return pd.DataFrame(columns=["player_id", "full_name", "is_active"])
+        return []
+
+
+def get_player_name(sb, player_id: str) -> str:
+    sb_postgrest_auth(sb)
+    try:
+        resp = sb.table("players").select("full_name").eq("player_id", player_id).maybe_single().execute()
+        return (resp.data or {}).get("full_name") or "Onbekend"
+    except Exception:
+        return "Onbekend"
 
 
 def pick_target_player(
     sb,
-    profile: dict,
+    profile: Optional[Dict[str, Any]],
     label: str = "Speler",
-    key: str = "pick_player",
-) -> Tuple[Optional[str], Optional[str], pd.DataFrame]:
+    key: str = "target_player_select",
+) -> Tuple[Optional[str], Optional[str], bool]:
     """
-    Staff: dropdown met actieve spelers.
-    Player: geen dropdown (wordt in Player Page zelf geforceerd).
+    Bepaalt target speler voor Player Page:
+    - staff/open-mode: dropdown met alle actieve spelers
+    - player: altijd eigen player_id uit profile (geen dropdown)
+
+    Returns: (player_id, player_name, is_staff_mode)
     """
-    df = list_players(sb)
-    if df.empty:
-        return None, None, df
+    staff_mode = is_staff_user(profile)
 
-    labels = df["full_name"].tolist()
-    default_i = 0
+    if staff_mode:
+        players = list_players(sb)
+        if not players:
+            return None, None, True
 
-    # als staff zelf ook gekoppeld is aan player_id: preselect die speler
-    my_pid = profile.get("player_id")
-    if my_pid:
-        hit = df.index[df["player_id"].astype(str) == str(my_pid)]
-        if len(hit) > 0:
-            default_i = int(hit[0])
+        name_to_id = {str(p.get("full_name", "")).strip(): p.get("player_id") for p in players if p.get("player_id")}
+        options = [n for n in name_to_id.keys() if n]
+        if not options:
+            return None, None, True
 
-    choice = st.selectbox(label, options=labels, index=default_i, key=key)
-    row = df[df["full_name"] == choice].iloc[0]
-    return str(row["player_id"]), str(row["full_name"]), df
+        sel_name = st.selectbox(label, options=options, key=key)
+        pid = name_to_id.get(sel_name)
+        return (str(pid) if pid else None), sel_name, True
+
+    # Player: force eigen speler
+    if not profile or not profile.get("player_id"):
+        return None, None, False
+
+    pid = str(profile["player_id"])
+    return pid, get_player_name(sb, pid), False
