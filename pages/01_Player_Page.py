@@ -1,15 +1,19 @@
-# pages/01_Player_Page.py
+# player_pages.py
 # ============================================================
-# Player page — UI security + Forms zonder “reload gevoel”
+# Checklist tab FIX + UI security:
+# - Players (role=player) kunnen GEEN andere speler kiezen:
+#   Data + Forms altijd eigen player_id uit profile.
+# - Checklist tab is alleen zichtbaar voor staff.
 #
-# Fix:
-# - Widgets in FORMS staan in st.form -> pas bij “Opslaan” worden ze verwerkt
-# - Alleen bij datum-wissel halen we existing data op uit Supabase
-# - Toon status of Wellness/RPE al ingevuld is voor gekozen datum (+ tijd)
+# Checklist tab FIX:
+# - Gebruik created_at (datum + tijd hh:mm) voor ingevuld-tijd.
+# - Voor RPE: neem created_at uit rpe_sessions (laatste per speler op die dag),
+#   omdat jij daar de timestamps hebt.
+# - Voor Wellness: neem created_at uit asrm_entries (als aanwezig).
 #
-# Security:
-# - role=player: geen dropdown, altijd eigen player_id uit profile
-# - Checklist tab alleen staff (role != player)
+# NB:
+# - Als asrm_entries geen created_at heeft, blijft Wellness time leeg.
+# - RPE "ingevuld" = er bestaat minimaal 1 rpe_sessions record voor die speler op die dag.
 # ============================================================
 
 from __future__ import annotations
@@ -76,21 +80,6 @@ def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
 def _strip_titles(fig: go.Figure):
     fig.update_layout(title_text="", xaxis_title=None)
     return fig
-
-
-def _latest_created_at_from_sessions(sessions: List[Dict[str, Any]]) -> Any:
-    if not sessions:
-        return None
-    dts = []
-    for s in sessions:
-        ts = s.get("created_at")
-        if ts is None:
-            continue
-        try:
-            dts.append(pd.to_datetime(ts))
-        except Exception:
-            pass
-    return max(dts) if dts else None
 
 
 # -----------------------------
@@ -580,9 +569,12 @@ def plot_rpe_session(sessions_df: pd.DataFrame):
 
 
 # -----------------------------
-# Checklist (per datum) — staff-only tab gebruikt dit
+# Checklist (per datum)
 # -----------------------------
 def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
+    """
+    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op asrm_entries.created_at
+    """
     try:
         rows = (
             sb.table("asrm_entries")
@@ -616,6 +608,9 @@ def _fetch_asrm_filled_players(sb, d: date) -> Dict[str, str]:
 
 
 def _fetch_rpe_filled_players(sb, d: date) -> Dict[str, str]:
+    """
+    Returns: {player_id: "dd-mm-YYYY HH:MM"} gebaseerd op LAATSTE rpe_sessions.created_at van die dag.
+    """
     try:
         headers = (
             sb.table("rpe_entries")
@@ -713,37 +708,6 @@ def build_checklist_table(sb, d: date) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows)
-
-
-# -----------------------------
-# Forms cache (alleen bij datum-wissel ophalen)
-# -----------------------------
-def _forms_cache_load(sb, player_id: str, entry_date: date) -> Dict[str, Any]:
-    asrm_row = load_asrm(sb, player_id, entry_date) or None
-    rpe_header, rpe_sessions = load_rpe(sb, player_id, entry_date)
-    rpe_header = rpe_header or None
-    rpe_sessions = rpe_sessions or []
-
-    asrm_time = _fmt_dt_hhmm((asrm_row or {}).get("created_at")) if asrm_row else ""
-    rpe_time = _fmt_dt_hhmm(_latest_created_at_from_sessions(rpe_sessions)) if rpe_header else ""
-
-    return {
-        "asrm_row": asrm_row,
-        "rpe_header": rpe_header,
-        "rpe_sessions": rpe_sessions,
-        "asrm_filled": bool(asrm_row),
-        "rpe_filled": bool(rpe_header),
-        "asrm_time": asrm_time,
-        "rpe_time": rpe_time,
-    }
-
-
-def _forms_cache_get(sb, player_id: str, entry_date: date) -> Dict[str, Any]:
-    cache_key = f"{player_id}|{entry_date.isoformat()}"
-    if st.session_state.get("_forms_cache_key") != cache_key:
-        st.session_state["_forms_cache_key"] = cache_key
-        st.session_state["_forms_cache_data"] = _forms_cache_load(sb, player_id, entry_date)
-    return st.session_state.get("_forms_cache_data") or _forms_cache_load(sb, player_id, entry_date)
 
 
 # -----------------------------
@@ -848,154 +812,148 @@ def player_pages_main():
                 else:
                     plot_rpe_over_time_daily(daily)
 
-    # FORMS (widgets in form -> geen “reload gevoel” bij sliders)
+    # FORMS
     with tab_forms:
         st.header("Forms")
 
+        # Alleen opnieuw laden uit Supabase als datum verandert (niet bij elke slider change)
         entry_date = st.date_input("Datum", value=date.today(), key="form_date")
-        cache = _forms_cache_get(sb, target_player_id, entry_date)
 
-        # status lijn
-        w_status = "✅" if cache["asrm_filled"] else "❌"
-        r_status = "✅" if cache["rpe_filled"] else "❌"
-        w_time = f" ({cache['asrm_time']})" if cache["asrm_time"] else ""
-        r_time = f" ({cache['rpe_time']})" if cache["rpe_time"] else ""
-        st.caption(f"Status {entry_date.strftime('%d-%m-%Y')}: Wellness {w_status}{w_time} | RPE {r_status}{r_time}")
+        cache_key = f"forms_cache__{target_player_id}__{entry_date.isoformat()}"
+        if st.session_state.get("forms_cache_date") != entry_date or st.session_state.get("forms_cache_player") != target_player_id:
+            # datum of speler gewijzigd -> refresh cache
+            existing_asrm = load_asrm(sb, target_player_id, entry_date) or None
+            rpe_header, rpe_sessions = load_rpe(sb, target_player_id, entry_date)
+            st.session_state[cache_key] = {
+                "asrm": existing_asrm,
+                "rpe_header": rpe_header or None,
+                "rpe_sessions": rpe_sessions or [],
+            }
+            st.session_state["forms_cache_date"] = entry_date
+            st.session_state["forms_cache_player"] = target_player_id
+
+        cache = st.session_state.get(cache_key, {})
+        existing_asrm = cache.get("asrm") or {}
+        rpe_header = cache.get("rpe_header") or {}
+        rpe_sessions = cache.get("rpe_sessions") or []
 
         col_asrm, col_rpe = st.columns(2)
 
-        safe_key = f"{target_player_id}_{entry_date.isoformat()}".replace("-", "_")
-
-        # -------- ASRM FORM --------
+        # -----------------------------
+        # ASRM (Wellness)
+        # -----------------------------
         with col_asrm:
             st.subheader("ASRM (1 = best, 10 = worst)")
-            existing = cache["asrm_row"] or {}
 
-            with st.form(f"asrm_form_{safe_key}", clear_on_submit=False):
-                ms = st.slider(
-                    "Muscle soreness (1–10)",
-                    1,
-                    10,
-                    value=int(existing.get("muscle_soreness", 5)),
-                    key=f"asrm_ms_{safe_key}",
-                )
-                fat = st.slider(
-                    "Fatigue (1–10)",
-                    1,
-                    10,
-                    value=int(existing.get("fatigue", 5)),
-                    key=f"asrm_fat_{safe_key}",
-                )
-                sleep = st.slider(
-                    "Sleep quality (1–10)",
-                    1,
-                    10,
-                    value=int(existing.get("sleep_quality", 5)),
-                    key=f"asrm_sleep_{safe_key}",
-                )
-                stress = st.slider(
-                    "Stress (1–10)",
-                    1,
-                    10,
-                    value=int(existing.get("stress", 5)),
-                    key=f"asrm_stress_{safe_key}",
-                )
-                mood = st.slider(
-                    "Mood (1–10)",
-                    1,
-                    10,
-                    value=int(existing.get("mood", 5)),
-                    key=f"asrm_mood_{safe_key}",
-                )
+            if existing_asrm:
+                st.success(f"✅ Wellness al ingevuld: {_fmt_dt_hhmm(existing_asrm.get('created_at'))}")
+            else:
+                st.info("❌ Wellness nog niet ingevuld voor deze dag.")
 
-                submitted_asrm = st.form_submit_button("ASRM opslaan", use_container_width=True)
+            with st.form(key=f"asrm_form__{target_player_id}__{entry_date.isoformat()}", clear_on_submit=False):
+                ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing_asrm.get("muscle_soreness", 5)), key="asrm_ms")
+                fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing_asrm.get("fatigue", 5)), key="asrm_fat")
+                sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing_asrm.get("sleep_quality", 5)), key="asrm_sleep")
+                stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
+                mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
 
-            if submitted_asrm:
+                submit_asrm = st.form_submit_button("ASRM opslaan", use_container_width=True)
+
+            if submit_asrm:
                 try:
                     save_asrm(sb, target_player_id, entry_date, ms, fat, sleep, stress, mood)
-                    # refresh cache after save
-                    st.session_state["_forms_cache_key"] = None
+
+                    # refresh cache na opslaan
+                    refreshed = load_asrm(sb, target_player_id, entry_date) or None
+                    cache["asrm"] = refreshed
+                    st.session_state[cache_key] = cache
                     st.success("ASRM opgeslagen.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Opslaan faalde: {e}")
 
-        # -------- RPE FORM --------
+        # -----------------------------
+        # RPE
+        # -----------------------------
         with col_rpe:
             st.subheader("RPE (Session)")
 
-            header = cache["rpe_header"] or {}
-            sessions = cache["rpe_sessions"] or []
+            # Status (al ingevuld?)
+            if rpe_header:
+                latest_ts = None
+                for s in (rpe_sessions or []):
+                    ts = s.get("created_at")
+                    if ts is None:
+                        continue
+                    try:
+                        dt = pd.to_datetime(ts)
+                    except Exception:
+                        dt = None
+                    if dt is not None and (latest_ts is None or dt > latest_ts):
+                        latest_ts = dt
+                st.success(f"✅ RPE al ingevuld: {_fmt_dt_hhmm(latest_ts)}")
+            else:
+                st.info("❌ RPE nog niet ingevuld voor deze dag.")
 
-            has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in sessions)
-            injury_default = bool(header.get("injury", False))
+            with st.form(key=f"rpe_form__{target_player_id}__{entry_date.isoformat()}", clear_on_submit=False):
+                # ---- Session 1 (altijd zichtbaar) ----
+                st.markdown("### Sessie 1")
 
-            def _sess(idx: int, key: str, default: int) -> int:
-                hit = next((s for s in sessions if int(s.get("session_index", 0) or 0) == idx), None)
-                if not hit:
-                    return default
-                v = hit.get(key)
-                return int(v) if v is not None else default
+                def _sess(idx: int, key: str, default: int) -> int:
+                    hit = next((s for s in (rpe_sessions or []) if int(s.get("session_index", 0) or 0) == idx), None)
+                    if not hit:
+                        return default
+                    v = hit.get(key)
+                    return int(v) if v is not None else default
 
-            with st.form(f"rpe_form_{safe_key}", clear_on_submit=False):
-                enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key=f"rpe_enable_s2_{safe_key}")
+                s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
+                s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
-                injury = st.toggle("Injury?", value=injury_default, key=f"rpe_injury_{safe_key}")
+                # ---- Toggle sessie 2 onder sessie 1 ----
+                has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in (rpe_sessions or []))
+                enable_s2 = st.toggle("2e sessie invullen?", value=has_s2, key="rpe_enable_s2")
 
-                injury_type = st.text_input(
-                    "Injury type",
-                    value=str(header.get("injury_type") or ""),
+                if enable_s2:
+                    st.markdown("### Sessie 2")
+                    s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
+                    s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
+                else:
+                    s2_dur, s2_rpe = 0, 0
+
+                st.divider()
+
+                # ---- Injury helemaal onderaan ----
+                st.markdown("### Injury")
+                injury_default = bool(rpe_header.get("injury", False))
+                injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
+
+                injury_parts = ['Voet', 'Enkel', 'Onderbeen', 'Knie', 'Bovenbeen', 'Heup', 'Lies', 'Bil', 'Rug', 'Buik', 'Borst', 'Schouder', 'Bovenarm', 'Elleboog', 'Onderarm', 'Pols', 'Hand', 'Nek', 'Hoofd', 'Overig']
+                # huidige waarde normaliseren naar opties
+                current_part = str(rpe_header.get("injury_type") or "").strip()
+                if current_part and current_part not in injury_parts:
+                    injury_parts = [current_part] + injury_parts
+
+                injury_type = st.selectbox(
+                    "Injury location",
+                    options=injury_parts,
+                    index=(injury_parts.index(current_part) if current_part in injury_parts else 0),
                     disabled=not injury,
-                    key=f"rpe_injury_type_{safe_key}",
+                    key="rpe_injury_type",
                 )
+
                 injury_pain = st.slider(
                     "Pain (0–10)",
                     0,
                     10,
-                    value=int(header.get("injury_pain", 0) or 0),
+                    value=int(rpe_header.get("injury_pain", 0) or 0),
                     disabled=not injury,
-                    key=f"rpe_pain_{safe_key}",
+                    key="rpe_pain",
                 )
-                notes = st.text_area("Notes (optioneel)", value=str(header.get("notes") or ""), key=f"rpe_notes_{safe_key}")
+                notes = st.text_area("Notes (optioneel)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
 
-                st.markdown("### Sessions")
+                submit_rpe = st.form_submit_button("RPE opslaan", use_container_width=True)
 
-                s1_dur = st.number_input(
-                    "[1] Duration (min)",
-                    0,
-                    600,
-                    value=_sess(1, "duration_min", 0),
-                    key=f"rpe_s1_dur_{safe_key}",
-                )
-                s1_rpe = st.slider(
-                    "[1] RPE (1–10)",
-                    1,
-                    10,
-                    value=_sess(1, "rpe", 5),
-                    key=f"rpe_s1_rpe_{safe_key}",
-                )
-
-                if enable_s2:
-                    s2_dur = st.number_input(
-                        "[2] Duration (min)",
-                        0,
-                        600,
-                        value=_sess(2, "duration_min", 0),
-                        key=f"rpe_s2_dur_{safe_key}",
-                    )
-                    s2_rpe = st.slider(
-                        "[2] RPE (1–10)",
-                        1,
-                        10,
-                        value=_sess(2, "rpe", 5),
-                        key=f"rpe_s2_rpe_{safe_key}",
-                    )
-                else:
-                    s2_dur, s2_rpe = 0, 0
-
-                submitted_rpe = st.form_submit_button("RPE opslaan", use_container_width=True)
-
-            if submitted_rpe:
+            if submit_rpe:
                 try:
                     sessions_payload: List[Dict[str, int]] = []
                     if s1_dur > 0:
@@ -1008,13 +966,18 @@ def player_pages_main():
                         player_id=target_player_id,
                         entry_date=entry_date,
                         injury=injury,
-                        injury_type=injury_type.strip() or None,
+                        injury_type=(str(injury_type).strip() or None) if injury else None,
                         injury_pain=int(injury_pain) if injury else None,
                         notes=notes,
                         sessions=sessions_payload,
                     )
-                    # refresh cache after save
-                    st.session_state["_forms_cache_key"] = None
+
+                    # refresh cache na opslaan
+                    rpe_header2, rpe_sessions2 = load_rpe(sb, target_player_id, entry_date)
+                    cache["rpe_header"] = rpe_header2 or None
+                    cache["rpe_sessions"] = rpe_sessions2 or []
+                    st.session_state[cache_key] = cache
+
                     st.success("RPE opgeslagen.")
                     st.rerun()
                 except Exception as e:
