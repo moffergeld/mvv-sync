@@ -854,22 +854,22 @@ def player_pages_main():
 
             with st.form("asrm_form", clear_on_submit=False):
                 ms = st.slider(
-                    "Muscle soreness (1–10)",
+                    "Muscle soreness (1 best–10 worse)",
                     1,
                     10,
-                    value=int(existing_asrm.get("muscle_soreness", 5)),
+                    value=int(existing_asrm.get("muscle_soreness", 2)),
                     key="asrm_ms",
                 )
-                fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing_asrm.get("fatigue", 5)), key="asrm_fat")
+                fat = st.slider("Fatigue (1 best–10 worse)", 1, 10, value=int(existing_asrm.get("fatigue", 2)), key="asrm_fat")
                 sleep = st.slider(
-                    "Sleep quality (1–10)",
+                    "Sleep quality (1 best–10 worse)",
                     1,
                     10,
-                    value=int(existing_asrm.get("sleep_quality", 5)),
+                    value=int(existing_asrm.get("sleep_quality", 2)),
                     key="asrm_sleep",
                 )
-                stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
-                mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
+                stress = st.slider("Stress (1 best–10 worse)", 1, 10, value=int(existing_asrm.get("stress", 2)), key="asrm_stress")
+                mood = st.slider("Mood (1 best–10 worse)", 1, 10, value=int(existing_asrm.get("mood", 2)), key="asrm_mood")
 
                 asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
 
