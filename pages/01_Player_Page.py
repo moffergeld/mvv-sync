@@ -728,11 +728,30 @@ def player_pages_main():
             st.stop()
         target_player_id = str(my_player_id)
         target_player_name = _fetch_player_name(sb, target_player_id)
+
+    # Staff/Admin: dropdown met alleen actieve spelers
     else:
-        target_player_id, target_player_name, _ = pick_target_player(sb, profile, label="Speler", key="pp_player_select")
+        players_df = fetch_active_players(sb)  # is_active=True
+        if players_df.empty:
+            st.error("Geen actieve spelers beschikbaar.")
+            st.stop()
+
+        name_to_id = dict(
+            zip(players_df["full_name"].astype(str), players_df["player_id"].astype(str))
+        )
+        names = list(name_to_id.keys())
+
+        target_player_name = st.selectbox(
+            "Speler",
+            options=names,
+            key="pp_player_select",
+        )
+        target_player_id = name_to_id.get(target_player_name)
+
         if not target_player_id:
             st.error("Geen speler beschikbaar.")
             st.stop()
+
 
     st.title(f"Player: {target_player_name}")
 
