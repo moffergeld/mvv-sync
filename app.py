@@ -13,7 +13,7 @@ st.set_page_config(page_title="MVV Dashboard", layout="wide")
 # ----------------------------
 # Maintenance toggle
 # ----------------------------
-MAINTENANCE_MODE = True
+MAINTENANCE_MODE = False
 MAINTENANCE_TITLE = "⚠️ MAINTENANCE"
 MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk (tijdelijk) uitgelogd worden."
 
