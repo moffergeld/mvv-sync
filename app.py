@@ -1,227 +1,150 @@
 import base64
 from pathlib import Path
-
+import requests
 import streamlit as st
 from supabase import create_client
 
-# ----------------------------
-# Page config (1x!)
-# ----------------------------
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
-# ----------------------------
-# Maintenance toggle
-# ----------------------------
-MAINTENANCE_MODE = False
-MAINTENANCE_TITLE = "⚠️ MAINTENANCE"
-MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk (tijdelijk) uitgelogd worden."
+SAFE_MODE = st.query_params.get("safe") == "1"
 
-# ----------------------------
-# Supabase
-# ----------------------------
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_ANON_KEY = st.secrets["SUPABASE_ANON_KEY"]
-sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+# --------------------------------------------------
+# SUPABASE INIT (fail-safe)
+# --------------------------------------------------
+try:
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "")
 
-# ----------------------------
-# Helpers
-# ----------------------------
-def img_to_b64(path: str) -> str:
-    return base64.b64encode(Path(path).read_bytes()).decode()
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        st.error("Missing SUPABASE secrets.")
+        st.stop()
 
-def maintenance_banner():
-    if not MAINTENANCE_MODE:
+    sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+except Exception as e:
+    st.error(f"Boot error: {e}")
+    st.stop()
+
+# --------------------------------------------------
+# HELPERS
+# --------------------------------------------------
+def img_to_b64_safe(path: str):
+    p = Path(path)
+    if not p.exists():
+        return None
+    return base64.b64encode(p.read_bytes()).decode()
+
+
+def logout():
+    try:
+        sb.auth.sign_out()
+    except Exception:
+        pass
+    st.session_state.clear()
+    st.rerun()
+
+
+def normalize_role(v):
+    if not v:
+        return "player"
+    s = str(v).strip().lower()
+    if "." in s:
+        s = s.split(".")[-1]
+    if "::" in s:
+        s = s.split("::")[0]
+    return s
+
+
+# --------------------------------------------------
+# LOGIN (form = mobiel stabiel)
+# --------------------------------------------------
+def login_ui():
+    st.title("Login")
+
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Sign in", use_container_width=True)
+
+    if not submitted:
         return
 
-    st.markdown(
-        f"""
-        <style>
-        .maintenance-banner{{
-            padding: 16px 18px;
-            border-radius: 14px;
-            border: 2px solid rgba(255, 0, 0, 0.55);
-            background: rgba(255, 0, 0, 0.12);
-            color: #fff;
-            font-weight: 800;
-            font-size: 20px;
-            line-height: 1.25;
-            margin: 8px 0 16px 0;
-            box-shadow: 0 10px 30px rgba(0,0,0,.25);
-        }}
-        .maintenance-banner small{{
-            display:block;
-            font-weight: 600;
-            font-size: 14px;
-            opacity: .9;
-            margin-top: 6px;
-        }}
-        </style>
+    try:
+        res = sb.auth.sign_in_with_password({"email": email, "password": password})
 
-        <div class="maintenance-banner">
-            {MAINTENANCE_TITLE}
-            <small>{MAINTENANCE_TEXT}</small>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        if not res.session or not res.session.access_token:
+            st.error("Geen geldige sessie ontvangen.")
+            return
 
-def login_ui():
-    # Melding vóór inloggen
-    maintenance_banner()
-
-    st.title("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Sign in", use_container_width=True, key="btn_signin"):
-        try:
-            res = sb.auth.sign_in_with_password({"email": email, "password": password})
-            st.session_state["access_token"] = res.session.access_token
-            st.session_state["user_email"] = email
-
-            try:
-                sb.postgrest.auth(res.session.access_token)
-            except Exception:
-                pass
-
-            # reset profiel-cache
-            st.session_state.pop("role", None)
-            st.session_state.pop("player_id", None)
-            st.session_state.pop("profile_loaded", None)
-
-            st.rerun()
-        except Exception as e:
-            st.error(f"Sign in mislukt: {e}")
-
-def logout_button():
-    if st.button("Logout", use_container_width=True, key="btn_logout"):
-        try:
-            sb.auth.sign_out()
-        except Exception:
-            pass
-        st.session_state.clear()
+        st.session_state["access_token"] = res.session.access_token
+        st.session_state["user_email"] = email
+        st.session_state["sb_session"] = res.session
         st.rerun()
 
+    except Exception as e:
+        st.error(f"Login mislukt: {e}")
+
+
+# --------------------------------------------------
+# PROFILE LOADER (veilig)
+# --------------------------------------------------
 def load_profile():
-    """
-    Verwacht public.profiles:
-      - user_id (uuid)
-      - role (user_role_v2 / text)
-      - player_id (uuid, optional)
-    """
     if st.session_state.get("profile_loaded"):
         return
 
-    # user-id ophalen via auth endpoint (werkt met jouw JWT)
-    import requests
-    headers = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {st.session_state['access_token']}",
-        "Content-Type": "application/json",
-    }
-    r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers, timeout=30)
-    if not r.ok:
-        st.error(f"Kon user niet ophalen: {r.status_code} {r.text}")
+    try:
+        headers = {
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": f"Bearer {st.session_state['access_token']}",
+        }
+
+        r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers, timeout=20)
+
+        if not r.ok:
+            st.session_state.clear()
+            st.error("Sessie ongeldig. Log opnieuw in.")
+            st.stop()
+
+        user_id = r.json().get("id")
+
+        prof = (
+            sb.table("profiles")
+            .select("user_id, role, player_id")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+            .data
+        )
+
+        st.session_state["role"] = normalize_role((prof or {}).get("role"))
+        st.session_state["player_id"] = (prof or {}).get("player_id")
+        st.session_state["profile_loaded"] = True
+
+    except Exception as e:
+        st.session_state.clear()
+        st.error(f"Profiel laden faalde: {e}")
         st.stop()
 
-    user_id = r.json().get("id")
-    if not user_id:
-        st.error("Kon user_id niet bepalen.")
-        st.stop()
 
-    # profile uit profiles
-    prof = (
-        sb.table("profiles")
-        .select("user_id, role, player_id")
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-        .data
-    )
-
-    role = (prof or {}).get("role")
-    player_id = (prof or {}).get("player_id")
-
-    # role kan enum zijn -> cast naar str
-    st.session_state["role"] = str(role) if role is not None else None
-    st.session_state["player_id"] = player_id
-    st.session_state["profile_loaded"] = True
-
-def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
-    b64 = img_to_b64(img_path)
-    st.markdown(
-        f"""
-        <div class="tile-wrap">
-          <div class="tile-img">
-            <img src="data:image/png;base64,{b64}" />
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    if disabled:
-        st.button("Geen toegang", use_container_width=True, disabled=True, key=f"btn_{tile_id}_noaccess")
-        return
-
-    if target_page is None:
-        st.button("Coming soon", use_container_width=True, disabled=True, key=f"btn_{tile_id}_soon")
-        return
-
-    if st.button("Open", use_container_width=True, key=f"btn_{tile_id}_open"):
-        st.switch_page(target_page)
-
-# ----------------------------
-# CSS (tiles even breed als Open-knop)
-# ----------------------------
-st.markdown(
-    """
-    <style>
-      .tile-wrap { width: 100%; }
-      .tile-img{
-        width: 100%;
-        height: 300px;
-        border-radius: 22px;
-        overflow: hidden;
-        box-shadow: 0 10px 30px rgba(0,0,0,.35);
-        border: 1px solid rgba(255,255,255,.10);
-      }
-      .tile-img img{
-        width: 100%;
-        height: 100%;
-        object-fit: fill;
-        object-position: center;
-        display: block;
-      }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ----------------------------
-# Auth gate
-# ----------------------------
+# --------------------------------------------------
+# AUTH GATE
+# --------------------------------------------------
 if "access_token" not in st.session_state:
     login_ui()
     st.stop()
 
-try:
-    sb.postgrest.auth(st.session_state["access_token"])
-except Exception:
-    pass
-
-# profiel laden (role + player_id)
 load_profile()
 
-# ----------------------------
-# Sidebar / top
-# ----------------------------
+# --------------------------------------------------
+# SIDEBAR
+# --------------------------------------------------
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
-logout_button()
-
-# Optioneel: ook na inloggen bovenaan tonen
-maintenance_banner()
+if st.sidebar.button("Logout"):
+    logout()
 
 st.title("MVV Dashboard")
 st.write("Klik op een tegel om een module te openen.")
@@ -229,16 +152,53 @@ st.write("Klik op een tegel om een module te openen.")
 role = (st.session_state.get("role") or "").lower()
 is_player = role == "player"
 
-# ----------------------------
-# Tiles (6 naast elkaar)
-# ----------------------------
-c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
+# --------------------------------------------------
+# SAFE MODE (voor probleem-toestellen)
+# --------------------------------------------------
+if SAFE_MODE:
+    st.warning("Safe mode actief (minimale UI). Voeg ?safe=0 toe om uit te zetten.")
+
+# --------------------------------------------------
+# TILE RENDER
+# --------------------------------------------------
+def tile(tile_id, img_path, target_page=None, disabled=False):
+    if not SAFE_MODE:
+        b64 = img_to_b64_safe(img_path)
+        if b64:
+            st.markdown(
+                f"""
+                <div style="border-radius:20px;overflow:hidden;
+                            box-shadow:0 8px 25px rgba(0,0,0,.35);
+                            margin-bottom:10px;">
+                    <img src="data:image/png;base64,{b64}"
+                         style="width:100%;height:260px;object-fit:fill;">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    if disabled:
+        st.button("Geen toegang", disabled=True, use_container_width=True, key=f"{tile_id}_na")
+        return
+
+    if target_page is None:
+        st.button("Coming soon", disabled=True, use_container_width=True, key=f"{tile_id}_cs")
+        return
+
+    if st.button("Open", use_container_width=True, key=f"{tile_id}_open"):
+        st.switch_page(target_page)
+
+
+# --------------------------------------------------
+# TILE LAYOUT
+# --------------------------------------------------
+c1, c2, c3, c4, c5, c6 = st.columns(6)
 
 with c1:
     tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
 
 with c2:
-    tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports")
+    tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
 
 with c3:
     tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py", disabled=is_player)
