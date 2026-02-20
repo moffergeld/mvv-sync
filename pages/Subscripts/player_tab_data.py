@@ -54,9 +54,9 @@ def _strip_titles(fig: go.Figure):
 
 def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10):
     zones = [
-        (0, 4, "rgba(0, 200, 0, 0.12)"),
-        (5, 7, "rgba(255, 165, 0, 0.14)"),
-        (8, 10, "rgba(255, 0, 0, 0.14)"),
+        (0, 4.5, "rgba(0, 200, 0, 0.12)"),
+        (4.5, 7.5, "rgba(255, 165, 0, 0.14)"),
+        (7.5, 10, "rgba(255, 0, 0, 0.14)"),
     ]
     for y0, y1, color in zones:
         fig.add_shape(
