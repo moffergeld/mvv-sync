@@ -2,6 +2,9 @@
 # ============================================================
 # Shared helpers for GPS Import suite
 # NOTE: profiles.team column removed -> do NOT select it anywhere.
+# Auth fix:
+# - Restores session from cookies via auth_session.py when session_state resets
+#   (mobile/tab switch/reconnect)
 # ============================================================
 
 from __future__ import annotations
@@ -13,6 +16,9 @@ from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
+
+# ✅ auth restore helpers (jij hebt auth_session.py al toegevoegd)
+from auth_session import ensure_auth_restored, get_sb_client
 
 # Excel engine check (Streamlit Cloud must have openpyxl in requirements.txt)
 try:
@@ -107,15 +113,42 @@ def json_safe(v):
 # Auth / REST helpers
 # -------------------------
 def get_access_token() -> str | None:
+    """
+    Haalt access token op uit session_state.
+    Als session_state weg is (mobiel/tab-switch), probeert cookie-restore via auth_session.py.
+    """
     tok = st.session_state.get("access_token")
     if tok:
-        return tok
+        return str(tok)
+
     sess = st.session_state.get("sb_session")
     if sess is not None:
         token = getattr(sess, "access_token", None)
         if token:
-            return token
+            return str(token)
+
+    # ✅ fallback: restore from cookie
+    try:
+        sb = get_sb_client()
+        ok, tok2 = ensure_auth_restored(sb)
+        if ok and tok2:
+            return str(tok2)
+    except Exception:
+        pass
+
     return None
+
+
+def require_access_token() -> str:
+    tok = get_access_token()
+    if not tok:
+        st.error("Sessie verlopen. Log opnieuw in.")
+        try:
+            st.switch_page("app.py")
+        except Exception:
+            pass
+        st.stop()
+    return tok
 
 
 def rest_headers(access_token: str) -> dict:
@@ -124,6 +157,27 @@ def rest_headers(access_token: str) -> dict:
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
+
+
+def _retry_with_refreshed_token(func, *args, **kwargs):
+    """
+    Voert een REST/auth call uit; bij auth-fout 401/403 probeert 1x token refresh via auth_session.
+    Verwacht dat func RuntimeError kan gooien met statuscode in tekst.
+    """
+    try:
+        return func(*args, **kwargs)
+    except RuntimeError as e:
+        msg = str(e)
+        if "(401)" in msg or "(403)" in msg:
+            sb = get_sb_client()
+            ok, tok = ensure_auth_restored(sb)
+            if ok and tok:
+                # vervang eerste arg als dat access_token is
+                new_args = list(args)
+                if new_args:
+                    new_args[0] = tok
+                return func(*new_args, **kwargs)
+        raise
 
 
 def rest_get(access_token: str, table: str, query: str) -> pd.DataFrame:
@@ -147,7 +201,17 @@ def rest_upsert(access_token: str, table: str, rows: list[dict], on_conflict: st
         safe_chunk = [{k: json_safe(v) for k, v in row.items()} for row in chunk]
         r = requests.post(url, headers=headers, json=safe_chunk, timeout=120)
         if not r.ok:
-            raise RuntimeError(f"UPSERT {table} failed ({r.status_code}): {r.text}")
+            # 1x retry bij auth expiry
+            if r.status_code in (401, 403):
+                sb = get_sb_client()
+                ok, tok = ensure_auth_restored(sb)
+                if ok and tok:
+                    headers = rest_headers(tok)
+                    headers["Prefer"] = "resolution=merge-duplicates"
+                    r = requests.post(url, headers=headers, json=safe_chunk, timeout=120)
+
+            if not r.ok:
+                raise RuntimeError(f"UPSERT {table} failed ({r.status_code}): {r.text}")
 
 
 def rest_patch(access_token: str, table: str, where_query: str, payload: dict) -> None:
@@ -156,6 +220,15 @@ def rest_patch(access_token: str, table: str, where_query: str, payload: dict) -
     headers["Prefer"] = "return=representation"
     safe_payload = {k: json_safe(v) for k, v in payload.items()}
     r = requests.patch(url, headers=headers, json=safe_payload, timeout=60)
+
+    if not r.ok and r.status_code in (401, 403):
+        sb = get_sb_client()
+        ok, tok = ensure_auth_restored(sb)
+        if ok and tok:
+            headers = rest_headers(tok)
+            headers["Prefer"] = "return=representation"
+            r = requests.patch(url, headers=headers, json=safe_payload, timeout=60)
+
     if not r.ok:
         raise RuntimeError(f"PATCH {table} failed ({r.status_code}): {r.text}")
 
@@ -165,6 +238,15 @@ def rest_delete(access_token: str, table: str, where_query: str) -> None:
     headers = rest_headers(access_token)
     headers["Prefer"] = "return=representation"
     r = requests.delete(url, headers=headers, timeout=60)
+
+    if not r.ok and r.status_code in (401, 403):
+        sb = get_sb_client()
+        ok, tok = ensure_auth_restored(sb)
+        if ok and tok:
+            headers = rest_headers(tok)
+            headers["Prefer"] = "return=representation"
+            r = requests.delete(url, headers=headers, timeout=60)
+
     if not r.ok:
         raise RuntimeError(f"DELETE {table} failed ({r.status_code}): {r.text}")
 
@@ -193,7 +275,21 @@ def get_profile_role(access_token: str) -> tuple[str | None, str | None, str | N
     """
     profiles.team verwijderd -> return (user_id, email, role, team=None)
     """
-    u = auth_get_user(access_token)
+    try:
+        u = auth_get_user(access_token)
+    except RuntimeError as e:
+        # 1x retry via cookie restore
+        if "(401)" in str(e) or "(403)" in str(e):
+            sb = get_sb_client()
+            ok, tok = ensure_auth_restored(sb)
+            if ok and tok:
+                access_token = tok
+                u = auth_get_user(access_token)
+            else:
+                raise
+        else:
+            raise
+
     user_id = u.get("id")
     email = u.get("email")
 
@@ -224,7 +320,13 @@ def normalize_name(s: str) -> str:
 
 @st.cache_data(ttl=120)
 def get_players_map(access_token: str) -> tuple[dict, list[str]]:
-    df = rest_get(access_token, "players", "select=player_id,full_name,is_active&is_active=eq.true&limit=5000")
+    # retry wrapper voor auth-expiry
+    df = _retry_with_refreshed_token(
+        rest_get,
+        access_token,
+        "players",
+        "select=player_id,full_name,is_active&is_active=eq.true&limit=5000",
+    )
     if df.empty:
         return {}, []
     df["full_name"] = df["full_name"].astype(str).str.strip()
@@ -299,7 +401,7 @@ def fetch_matches_on_date(access_token: str, d: date) -> pd.DataFrame:
         f"&match_date=eq.{d.isoformat()}"
         "&order=match_id.desc&limit=200"
     )
-    return rest_get(access_token, "matches", q)
+    return _retry_with_refreshed_token(rest_get, access_token, "matches", q)
 
 
 def fetch_matches_range(access_token: str, d_from: date, d_to: date, season_filter: str = "") -> pd.DataFrame:
@@ -311,7 +413,7 @@ def fetch_matches_range(access_token: str, d_from: date, d_to: date, season_filt
     )
     if season_filter.strip():
         q += f"&season=eq.{requests.utils.quote(season_filter.strip(), safe='')}"
-    return rest_get(access_token, "matches", q)
+    return _retry_with_refreshed_token(rest_get, access_token, "matches", q)
 
 
 @st.cache_data(ttl=30)
@@ -324,7 +426,7 @@ def fetch_gps_match_ids_on_date(access_token: str, d: date, match_type: str) -> 
         "&match_id=is.not_null"
         "&limit=20000"
     )
-    df = rest_get(access_token, "gps_records", q)
+    df = _retry_with_refreshed_token(rest_get, access_token, "gps_records", q)
     if df.empty or "match_id" not in df.columns:
         return pd.Series(dtype="Int64")
     return pd.to_numeric(df["match_id"], errors="coerce").dropna().astype(int)
@@ -745,7 +847,7 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 # -------------------------
 def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFrame:
     query = f"select={','.join(GPS_COLS)}&order=datum.desc&limit={limit}"
-    return rest_get(access_token, "gps_records", query)
+    return _retry_with_refreshed_token(rest_get, access_token, "gps_records", query)
 
 
 def df_to_excel_bytes_single(df: pd.DataFrame, sheet_name: str = "gps_records") -> bytes:
