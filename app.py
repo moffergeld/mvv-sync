@@ -83,19 +83,19 @@ def cookie_mgr():
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
-    # access kort, refresh lang
-    cm.set("sb_access", str(access_token or ""), max_age=60 * 60)               # 1 uur
-    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30)   # 30 dagen
+    # Elke set-call unieke key geven (anders duplicate key='set')
+    cm.set("sb_access", str(access_token or ""), max_age=60 * 60, key="set_sb_access")               # 1 uur
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30, key="set_sb_refresh")  # 30 dagen
     if email:
-        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30)
+        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30, key="set_sb_email")
 
 
 def clear_tokens_in_cookie():
     cm = cookie_mgr()
-    # delete bestaat niet in alle versies -> overschrijven + korte expiry
-    cm.set("sb_access", "", max_age=1)
-    cm.set("sb_refresh", "", max_age=1)
-    cm.set("sb_email", "", max_age=1)
+    # Overschrijven + korte expiry, ook met unieke keys
+    cm.set("sb_access", "", max_age=1, key="clear_sb_access")
+    cm.set("sb_refresh", "", max_age=1, key="clear_sb_refresh")
+    cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
 def _set_postgrest_auth_safely(token: str | None):
@@ -126,17 +126,14 @@ def try_restore_or_refresh_session() -> bool:
 
     last_err = None
 
-    # Soft retries bij korte netwerkdip
     for _ in range(2):
         try:
-            # Probeer eerst bestaande sessie te zetten
             if access:
                 try:
                     sb.auth.set_session(access, refresh)
                 except Exception:
                     pass
 
-            # Refresh naar nieuwe tokens
             refreshed = sb.auth.refresh_session(refresh)
             sess = getattr(refreshed, "session", None)
 
@@ -151,7 +148,6 @@ def try_restore_or_refresh_session() -> bool:
                     st.session_state.get("user_email"),
                 )
 
-                # Geef cookie component tijd om te schrijven
                 time.sleep(0.35)
                 return True
 
@@ -204,7 +200,6 @@ def login_ui():
     maintenance_banner()
     st.title("Login")
 
-    # form voorkomt reruns tijdens typen (mobiel stabieler)
     with st.form("login_form", clear_on_submit=False):
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_pw")
@@ -225,18 +220,15 @@ def login_ui():
 
         st.session_state["access_token"] = token
         st.session_state["user_email"] = email
-        st.session_state["sb_session"] = sess  # handig voor andere pages
+        st.session_state["sb_session"] = sess
 
-        # Tokens persistent bewaren (belangrijk voor mobiel / tab switch)
         set_tokens_in_cookie(token, refresh_token, email)
 
-        # Geef browser/component tijd om cookies echt te schrijven vóór rerun
+        # Laat component cookies wegschrijven vóór rerun
         time.sleep(0.6)
 
-        # PostgREST auth direct zetten
         _set_postgrest_auth_safely(token)
 
-        # reset profiel-cache
         st.session_state.pop("role", None)
         st.session_state.pop("player_id", None)
         st.session_state.pop("profile_loaded", None)
@@ -255,7 +247,6 @@ def logout_button():
             pass
 
         clear_tokens_in_cookie()
-        # Ook hier kort wachten zodat cookie-clears doorkomen
         time.sleep(0.35)
 
         st.session_state.clear()
@@ -263,12 +254,6 @@ def logout_button():
 
 
 def load_profile():
-    """
-    Verwacht public.profiles:
-      - user_id (uuid)
-      - role (user_role_v2 / text)
-      - player_id (uuid, optional)
-    """
     if st.session_state.get("profile_loaded"):
         return
 
@@ -277,7 +262,6 @@ def load_profile():
         st.error("Niet ingelogd (access_token ontbreekt).")
         st.stop()
 
-    # Zorg dat sb.table(...) met JWT werkt
     _set_postgrest_auth_safely(token)
 
     headers = {
@@ -289,13 +273,11 @@ def load_profile():
     r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers, timeout=30)
 
     if r.status_code in (401, 403):
-        # token mogelijk verlopen -> probeer stil te herstellen via refresh cookie
         st.session_state.pop("access_token", None)
         if try_restore_or_refresh_session():
             st.session_state.pop("profile_loaded", None)
             st.rerun()
 
-        # alleen nu echt logout
         clear_tokens_in_cookie()
         time.sleep(0.35)
         st.session_state.clear()
@@ -314,7 +296,6 @@ def load_profile():
         st.error("Kon user_id niet bepalen. Log opnieuw in.")
         st.stop()
 
-    # maybe_single i.p.v. single: 0 rows -> None (geen crash)
     try:
         prof = (
             sb.table("profiles")
@@ -343,7 +324,6 @@ def load_profile():
 
 
 def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
-    # In SAFE_MODE geen images/CSS-heavy HTML
     if not SAFE_MODE:
         b64 = img_to_b64_safe(img_path)
         if b64:
@@ -411,7 +391,6 @@ if not SAFE_MODE:
 
 # ------------------------------------
 # Cookie component vroeg initialiseren
-# (helpt met betrouwbaarder cookie read/write)
 # ------------------------------------
 try:
     _cm_boot = cookie_mgr()
@@ -423,16 +402,12 @@ except Exception:
 # Auth gate
 # ----------------------------
 if "access_token" not in st.session_state:
-    # Probeer sessie te herstellen uit cookies (mobiel/tab-switch proof)
     restored = try_restore_or_refresh_session()
     if not restored:
         login_ui()
         st.stop()
 
-# Zorg opnieuw dat PostgREST auth goed staat (voor het geval rerun)
 _set_postgrest_auth_safely(st.session_state.get("access_token"))
-
-# profiel laden (role + player_id)
 load_profile()
 
 # ----------------------------
@@ -441,7 +416,6 @@ load_profile()
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
 
-# Tijdelijke debug (kan je later weghalen)
 with st.sidebar.expander("Auth debug", expanded=False):
     cm = cookie_mgr()
     st.write("session access:", bool(st.session_state.get("access_token")))
@@ -461,9 +435,6 @@ st.write("Klik op een tegel om een module te openen.")
 role = (st.session_state.get("role") or "").lower()
 is_player = role == "player"
 
-# ----------------------------
-# Tiles
-# ----------------------------
 c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
 
 with c1:
