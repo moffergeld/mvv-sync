@@ -72,7 +72,13 @@ def img_to_b64_safe(path: str) -> str | None:
 
 
 def cookie_mgr():
-    return stx.CookieManager()
+    """
+    Maak CookieManager maar 1x per run aan, anders krijg je
+    StreamlitDuplicateElementKey (default key='init').
+    """
+    if "_cookie_mgr_instance" not in st.session_state:
+        st.session_state["_cookie_mgr_instance"] = stx.CookieManager(key="mvv_cookie_mgr")
+    return st.session_state["_cookie_mgr_instance"]
 
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
