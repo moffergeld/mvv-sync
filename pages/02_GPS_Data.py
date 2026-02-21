@@ -13,8 +13,8 @@
 #
 # Vereist:
 #   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   st.session_state["access_token"] (JWT)
-#   st.session_state["role"] (geladen in app.py na login)
+#   Geldige auth via session of cookie-restore (auth_session.py)
+#   role/profile via roles.py
 #
 # Gebruikt modules:
 #   session_load_pages.py  -> session_load_pages_main(df)
@@ -32,13 +32,32 @@ import pages.Subscripts.gps_data_session_load_pages as session_load_pages
 import pages.Subscripts.gps_data_acwr_pages as acwr_pages
 import pages.Subscripts.gps_data_ffp_pages as ffp_pages
 
+# Auth/role helpers (jij hebt deze nu toegevoegd)
+from auth_session import ensure_auth_restored, get_sb_client
+from roles import get_profile, is_staff_user
+
 st.set_page_config(page_title="GPS Data", layout="wide")
 
 # -------------------------
-# UI access gate (staff-only)
+# Auth restore (belangrijk voor mobiel/tab-switch)
 # -------------------------
-role = (st.session_state.get("role") or "").lower()
-if role == "player":
+sb = get_sb_client()
+ok, token = ensure_auth_restored(sb)
+
+if not ok or not token:
+    st.error("Sessie verlopen. Log opnieuw in.")
+    try:
+        st.switch_page("app.py")
+    except Exception:
+        pass
+    st.stop()
+
+# -------------------------
+# UI access gate (staff-only)
+# Gebruik profiel uit roles.py (zet role ook in session_state)
+# -------------------------
+profile = get_profile(sb)
+if not is_staff_user(profile):
     st.error("Geen toegang.")
     st.stop()
 
@@ -53,15 +72,20 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 # Auth / REST helpers
 # -------------------------
 def get_access_token() -> str | None:
+    """
+    Pak token uit session_state; fallback naar token die net uit ensure_auth_restored kwam.
+    """
     tok = st.session_state.get("access_token")
     if tok:
-        return tok
+        return str(tok)
+
     sess = st.session_state.get("sb_session")
     if sess is not None:
-        token = getattr(sess, "access_token", None)
-        if token:
-            return token
-    return None
+        token2 = getattr(sess, "access_token", None)
+        if token2:
+            return str(token2)
+
+    return str(token) if token else None
 
 
 def rest_headers(access_token: str) -> dict:
@@ -230,7 +254,7 @@ def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
     """
     select = ",".join(GPS_SELECT_COLS)
 
-    # ✅ Belangrijk: stabiele order (datum + unieke id)
+    # Belangrijk: stabiele order (datum + unieke id)
     base_query = f"select={select}&order=datum.asc,gps_id.asc"
 
     raw = rest_get_paged(
@@ -257,8 +281,20 @@ try:
     u = auth_get_user(access_token)
     user_id = u.get("id") or "unknown"
 except Exception as e:
-    st.error(f"Kon user niet ophalen: {e}")
-    st.stop()
+    # 1x poging: sessie mogelijk vernieuwd maar lokale token variabele nog oud
+    sb2 = get_sb_client()
+    ok2, token2 = ensure_auth_restored(sb2)
+    if ok2 and token2:
+        access_token = token2
+        try:
+            u = auth_get_user(access_token)
+            user_id = u.get("id") or "unknown"
+        except Exception as e2:
+            st.error(f"Kon user niet ophalen: {e2}")
+            st.stop()
+    else:
+        st.error(f"Kon user niet ophalen: {e}")
+        st.stop()
 
 # Auto-load alles
 with st.spinner("GPS data laden..."):
