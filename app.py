@@ -10,8 +10,21 @@ from supabase import create_client
 # ----------------------------
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
-# Safe mode: open met ?safe=1 (minimale UI voor probleem-devices)
+# --------------------------------------------------
+# QUERY PARAM MODES (must run BEFORE any heavy init)
+# --------------------------------------------------
+DIAG_MODE = st.query_params.get("diag") == "1"
 SAFE_MODE = st.query_params.get("safe") == "1"
+
+if DIAG_MODE:
+    st.title("DIAG OK")
+    st.write("Als je dit ziet, werkt Streamlit op dit toestel/netwerk.")
+    st.write("Als het nog steeds wit blijft, dan blokkeert het toestel/netwerk Streamlit assets/JS (adblock/VPN/Private DNS/WebView/netwerkfilter).")
+    st.write("")
+    st.write("Testlinks:")
+    st.write("- Normaal: /")
+    st.write("- Safe mode: ?safe=1")
+    st.stop()
 
 # ----------------------------
 # Maintenance toggle
