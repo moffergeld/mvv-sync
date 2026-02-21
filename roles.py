@@ -7,13 +7,17 @@
 # - uid ophalen via sb.auth.get_user(token) zodat uid klopt.
 # - Role altijd normalizen (enum/qualified strings).
 # - OPEN_MODE standaard UIT (False), anders wordt iedereen "staff" in de UI.
+# - Herstelt auth automatisch vanuit cookies bij Streamlit session reset
+#   (mobiel/tab switch/reconnect), mits app.py cookies zet.
 # ============================================================
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
+import extra_streamlit_components as stx
 
 try:
     from supabase import create_client  # type: ignore
@@ -60,22 +64,16 @@ def get_sb():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
 
 
-def require_auth() -> None:
-    if not st.session_state.get("access_token"):
-        st.error("Niet ingelogd.")
-        st.stop()
+# ----------------------------
+# Cookie/session restore helpers
+# ----------------------------
+def _cookie_mgr():
+    return stx.CookieManager()
 
 
-def get_access_token() -> str:
-    require_auth()
-    return str(st.session_state["access_token"])
-
-
-def sb_postgrest_auth(sb) -> None:
-    """
-    Zet Authorization header voor PostgREST table() calls.
-    """
-    token = get_access_token()
+def _set_postgrest_auth_safely(sb, token: Optional[str]) -> None:
+    if not sb or not token:
+        return
     try:
         sb.postgrest.auth(token)
     except Exception:
@@ -83,15 +81,147 @@ def sb_postgrest_auth(sb) -> None:
         pass
 
 
+def _set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None) -> None:
+    cm = _cookie_mgr()
+    cm.set("sb_access", access_token or "", max_age=60 * 60)               # 1 uur
+    cm.set("sb_refresh", refresh_token or "", max_age=60 * 60 * 24 * 30)   # 30 dagen
+    if email:
+        cm.set("sb_email", email, max_age=60 * 60 * 24 * 30)
+
+
+def _clear_tokens_in_cookie() -> None:
+    cm = _cookie_mgr()
+    # delete bestaat niet in alle versies
+    cm.set("sb_access", "", max_age=1)
+    cm.set("sb_refresh", "", max_age=1)
+    cm.set("sb_email", "", max_age=1)
+
+
+def _get_access_token_from_state() -> Optional[str]:
+    tok = st.session_state.get("access_token")
+    if tok:
+        return str(tok)
+
+    sess = st.session_state.get("sb_session")
+    if sess is not None:
+        token = getattr(sess, "access_token", None)
+        if token:
+            return str(token)
+    return None
+
+
+def _try_restore_or_refresh_session(sb=None) -> bool:
+    """
+    Herstelt sessie uit cookies wanneer session_state leeg is geraakt.
+    Vereist dat app.py bij login tokens in cookies opslaat.
+    """
+    if sb is None:
+        sb = get_sb()
+    if sb is None:
+        st.session_state["auth_err"] = "Supabase client niet beschikbaar"
+        return False
+
+    cm = _cookie_mgr()
+    access = cm.get("sb_access")
+    refresh = cm.get("sb_refresh")
+    email = cm.get("sb_email")
+
+    if email and not st.session_state.get("user_email"):
+        st.session_state["user_email"] = email
+
+    if not refresh:
+        return False
+
+    last_err = None
+
+    # Soft retries bij korte netwerkdip
+    for _ in range(2):
+        try:
+            if access:
+                try:
+                    sb.auth.set_session(access, refresh)
+                except Exception:
+                    pass
+
+            refreshed = sb.auth.refresh_session(refresh)
+            sess = getattr(refreshed, "session", None)
+
+            if sess and getattr(sess, "access_token", None) and getattr(sess, "refresh_token", None):
+                st.session_state["access_token"] = sess.access_token
+                st.session_state["sb_session"] = sess
+                _set_postgrest_auth_safely(sb, sess.access_token)
+
+                _set_tokens_in_cookie(
+                    sess.access_token,
+                    sess.refresh_token,
+                    st.session_state.get("user_email"),
+                )
+                return True
+
+        except Exception as e:
+            last_err = e
+            time.sleep(0.35)
+
+    st.session_state["auth_err"] = str(last_err) if last_err else "Unknown auth restore error"
+    return False
+
+
+def require_auth() -> None:
+    """
+    Zorgt dat er een geldige access_token aanwezig is.
+    Probeert eerst cookie-restore als session_state leeg is.
+    """
+    token = _get_access_token_from_state()
+    if token:
+        st.session_state["access_token"] = token
+        return
+
+    sb = get_sb()
+    ok = _try_restore_or_refresh_session(sb)
+    if ok and _get_access_token_from_state():
+        return
+
+    st.error("Niet ingelogd.")
+    st.stop()
+
+
+def get_access_token() -> str:
+    require_auth()
+    tok = _get_access_token_from_state()
+    if not tok:
+        st.error("Geen access token beschikbaar.")
+        st.stop()
+    return str(tok)
+
+
+def sb_postgrest_auth(sb) -> None:
+    """
+    Zet Authorization header voor PostgREST table() calls.
+    """
+    token = get_access_token()
+    _set_postgrest_auth_safely(sb, token)
+
+
 def get_auth_uid(sb) -> Optional[str]:
     """
     Haalt user_id op via GoTrue met token.
+    Probeert 1x silent refresh bij verlopen token.
     """
     token = get_access_token()
     try:
         u = sb.auth.get_user(token)
         return u.user.id
     except Exception:
+        # mogelijk verlopen token -> probeer restore/refresh
+        st.session_state.pop("access_token", None)
+        if _try_restore_or_refresh_session(sb):
+            token = _get_access_token_from_state()
+            if token:
+                try:
+                    u = sb.auth.get_user(token)
+                    return u.user.id
+                except Exception:
+                    return None
         return None
 
 
