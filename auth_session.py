@@ -19,15 +19,21 @@ def get_sb_client():
 
 
 def cookie_mgr():
-    return stx.CookieManager()
+    """
+    Maak CookieManager maar 1x per run aan, anders krijg je
+    StreamlitDuplicateElementKey (default key='init').
+    """
+    if "_cookie_mgr_instance" not in st.session_state:
+        st.session_state["_cookie_mgr_instance"] = stx.CookieManager(key="mvv_cookie_mgr")
+    return st.session_state["_cookie_mgr_instance"]
 
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
-    cm.set("sb_access", access_token or "", max_age=60 * 60)               # 1 uur
-    cm.set("sb_refresh", refresh_token or "", max_age=60 * 60 * 24 * 30)   # 30 dagen
+    cm.set("sb_access", str(access_token or ""), max_age=60 * 60)               # 1 uur
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30)   # 30 dagen
     if email:
-        cm.set("sb_email", email, max_age=60 * 60 * 24 * 30)
+        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30)
 
 
 def clear_tokens_in_cookie():
@@ -49,12 +55,12 @@ def set_postgrest_auth_safely(sb, token: Optional[str]):
 def get_access_token_from_state() -> Optional[str]:
     tok = st.session_state.get("access_token")
     if tok:
-        return tok
+        return str(tok)
     sess = st.session_state.get("sb_session")
     if sess is not None:
         token = getattr(sess, "access_token", None)
         if token:
-            return token
+            return str(token)
     return None
 
 
@@ -96,6 +102,9 @@ def try_restore_or_refresh_session(sb=None) -> bool:
                 st.session_state["sb_session"] = sess
                 set_postgrest_auth_safely(sb, sess.access_token)
                 set_tokens_in_cookie(sess.access_token, sess.refresh_token, st.session_state.get("user_email"))
+
+                # Geef cookie component tijd om tokens te schrijven
+                time.sleep(0.35)
                 return True
 
         except Exception as e:
@@ -133,4 +142,5 @@ def hard_logout(sb=None):
         pass
 
     clear_tokens_in_cookie()
+    time.sleep(0.35)
     st.session_state.clear()
