@@ -150,10 +150,15 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
     days_with_data, _ = _compute_day_sets(df)
     max_day = max(days_with_data) if days_with_data else date.today()
 
-    if f"{key_prefix}_selected" not in st.session_state:
-        st.session_state[f"{key_prefix}_selected"] = max_day
+    sel_key = f"{key_prefix}_selected"
+    last_evt_key = f"{key_prefix}_last_calendar_evt"
 
-    selected: date = st.session_state[f"{key_prefix}_selected"]
+    if sel_key not in st.session_state:
+        st.session_state[sel_key] = max_day
+    if last_evt_key not in st.session_state:
+        st.session_state[last_evt_key] = None
+
+    selected: date = st.session_state[sel_key]
 
     st.markdown(
         """
@@ -184,24 +189,41 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
     events = _build_calendar_events(df, selected)
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    if result:
+    # ---- Veilig verwerken (geen rerun-loop) ----
+    clicked_date = None
+    event_fingerprint = None
+
+    if isinstance(result, dict):
         dc = result.get("dateClick")
         if dc and dc.get("dateStr"):
-            ds = dc["dateStr"]
-            st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
-            st.rerun()
+            ds = str(dc["dateStr"])[:10]
+            clicked_date = date.fromisoformat(ds)
+            event_fingerprint = f"dateClick:{ds}"
 
         ec = result.get("eventClick")
         if ec:
             ev = ec.get("event", {}) or {}
             ds = ev.get("start")
             if ds:
-                st.session_state[f"{key_prefix}_selected"] = date.fromisoformat(ds[:10])
+                ds = str(ds)[:10]
+                clicked_date = date.fromisoformat(ds)
+                # fingerprint op start + title zodat dezelfde klik niet steeds triggert
+                event_fingerprint = f"eventClick:{ds}:{ev.get('title', '')}"
+
+    if clicked_date is not None and event_fingerprint is not None:
+        prev_selected = st.session_state[sel_key]
+        prev_evt = st.session_state[last_evt_key]
+
+        # Alleen reageren op NIEUWE click
+        if event_fingerprint != prev_evt:
+            st.session_state[last_evt_key] = event_fingerprint
+
+            # Alleen rerun als de datum echt verandert
+            if clicked_date != prev_selected:
+                st.session_state[sel_key] = clicked_date
                 st.rerun()
 
-    return st.session_state[f"{key_prefix}_selected"]
-
-
+    return st.session_state[sel_key]
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -582,3 +604,4 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
