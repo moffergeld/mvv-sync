@@ -1,8 +1,11 @@
+# app.py
 import base64
 from pathlib import Path
+import time
 
 import requests
 import streamlit as st
+import extra_streamlit_components as stx
 from supabase import create_client
 
 # ----------------------------
@@ -68,6 +71,89 @@ def img_to_b64_safe(path: str) -> str | None:
     return base64.b64encode(p.read_bytes()).decode()
 
 
+def cookie_mgr():
+    return stx.CookieManager()
+
+
+def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
+    cm = cookie_mgr()
+    # access kort, refresh lang
+    cm.set("sb_access", access_token or "", max_age=60 * 60)               # 1 uur
+    cm.set("sb_refresh", refresh_token or "", max_age=60 * 60 * 24 * 30)   # 30 dagen
+    if email:
+        cm.set("sb_email", email, max_age=60 * 60 * 24 * 30)
+
+
+def clear_tokens_in_cookie():
+    cm = cookie_mgr()
+    # delete bestaat niet in alle versies -> overschrijven + korte expiry
+    cm.set("sb_access", "", max_age=1)
+    cm.set("sb_refresh", "", max_age=1)
+    cm.set("sb_email", "", max_age=1)
+
+
+def _set_postgrest_auth_safely(token: str | None):
+    if not token:
+        return
+    try:
+        sb.postgrest.auth(token)
+    except Exception:
+        pass
+
+
+def try_restore_or_refresh_session() -> bool:
+    """
+    Herstelt sessie vanuit cookies wanneer session_state leeg is geraakt
+    (bijv. mobiel tab-switch / reconnect / websocket reset).
+    """
+    cm = cookie_mgr()
+
+    access = cm.get("sb_access")
+    refresh = cm.get("sb_refresh")
+    email = cm.get("sb_email")
+
+    if email and not st.session_state.get("user_email"):
+        st.session_state["user_email"] = email
+
+    if not refresh:
+        return False
+
+    last_err = None
+
+    # Soft retries bij korte netwerkdip
+    for _ in range(2):
+        try:
+            # Probeer eerst bestaande sessie te zetten
+            if access:
+                try:
+                    sb.auth.set_session(access, refresh)
+                except Exception:
+                    pass
+
+            # Refresh naar nieuwe tokens
+            refreshed = sb.auth.refresh_session(refresh)
+            sess = getattr(refreshed, "session", None)
+
+            if sess and getattr(sess, "access_token", None) and getattr(sess, "refresh_token", None):
+                st.session_state["access_token"] = sess.access_token
+                st.session_state["sb_session"] = sess
+
+                _set_postgrest_auth_safely(sess.access_token)
+                set_tokens_in_cookie(
+                    sess.access_token,
+                    sess.refresh_token,
+                    st.session_state.get("user_email"),
+                )
+                return True
+
+        except Exception as e:
+            last_err = e
+            time.sleep(0.35)
+
+    st.session_state["auth_err"] = str(last_err) if last_err else "Unknown auth restore error"
+    return False
+
+
 def maintenance_banner():
     if not MAINTENANCE_MODE:
         return
@@ -109,7 +195,7 @@ def login_ui():
     maintenance_banner()
     st.title("Login")
 
-    # ✅ form voorkomt reruns tijdens typen (mobiel stabieler)
+    # form voorkomt reruns tijdens typen (mobiel stabieler)
     with st.form("login_form", clear_on_submit=False):
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_pw")
@@ -122,20 +208,21 @@ def login_ui():
         res = sb.auth.sign_in_with_password({"email": email, "password": password})
         sess = getattr(res, "session", None)
         token = getattr(sess, "access_token", None)
+        refresh_token = getattr(sess, "refresh_token", None)
 
-        if not token:
-            st.error("Login mislukt: geen sessie ontvangen.")
+        if not token or not refresh_token:
+            st.error("Login mislukt: geen geldige sessie ontvangen.")
             return
 
         st.session_state["access_token"] = token
         st.session_state["user_email"] = email
         st.session_state["sb_session"] = sess  # handig voor andere pages
 
-        # ✅ PostgREST auth direct zetten
-        try:
-            sb.postgrest.auth(token)
-        except Exception:
-            pass
+        # Tokens persistent bewaren (belangrijk voor mobiel / tab switch)
+        set_tokens_in_cookie(token, refresh_token, email)
+
+        # PostgREST auth direct zetten
+        _set_postgrest_auth_safely(token)
 
         # reset profiel-cache
         st.session_state.pop("role", None)
@@ -154,6 +241,8 @@ def logout_button():
             sb.auth.sign_out()
         except Exception:
             pass
+
+        clear_tokens_in_cookie()
         st.session_state.clear()
         st.rerun()
 
@@ -173,31 +262,42 @@ def load_profile():
         st.error("Niet ingelogd (access_token ontbreekt).")
         st.stop()
 
-    # ✅ CRUCIAAL: zorg dat sb.table(...) met JWT werkt
-    try:
-        sb.postgrest.auth(token)
-    except Exception:
-        pass
+    # Zorg dat sb.table(...) met JWT werkt
+    _set_postgrest_auth_safely(token)
 
-    # user-id ophalen via auth endpoint (werkt met jouw JWT)
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
+
     r = requests.get(f"{SUPABASE_URL}/auth/v1/user", headers=headers, timeout=30)
-    if not r.ok:
+
+    if r.status_code in (401, 403):
+        # token mogelijk verlopen -> probeer stil te herstellen via refresh cookie
+        st.session_state.pop("access_token", None)
+        if try_restore_or_refresh_session():
+            st.session_state.pop("profile_loaded", None)
+            st.rerun()
+
+        # alleen nu echt logout
+        clear_tokens_in_cookie()
         st.session_state.clear()
-        st.error(f"Sessie ongeldig ({r.status_code}). Log opnieuw in.")
+        st.error("Sessie verlopen. Log opnieuw in.")
+        st.stop()
+
+    if not r.ok:
+        st.error(f"Kon user niet ophalen: {r.status_code} {r.text}")
         st.stop()
 
     user_id = r.json().get("id")
     if not user_id:
+        clear_tokens_in_cookie()
         st.session_state.clear()
         st.error("Kon user_id niet bepalen. Log opnieuw in.")
         st.stop()
 
-    # ✅ maybe_single i.p.v. single: 0 rows -> None (geen crash)
+    # maybe_single i.p.v. single: 0 rows -> None (geen crash)
     try:
         prof = (
             sb.table("profiles")
@@ -296,14 +396,14 @@ if not SAFE_MODE:
 # Auth gate
 # ----------------------------
 if "access_token" not in st.session_state:
-    login_ui()
-    st.stop()
+    # Probeer sessie te herstellen uit cookies (mobiel/tab-switch proof)
+    restored = try_restore_or_refresh_session()
+    if not restored:
+        login_ui()
+        st.stop()
 
-# ✅ zorg opnieuw dat PostgREST auth goed staat (voor het geval rerun)
-try:
-    sb.postgrest.auth(st.session_state["access_token"])
-except Exception:
-    pass
+# Zorg opnieuw dat PostgREST auth goed staat (voor het geval rerun)
+_set_postgrest_auth_safely(st.session_state.get("access_token"))
 
 # profiel laden (role + player_id)
 load_profile()
@@ -313,6 +413,15 @@ load_profile()
 # ----------------------------
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
+
+# Tijdelijke debug (kan je later weghalen)
+with st.sidebar.expander("Auth debug", expanded=False):
+    cm = cookie_mgr()
+    st.write("session access:", bool(st.session_state.get("access_token")))
+    st.write("cookie access:", bool(cm.get("sb_access")))
+    st.write("cookie refresh:", bool(cm.get("sb_refresh")))
+    st.write("auth_err:", st.session_state.get("auth_err"))
+
 logout_button()
 
 maintenance_banner()
