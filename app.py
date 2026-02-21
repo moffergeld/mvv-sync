@@ -78,10 +78,10 @@ def cookie_mgr():
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
     # access kort, refresh lang
-    cm.set("sb_access", access_token or "", max_age=60 * 60)               # 1 uur
-    cm.set("sb_refresh", refresh_token or "", max_age=60 * 60 * 24 * 30)   # 30 dagen
+    cm.set("sb_access", str(access_token or ""), max_age=60 * 60)               # 1 uur
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30)   # 30 dagen
     if email:
-        cm.set("sb_email", email, max_age=60 * 60 * 24 * 30)
+        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30)
 
 
 def clear_tokens_in_cookie():
@@ -144,6 +144,9 @@ def try_restore_or_refresh_session() -> bool:
                     sess.refresh_token,
                     st.session_state.get("user_email"),
                 )
+
+                # Geef cookie component tijd om te schrijven
+                time.sleep(0.35)
                 return True
 
         except Exception as e:
@@ -221,6 +224,9 @@ def login_ui():
         # Tokens persistent bewaren (belangrijk voor mobiel / tab switch)
         set_tokens_in_cookie(token, refresh_token, email)
 
+        # Geef browser/component tijd om cookies echt te schrijven vóór rerun
+        time.sleep(0.6)
+
         # PostgREST auth direct zetten
         _set_postgrest_auth_safely(token)
 
@@ -243,6 +249,9 @@ def logout_button():
             pass
 
         clear_tokens_in_cookie()
+        # Ook hier kort wachten zodat cookie-clears doorkomen
+        time.sleep(0.35)
+
         st.session_state.clear()
         st.rerun()
 
@@ -282,6 +291,7 @@ def load_profile():
 
         # alleen nu echt logout
         clear_tokens_in_cookie()
+        time.sleep(0.35)
         st.session_state.clear()
         st.error("Sessie verlopen. Log opnieuw in.")
         st.stop()
@@ -293,6 +303,7 @@ def load_profile():
     user_id = r.json().get("id")
     if not user_id:
         clear_tokens_in_cookie()
+        time.sleep(0.35)
         st.session_state.clear()
         st.error("Kon user_id niet bepalen. Log opnieuw in.")
         st.stop()
@@ -391,6 +402,16 @@ if not SAFE_MODE:
         """,
         unsafe_allow_html=True,
     )
+
+# ------------------------------------
+# Cookie component vroeg initialiseren
+# (helpt met betrouwbaarder cookie read/write)
+# ------------------------------------
+try:
+    _cm_boot = cookie_mgr()
+    _ = _cm_boot.get("sb_refresh")
+except Exception:
+    pass
 
 # ----------------------------
 # Auth gate
