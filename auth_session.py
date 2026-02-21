@@ -30,17 +30,17 @@ def cookie_mgr():
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
-    cm.set("sb_access", str(access_token or ""), max_age=60 * 60)               # 1 uur
-    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30)   # 30 dagen
+    cm.set("sb_access", str(access_token or ""), max_age=60 * 60, key="set_sb_access")               # 1 uur
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30, key="set_sb_refresh")  # 30 dagen
     if email:
-        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30)
+        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30, key="set_sb_email")
 
 
 def clear_tokens_in_cookie():
     cm = cookie_mgr()
-    cm.set("sb_access", "", max_age=1)
-    cm.set("sb_refresh", "", max_age=1)
-    cm.set("sb_email", "", max_age=1)
+    cm.set("sb_access", "", max_age=1, key="clear_sb_access")
+    cm.set("sb_refresh", "", max_age=1, key="clear_sb_refresh")
+    cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
 def set_postgrest_auth_safely(sb, token: Optional[str]):
@@ -102,8 +102,6 @@ def try_restore_or_refresh_session(sb=None) -> bool:
                 st.session_state["sb_session"] = sess
                 set_postgrest_auth_safely(sb, sess.access_token)
                 set_tokens_in_cookie(sess.access_token, sess.refresh_token, st.session_state.get("user_email"))
-
-                # Geef cookie component tijd om tokens te schrijven
                 time.sleep(0.35)
                 return True
 
@@ -116,10 +114,6 @@ def try_restore_or_refresh_session(sb=None) -> bool:
 
 
 def ensure_auth_restored(sb=None) -> Tuple[bool, Optional[str]]:
-    """
-    Zorgt dat er een access_token in session_state staat (evt. via cookie restore).
-    Returns (ok, token)
-    """
     token = get_access_token_from_state()
     if token:
         if sb is None:
