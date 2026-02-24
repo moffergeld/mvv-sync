@@ -389,9 +389,15 @@ def render_match_header(match_row: pd.Series):
     except Exception:
         ga_i = None
 
-    score_txt = f"{gf_i} - {ga_i}" if (gf_i is not None and ga_i is not None) else "-"
-
     is_away = home_away.lower().startswith("a")
+
+    # Score tonen in dezelfde volgorde als de getoonde teams (links - rechts)
+    # Aangenomen: goals_for/goals_against zijn vanuit MVV-perspectief
+    if gf_i is not None and ga_i is not None:
+        score_txt = f"{ga_i} - {gf_i}" if is_away else f"{gf_i} - {ga_i}"
+    else:
+        score_txt = "-"
+
     left_team = opponent if is_away else MVV_TEAM_NAME
     right_team = MVV_TEAM_NAME if is_away else opponent
 
@@ -427,8 +433,6 @@ def render_match_header(match_row: pd.Series):
     with c3:
         if right_logo and right_logo.exists():
             st.image(_read_image_bytes(right_logo), width=LOGO_W)
-
-
 # -----------------------------
 # Main
 # -----------------------------
