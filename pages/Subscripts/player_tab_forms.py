@@ -11,28 +11,25 @@ import streamlit as st
 # UI helpers (legendes)
 # -----------------------------
 def _legend_asrm():
-    # Brede “full width” bar met 4 kolommen
+    # Alleen de 3 zones, full width
     st.markdown(
         """
         <div style="
             width:100%;
             display:flex;
-            gap:10px;
+            gap:12px;
             align-items:center;
             justify-content:space-between;
-            margin:6px 0 12px 0;
+            margin:6px 0 14px 0;
         ">
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:800;">
             GOOD (1–4)
           </div>
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:800;">
             MODERATE (5–7)
           </div>
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:800;">
             BAD (8–10)
-          </div>
-          <div style="flex:1; text-align:center; opacity:.8; font-size:12px; font-weight:600;">
-            ASRM: 1 = best, 10 = worst
           </div>
         </div>
         """,
@@ -41,27 +38,25 @@ def _legend_asrm():
 
 
 def _legend_rpe():
+    # Alleen de 3 zones, full width
     st.markdown(
         """
         <div style="
             width:100%;
             display:flex;
-            gap:10px;
+            gap:12px;
             align-items:center;
             justify-content:space-between;
-            margin:6px 0 12px 0;
+            margin:6px 0 14px 0;
         ">
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:800;">
             LOW (1–4)
           </div>
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:800;">
             MODERATE (5–7)
           </div>
-          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:700;">
+          <div style="flex:1; text-align:center; padding:8px 12px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:800;">
             HIGH (8–10)
-          </div>
-          <div style="flex:1; text-align:center; opacity:.8; font-size:12px; font-weight:600;">
-            RPE: 1 = very easy, 10 = max
           </div>
         </div>
         """,
