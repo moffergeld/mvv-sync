@@ -4,65 +4,36 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import streamlit as st
 
 
 # -----------------------------
-# UI helpers (kleur badges + legendes)
+# UI helpers (legendes)
 # -----------------------------
-def _zone_badge(value: int, *, reverse: bool = False, label: str = "") -> str:
-    """
-    reverse=False: laag=goed (ASRM: 1 best, 10 worst)
-    reverse=True:  hoog=goed (als je ooit andersom gebruikt)
-    """
-    v = int(value)
-
-    if not reverse:
-        if v <= 4:
-            c = "#1f7a3a"  # groen
-            t = "GOOD"
-        elif v <= 7:
-            c = "#a36a00"  # oranje
-            t = "MODERATE"
-        else:
-            c = "#a11e2f"  # rood
-            t = "BAD"
-    else:
-        if v >= 8:
-            c = "#1f7a3a"
-            t = "GOOD"
-        elif v >= 5:
-            c = "#a36a00"
-            t = "MODERATE"
-        else:
-            c = "#a11e2f"
-            t = "BAD"
-
-    txt = f"{label}: {v} — {t}" if label else f"{v} — {t}"
-    return f"""
-    <div style="
-        display:inline-block;
-        padding:6px 10px;
-        border-radius:999px;
-        background:{c};
-        color:white;
-        font-size:12px;
-        font-weight:600;
-        margin-top:4px;
-        margin-bottom:10px;
-    ">{txt}</div>
-    """
-
-
 def _legend_asrm():
+    # Brede “full width” bar met 4 kolommen
     st.markdown(
         """
-        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:6px 0 12px 0;">
-          <div style="padding:4px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:600;">GOOD (1–4)</div>
-          <div style="padding:4px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:600;">MODERATE (5–7)</div>
-          <div style="padding:4px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:600;">BAD (8–10)</div>
-          <div style="opacity:.75; font-size:12px;">ASRM: 1 = best, 10 = worst</div>
+        <div style="
+            width:100%;
+            display:flex;
+            gap:10px;
+            align-items:center;
+            justify-content:space-between;
+            margin:6px 0 12px 0;
+        ">
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:700;">
+            GOOD (1–4)
+          </div>
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:700;">
+            MODERATE (5–7)
+          </div>
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:700;">
+            BAD (8–10)
+          </div>
+          <div style="flex:1; text-align:center; opacity:.8; font-size:12px; font-weight:600;">
+            ASRM: 1 = best, 10 = worst
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -72,11 +43,26 @@ def _legend_asrm():
 def _legend_rpe():
     st.markdown(
         """
-        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:6px 0 12px 0;">
-          <div style="padding:4px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:600;">LOW (1–4)</div>
-          <div style="padding:4px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:600;">MODERATE (5–7)</div>
-          <div style="padding:4px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:600;">HIGH (8–10)</div>
-          <div style="opacity:.75; font-size:12px;">RPE: 1 = very easy, 10 = max</div>
+        <div style="
+            width:100%;
+            display:flex;
+            gap:10px;
+            align-items:center;
+            justify-content:space-between;
+            margin:6px 0 12px 0;
+        ">
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#1f7a3a; color:#fff; font-size:12px; font-weight:700;">
+            LOW (1–4)
+          </div>
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a36a00; color:#fff; font-size:12px; font-weight:700;">
+            MODERATE (5–7)
+          </div>
+          <div style="flex:1; text-align:center; padding:6px 10px; border-radius:999px; background:#a11e2f; color:#fff; font-size:12px; font-weight:700;">
+            HIGH (8–10)
+          </div>
+          <div style="flex:1; text-align:center; opacity:.8; font-size:12px; font-weight:600;">
+            RPE: 1 = very easy, 10 = max
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -226,50 +212,11 @@ def render_forms_tab(sb, target_player_id: str):
         with st.form("asrm_form", clear_on_submit=False):
             _legend_asrm()
 
-            ms = st.slider(
-                "Muscle soreness (1–10)",
-                1,
-                10,
-                value=int(existing_asrm.get("muscle_soreness", 5)),
-                key="asrm_ms",
-            )
-            st.markdown(_zone_badge(ms, label="Muscle soreness"), unsafe_allow_html=True)
-
-            fat = st.slider(
-                "Fatigue (1–10)",
-                1,
-                10,
-                value=int(existing_asrm.get("fatigue", 5)),
-                key="asrm_fat",
-            )
-            st.markdown(_zone_badge(fat, label="Fatigue"), unsafe_allow_html=True)
-
-            sleep = st.slider(
-                "Sleep quality (1–10)",
-                1,
-                10,
-                value=int(existing_asrm.get("sleep_quality", 5)),
-                key="asrm_sleep",
-            )
-            st.markdown(_zone_badge(sleep, label="Sleep quality"), unsafe_allow_html=True)
-
-            stress = st.slider(
-                "Stress (1–10)",
-                1,
-                10,
-                value=int(existing_asrm.get("stress", 5)),
-                key="asrm_stress",
-            )
-            st.markdown(_zone_badge(stress, label="Stress"), unsafe_allow_html=True)
-
-            mood = st.slider(
-                "Mood (1–10)",
-                1,
-                10,
-                value=int(existing_asrm.get("mood", 5)),
-                key="asrm_mood",
-            )
-            st.markdown(_zone_badge(mood, label="Mood"), unsafe_allow_html=True)
+            ms = st.slider("Muscle soreness (1–10)", 1, 10, value=int(existing_asrm.get("muscle_soreness", 5)), key="asrm_ms")
+            fat = st.slider("Fatigue (1–10)", 1, 10, value=int(existing_asrm.get("fatigue", 5)), key="asrm_fat")
+            sleep = st.slider("Sleep quality (1–10)", 1, 10, value=int(existing_asrm.get("sleep_quality", 5)), key="asrm_sleep")
+            stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
+            mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
 
             asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
 
@@ -332,7 +279,6 @@ def render_forms_tab(sb, target_player_id: str):
             st.markdown("### Session 1")
             s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
             s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
-            st.markdown(_zone_badge(s1_rpe, label="Session 1 RPE"), unsafe_allow_html=True)
 
             st.divider()
 
@@ -341,7 +287,6 @@ def render_forms_tab(sb, target_player_id: str):
             st.markdown("### Session 2")
             s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
             s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
-            st.markdown(_zone_badge(s2_rpe, label="Session 2 RPE"), unsafe_allow_html=True)
 
             st.divider()
             st.markdown("### Injury")
@@ -357,15 +302,7 @@ def render_forms_tab(sb, target_player_id: str):
                     key="rpe_injury_loc",
                 )
             with pain_col:
-                injury_pain = st.slider(
-                    "Pain (0–10)",
-                    0,
-                    10,
-                    value=int(rpe_header.get("injury_pain", 0) or 0),
-                    key="rpe_pain",
-                )
-                # Pain: 0 = best, 10 = worst -> zelfde kleurlogica als ASRM
-                st.markdown(_zone_badge(int(injury_pain), label="Pain"), unsafe_allow_html=True)
+                injury_pain = st.slider("Pain (0–10)", 0, 10, value=int(rpe_header.get("injury_pain", 0) or 0), key="rpe_pain")
 
             notes = st.text_area("Notes (optional)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
             rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
