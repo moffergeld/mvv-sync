@@ -199,7 +199,7 @@ def render_forms_tab(sb, target_player_id: str):
     # ASRM FORM
     # -----------------
     with col_asrm:
-        st.subheader("ASRM (1 = best, 10 = worst)")
+        st.subheader("ASRM")
         st.success("✅ Wellness is al ingevuld voor deze dag.") if has_wellness else st.info(
             "ℹ️ Wellness is nog niet ingevuld voor deze dag."
         )
