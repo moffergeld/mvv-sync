@@ -6,6 +6,7 @@ from roles import require_auth, get_sb, get_profile
 from pages.Subscripts.wr_common import fetch_active_players_cached
 from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
+from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
 
 
 def render_staff_wellness_rpe_page():
@@ -35,11 +36,16 @@ def render_staff_wellness_rpe_page():
 
     pid_to_name = dict(zip(players["player_id"], players["full_name"]))
 
-    tab_day, tab_week = st.tabs(["Dag", "Week"])
+    tab_day, tab_week, tab_checklist = st.tabs(["Dag", "Week", "Checklist"])
+
     with tab_day:
         render_wellness_rpe_tab_day(sb, sb_url_key, pid_to_name)
+    
     with tab_week:
         render_wellness_rpe_tab_week(sb, sb_url_key, pid_to_name)
+    
+    with tab_checklist:
+        render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
 
 
 if __name__ == "__main__":
