@@ -3,9 +3,9 @@ from __future__ import annotations
 import streamlit as st
 
 from roles import require_auth, get_sb, get_profile
-from subscripts.wr_common import fetch_active_players_cached
-from subscripts.wr_tab_day import render_wellness_rpe_tab_day
-from subscripts.wr_tab_week import render_wellness_rpe_tab_week
+from pages.Subscripts.wr_common import fetch_active_players_cached
+from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
+from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
 
 
 def render_staff_wellness_rpe_page():
