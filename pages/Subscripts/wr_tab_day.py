@@ -6,7 +6,7 @@ from typing import Dict
 import pandas as pd
 import streamlit as st
 
-from subscripts.wr_common import (
+from pages.Subscripts.wr_common import (
     ASRM_PARAMS,
     RPE_PARAMS,
     ASRM_RED_THRESHOLD,
