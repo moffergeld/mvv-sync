@@ -227,7 +227,7 @@ def render_forms_tab(sb, target_player_id: str):
     # RPE FORM
     # -----------------
     with col_rpe:
-        st.subheader("RPE (Session)")
+        st.subheader("Rate of Perceived Exertion (RPE)")
         st.success("✅ RPE is al ingevuld voor deze dag.") if has_rpe else st.info("ℹ️ RPE is nog niet ingevuld voor deze dag.")
 
         INJURY_LOCATIONS_EN = [
