@@ -3,8 +3,21 @@
 # Benchmarks tab (Gref)
 # - Bron: public.v_gps_match_events
 # - Match = First Half + Second Half (gesommeerd per speler per datum)
-# - Minimaal hele helft gespeeld: duration >= 40 min (na sommatie)
-# - Gref = mean(top-5 matchwaarden) per speler per metric
+# - Filter: alleen matches met duration >= min_minutes (default 75)
+# - Top-K (default 5) uit die selectie
+# - Tabel 1: Gref (optioneel genormaliseerd naar 90 min)
+# - Tabel 2: dezelfde selectie maar waarden per minuut
+#
+# Metrics (zoals gevraagd):
+#   duration
+#   total_distance
+#   sprint
+#   high_sprint
+#   playerload2d
+#   total_accelerations
+#   high_accelerations
+#   total_decelerations
+#   high_decelerations
 # ==========================================================
 
 from __future__ import annotations
@@ -64,7 +77,7 @@ def _rest_get_paged(
 
 
 # -------------------------
-# Fetch + Gref compute
+# Fetch from v_gps_match_events
 # -------------------------
 GREF_SELECT_COLS = [
     "gps_id",
@@ -107,30 +120,25 @@ def fetch_match_events_all_cached(
     )
 
 
-def compute_gref(
-    df_events: pd.DataFrame,
-    *,
-    min_minutes: float = 40.0,
-    top_k: int = 5,
-) -> pd.DataFrame:
+# -------------------------
+# Core: build match totals (First+Second Half)
+# -------------------------
+def _prepare_match_totals(df_events: pd.DataFrame) -> pd.DataFrame:
     """
-    - Filter: type == 'Match' (case-insensitive), event in {'First Half','Second Half'}
-    - Aggregate per speler per datum: sum(First+Second) over duration + alle metrics
-    - Filter: duration >= min_minutes (na aggregatie)
-    - Gref per speler: mean(top_k matchwaarden) per metric
+    Returns one row per player per match-date with summed First+Second Half.
+    Expected columns exist from GREF_SELECT_COLS.
     """
     if df_events is None or df_events.empty:
         return pd.DataFrame()
 
     df = df_events.copy()
 
-    # normalize strings/dates
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
     df["player_name"] = df["player_name"].astype(str).str.strip()
     df["type"] = df["type"].astype(str).str.strip().str.lower()
     df["event"] = df["event"].astype(str).str.strip()
 
-    # match + halves
+    # match + halves only
     df = df[df["type"].eq("match")].copy()
     df = df[df["event"].isin(["First Half", "Second Half"])].copy()
     if df.empty:
@@ -151,22 +159,59 @@ def compute_gref(
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
-    # per match totalen (First+Second Half)
+    # sum halves -> match totals
     match_totals = df.groupby(["player_name", "datum"], as_index=False)[num_cols].sum()
+    return match_totals
 
-    # minimaal hele helft (na sommatie)
+
+# -------------------------
+# Table 1: Gref (optional normalized to 90)
+# -------------------------
+def compute_gref(
+    df_events: pd.DataFrame,
+    *,
+    min_minutes: float = 75.0,
+    top_k: int = 5,
+    normalize_to_90: bool = True,
+) -> pd.DataFrame:
+    """
+    - Match totals: First+Second Half summed per player per date
+    - Filter first: duration >= min_minutes
+    - Optional: normalize each metric to 90 minutes based on that match duration
+    - Gref per player per metric: mean(top_k values)
+    """
+    match_totals = _prepare_match_totals(df_events)
+    if match_totals.empty:
+        return pd.DataFrame()
+
+    # 1) filter first (critical)
     match_totals = match_totals[match_totals["duration"] >= float(min_minutes)].copy()
     if match_totals.empty:
         return pd.DataFrame()
 
-    # Gref per speler
-    metrics = [c for c in num_cols if c != "duration"]
-    out_rows: list[dict] = []
+    metrics = [
+        "total_distance",
+        "sprint",
+        "high_sprint",
+        "playerload2d",
+        "total_accelerations",
+        "high_accelerations",
+        "total_decelerations",
+        "high_decelerations",
+    ]
 
+    # 2) optional normalize to 90
+    if normalize_to_90:
+        dur = match_totals["duration"].replace(0, pd.NA).astype(float)
+        scale = 90.0 / dur
+        for m in metrics:
+            match_totals[m] = (match_totals[m].astype(float) * scale).fillna(0.0)
+
+    # 3) top-k mean per player
+    out_rows: list[dict] = []
     for player, g in match_totals.groupby("player_name"):
         row = {"Speler": player}
-
-        # duration benchmark (ook gevraagd)
+        # duration shown as the average duration of the player's top-k longest matches in the filtered set
         row["Duration"] = float(g["duration"].nlargest(top_k).mean()) if len(g) else 0.0
 
         for m in metrics:
@@ -179,7 +224,6 @@ def compute_gref(
     if out.empty:
         return out
 
-    # rename naar dashboard labels
     out = out.rename(
         columns={
             "total_distance": "Total Distance",
@@ -207,10 +251,100 @@ def compute_gref(
     ]
     out = out[[c for c in col_order if c in out.columns]].sort_values("Speler").reset_index(drop=True)
 
-    # afronden voor tabel
+    # rounding for display
     for c in out.columns:
         if c != "Speler":
             out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0).round(0)
+
+    return out
+
+
+# -------------------------
+# Table 2: same selection but per minute
+# -------------------------
+def compute_gref_per_min(
+    df_events: pd.DataFrame,
+    *,
+    min_minutes: float = 75.0,
+    top_k: int = 5,
+) -> pd.DataFrame:
+    """
+    - Match totals: First+Second Half summed
+    - Filter first: duration >= min_minutes
+    - Convert each metric to per minute: metric / duration
+    - Gref/min per player per metric: mean(top_k values)
+    """
+    match_totals = _prepare_match_totals(df_events)
+    if match_totals.empty:
+        return pd.DataFrame()
+
+    match_totals = match_totals[match_totals["duration"] >= float(min_minutes)].copy()
+    if match_totals.empty:
+        return pd.DataFrame()
+
+    metrics = [
+        "total_distance",
+        "sprint",
+        "high_sprint",
+        "playerload2d",
+        "total_accelerations",
+        "high_accelerations",
+        "total_decelerations",
+        "high_decelerations",
+    ]
+
+    dur = match_totals["duration"].replace(0, pd.NA).astype(float)
+    for m in metrics:
+        match_totals[m] = (match_totals[m].astype(float) / dur).fillna(0.0)
+
+    out_rows: list[dict] = []
+    for player, g in match_totals.groupby("player_name"):
+        row = {"Speler": player}
+        row["Duration"] = float(g["duration"].nlargest(top_k).mean()) if len(g) else 0.0
+        for m in metrics:
+            vals = g[m].nlargest(top_k)
+            row[m] = float(vals.mean()) if len(vals) else 0.0
+        out_rows.append(row)
+
+    out = pd.DataFrame(out_rows)
+    if out.empty:
+        return out
+
+    out = out.rename(
+        columns={
+            "total_distance": "Total Distance /min",
+            "sprint": "Sprint /min",
+            "high_sprint": "High Sprint /min",
+            "playerload2d": "playerload2D /min",
+            "total_accelerations": "Total Acc /min",
+            "high_accelerations": "High Acc /min",
+            "total_decelerations": "Total Dec /min",
+            "high_decelerations": "High Dec /min",
+        }
+    )
+
+    col_order = [
+        "Speler",
+        "Duration",
+        "Total Distance /min",
+        "Sprint /min",
+        "High Sprint /min",
+        "playerload2D /min",
+        "Total Acc /min",
+        "High Acc /min",
+        "Total Dec /min",
+        "High Dec /min",
+    ]
+    out = out[[c for c in col_order if c in out.columns]].sort_values("Speler").reset_index(drop=True)
+
+    # rounding for display (per-min needs decimals)
+    for c in out.columns:
+        if c == "Speler":
+            continue
+        if "Acc" in c or "Dec" in c:
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0).round(3)
+        else:
+            out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0).round(2)
 
     return out
 
@@ -227,13 +361,13 @@ def benchmarks_pages_main(
 ):
     st.subheader("Gref")
 
-    c1, c2 = st.columns([1, 1])
+    c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
         min_minutes = st.number_input(
-            "Minuten (min. hele helft)",
+            "Minuten (min. voor Gref)",
             min_value=0.0,
-            max_value=90.0,
-            value=40.0,
+            max_value=120.0,
+            value=75.0,
             step=1.0,
             key="gref_min_minutes",
         )
@@ -245,6 +379,12 @@ def benchmarks_pages_main(
             value=5,
             step=1,
             key="gref_top_k",
+        )
+    with c3:
+        normalize_to_90 = st.toggle(
+            "Normaliseer naar 90 min",
+            value=True,
+            key="gref_norm_90",
         )
 
     try:
@@ -258,9 +398,29 @@ def benchmarks_pages_main(
         st.error(f"Kon v_gps_match_events niet laden: {e}")
         return
 
-    df_gref = compute_gref(df_events, min_minutes=float(min_minutes), top_k=int(top_k))
+    # Table 1: Gref
+    df_gref = compute_gref(
+        df_events,
+        min_minutes=float(min_minutes),
+        top_k=int(top_k),
+        normalize_to_90=bool(normalize_to_90),
+    )
     if df_gref.empty:
         st.info("Geen bruikbare matchdata (First+Second Half) gevonden voor deze filters.")
         return
 
-    st.dataframe(df_gref, use_container_width=True, height=520)
+    st.markdown("#### Gref")
+    st.dataframe(df_gref, use_container_width=True, height=420)
+
+    # Table 2: per minute
+    df_gref_min = compute_gref_per_min(
+        df_events,
+        min_minutes=float(min_minutes),
+        top_k=int(top_k),
+    )
+    if df_gref_min.empty:
+        st.info("Geen data voor per-min tabel met deze filters.")
+        return
+
+    st.markdown("#### Gref per minuut")
+    st.dataframe(df_gref_min, use_container_width=True, height=420)
