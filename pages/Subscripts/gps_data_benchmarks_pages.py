@@ -354,7 +354,7 @@ def benchmarks_pages_main(
     access_token: str,
     user_id: str,
 ):
-    st.subheader("Gref")
+    st.subheader("Gref (per 90min)")
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
