@@ -1,25 +1,7 @@
-# pages/02_GPS_Data.py
+# pages/03_GPS_Data.py
 # ==========================================================
-# GPS Data pagina (AUTO-LOAD + per-subpagina)
-# - Subpagina's: Session Load, ACWR, FFP
-# - Auto-load (geen knop nodig) + caching (st.cache_data)
-# - Laadt ALLE data via betrouwbare Range-pagination (PostgREST)
-# - Session Load: kalender in session_load_pages.py is de enige dag-filter
-# - ACWR: forced Summary-only
-# - FFP: alles (pas aan indien nodig)
-#
-# UI beveiliging:
-# - role=player heeft GEEN toegang tot deze pagina (staff-only)
-#
-# Vereist:
-#   st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"]
-#   Geldige auth via session of cookie-restore (auth_session.py)
-#   role/profile via roles.py
-#
-# Gebruikt modules:
-#   session_load_pages.py  -> session_load_pages_main(df)
-#   acwr_pages.py          -> acwr_pages_main(df)
-#   ffp_pages.py           -> ffp_pages_main(df)
+# GPS Data pagina
+# + Benchmarks tab (Gref) als subscript
 # ==========================================================
 
 from __future__ import annotations
@@ -31,15 +13,15 @@ import streamlit as st
 import pages.Subscripts.gps_data_session_load_pages as session_load_pages
 import pages.Subscripts.gps_data_acwr_pages as acwr_pages
 import pages.Subscripts.gps_data_ffp_pages as ffp_pages
+import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages  # NEW
 
-# Auth/role helpers (jij hebt deze nu toegevoegd)
 from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
 
 st.set_page_config(page_title="GPS Data", layout="wide")
 
 # -------------------------
-# Auth restore (belangrijk voor mobiel/tab-switch)
+# Auth restore
 # -------------------------
 sb = get_sb_client()
 ok, token = ensure_auth_restored(sb)
@@ -53,8 +35,7 @@ if not ok or not token:
     st.stop()
 
 # -------------------------
-# UI access gate (staff-only)
-# Gebruik profiel uit roles.py (zet role ook in session_state)
+# Staff-only gate
 # -------------------------
 profile = get_profile(sb)
 if not is_staff_user(profile):
@@ -72,9 +53,6 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 # Auth / REST helpers
 # -------------------------
 def get_access_token() -> str | None:
-    """
-    Pak token uit session_state; fallback naar token die net uit ensure_auth_restored kwam.
-    """
     tok = st.session_state.get("access_token")
     if tok:
         return str(tok)
@@ -93,7 +71,6 @@ def rest_headers(access_token: str) -> dict:
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
-        # zorgt vaker voor Content-Range header
         "Prefer": "count=exact",
     }
 
@@ -113,10 +90,6 @@ def rest_get_paged(
     page_size: int = 5000,
     timeout: int = 120,
 ) -> pd.DataFrame:
-    """
-    Betrouwbare pagination via Range headers (PostgREST/Supabase).
-    Vereist stabiele order in base_query (bv. &order=datum.asc,gps_id.asc).
-    """
     url = f"{SUPABASE_URL}/rest/v1/{table}?{base_query}"
     headers = rest_headers(access_token) | {"Range-Unit": "items"}
 
@@ -231,7 +204,6 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     df = df.rename(columns=rename_map)
 
-    # numeriek
     non_num = {"Datum", "Speler", "Type", "Event"}
     for c in df.columns:
         if c not in non_num and c != "gps_id":
@@ -239,7 +211,6 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 
     if "Event" in df.columns:
         df["Event"] = df["Event"].astype(str).str.strip()
-
     if "Type" in df.columns:
         df["Type"] = df["Type"].astype(str).str.strip()
 
@@ -248,20 +219,13 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
-    """
-    Laadt ALLE gps_records via Range-pagination.
-    user_id zit in signature zodat cache per user apart is.
-    """
     select = ",".join(GPS_SELECT_COLS)
-
-    # Belangrijk: stabiele order (datum + unieke id)
     base_query = f"select={select}&order=datum.asc,gps_id.asc"
-
     raw = rest_get_paged(
         access_token=access_token,
         table="gps_records",
         base_query=base_query,
-        page_size=5000,   # pas aan indien nodig
+        page_size=5000,
         timeout=120,
     )
     return _supabase_to_dashboard_df(raw)
@@ -281,7 +245,6 @@ try:
     u = auth_get_user(access_token)
     user_id = u.get("id") or "unknown"
 except Exception as e:
-    # 1x poging: sessie mogelijk vernieuwd maar lokale token variabele nog oud
     sb2 = get_sb_client()
     ok2, token2 = ensure_auth_restored(sb2)
     if ok2 and token2:
@@ -296,7 +259,6 @@ except Exception as e:
         st.error(f"Kon user niet ophalen: {e}")
         st.stop()
 
-# Auto-load alles
 with st.spinner("GPS data laden..."):
     df_all = fetch_gps_df_all_cached(access_token=access_token, user_id=user_id)
 
@@ -304,7 +266,6 @@ if df_all.empty:
     st.info("Geen GPS data gevonden in Supabase.")
     st.stop()
 
-# Subpagina navigatie
 sub_page = st.radio(
     "Subpagina",
     options=["Session Load", "ACWR", "FFP"],
@@ -319,10 +280,17 @@ st.divider()
 # SESSION LOAD
 # =========================
 if sub_page == "Session Load":
-    tabs = st.tabs(["Dashboard", "Data preview"])
+    tabs = st.tabs(["Dashboard", "Benchmarks", "Data preview"])
     with tabs[0]:
         session_load_pages.session_load_pages_main(df_all)
     with tabs[1]:
+        benchmarks_pages.benchmarks_pages_main(
+            supabase_url=SUPABASE_URL,
+            supabase_anon_key=SUPABASE_ANON_KEY,
+            access_token=access_token,
+            user_id=user_id,
+        )
+    with tabs[2]:
         st.dataframe(df_all, use_container_width=True, height=520)
 
 # =========================
@@ -338,18 +306,32 @@ elif sub_page == "ACWR":
         st.info("Geen Summary GPS data gevonden.")
         st.stop()
 
-    tabs = st.tabs(["ACWR module", "Data preview"])
+    tabs = st.tabs(["ACWR module", "Benchmarks", "Data preview"])
     with tabs[0]:
         acwr_pages.acwr_pages_main(df_acwr)
     with tabs[1]:
+        benchmarks_pages.benchmarks_pages_main(
+            supabase_url=SUPABASE_URL,
+            supabase_anon_key=SUPABASE_ANON_KEY,
+            access_token=access_token,
+            user_id=user_id,
+        )
+    with tabs[2]:
         st.dataframe(df_acwr, use_container_width=True, height=520)
 
 # =========================
 # FFP
 # =========================
 elif sub_page == "FFP":
-    tabs = st.tabs(["Dashboard", "Data preview"])
+    tabs = st.tabs(["Dashboard", "Benchmarks", "Data preview"])
     with tabs[0]:
         ffp_pages.ffp_pages_main(df_all)
     with tabs[1]:
+        benchmarks_pages.benchmarks_pages_main(
+            supabase_url=SUPABASE_URL,
+            supabase_anon_key=SUPABASE_ANON_KEY,
+            access_token=access_token,
+            user_id=user_id,
+        )
+    with tabs[2]:
         st.dataframe(df_all, use_container_width=True, height=520)
