@@ -211,8 +211,6 @@ def compute_gref(
     out_rows: list[dict] = []
     for player, g in match_totals.groupby("player_name"):
         row = {"Speler": player}
-        # duration shown as the average duration of the player's top-k longest matches in the filtered set
-        row["Duration"] = float(g["duration"].nlargest(top_k).mean()) if len(g) else 0.0
 
         for m in metrics:
             vals = g[m].nlargest(top_k)
@@ -239,7 +237,6 @@ def compute_gref(
 
     col_order = [
         "Speler",
-        "Duration",
         "Total Distance",
         "Sprint",
         "High Sprint",
@@ -300,7 +297,6 @@ def compute_gref_per_min(
     out_rows: list[dict] = []
     for player, g in match_totals.groupby("player_name"):
         row = {"Speler": player}
-        row["Duration"] = float(g["duration"].nlargest(top_k).mean()) if len(g) else 0.0
         for m in metrics:
             vals = g[m].nlargest(top_k)
             row[m] = float(vals.mean()) if len(vals) else 0.0
@@ -325,7 +321,6 @@ def compute_gref_per_min(
 
     col_order = [
         "Speler",
-        "Duration",
         "Total Distance /min",
         "Sprint /min",
         "High Sprint /min",
