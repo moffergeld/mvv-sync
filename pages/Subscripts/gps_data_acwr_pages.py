@@ -749,9 +749,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         default_metrics = metrics[: min(4, len(metrics))]
 
     tab_dashboard, tab_thresholds, tab_targets = st.tabs(
-        ["ACWR Dashboard", "Threshold planner", "Targets vs Workload"],
-        key="acwr_inner_tabs",
-    )
+        ["ACWR Dashboard", "Threshold planner", "Targets vs Workload"])
 
     # ========================================================
     # TAB 1: ACWR Dashboard
@@ -1128,6 +1126,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
 
 
 
