@@ -65,7 +65,7 @@ EXCLUDE_METRICS = {"week","gps_id","year","HRzone1","HRzone2","HRzone3","HRzone4
 EXCLUDE_SUFFIXES = ("/min",)
 
 # Standaard metrics die direct geselecteerd worden (bestaat-matching is case-sensitive)
-DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerLoad2D"]
+DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerload2D"]
 
 
 # ------------------------------------------------------------
@@ -1126,6 +1126,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
 
 
 
