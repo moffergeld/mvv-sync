@@ -145,12 +145,17 @@ def _build_calendar_events(df_calendar: pd.DataFrame, selected: date, window_day
 def _calendar_picker(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
     """
     Robust picker:
-    - use streamlit_calendar if available
-    - otherwise fallback to st.date_input
-    - no rerun loops
+    1) Probeer streamlit_calendar (FullCalendar)
+    2) Als hij NIETS rendert / geen dict teruggeeft: fallback naar Streamlit date_input
+       + prev/next buttons op basis van beschikbare dagen.
     """
     days_with_data, _ = _compute_day_sets(df_calendar)
-    max_day = max(days_with_data) if days_with_data else date.today()
+    if not days_with_data:
+        # no dates at all -> plain date input today
+        return st.date_input("Datum", value=date.today(), key=f"{key_prefix}_date_input_empty")
+
+    max_day = max(days_with_data)
+    min_day = min(days_with_data)
 
     sel_key = f"{key_prefix}_selected"
     last_evt_key = f"{key_prefix}_last_evt"
@@ -162,70 +167,90 @@ def _calendar_picker(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
 
     selected: date = st.session_state[sel_key]
 
-    # Fallback if component missing
-    if st_calendar is None:
-        return st.date_input("Datum", value=selected, key=f"{key_prefix}_date_input")
+    # ---- Try FullCalendar ----
+    if st_calendar is not None:
+        options = {
+            "initialView": "dayGridMonth",
+            "initialDate": selected.isoformat(),
+            "height": 740,
+            "firstDay": 1,
+            "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
+            "fixedWeekCount": False,
+            "dayMaxEvents": True,
+            "eventDisplay": "block",
+            "selectable": True,
+        }
 
-    st.markdown(
-        """
-        <style>
-          .fc { font-size: 13px; }
-          .fc .fc-toolbar-title { font-weight: 800; }
-          .fc .fc-button { border-radius: 8px; }
-          .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 800; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        events = _build_calendar_events(df_calendar, selected, window_days=180)
 
-    options = {
-        "initialView": "dayGridMonth",
-        "initialDate": selected.isoformat(),
-        "height": 740,
-        "firstDay": 1,
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
-        "fixedWeekCount": False,
-        "dayMaxEvents": True,
-        "eventDisplay": "block",
-        "selectable": True,
-    }
+        try:
+            result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
+        except Exception:
+            result = None
 
-    # Limit events window to keep component stable
-    events = _build_calendar_events(df_calendar, selected, window_days=180)
+        # Als de component NIET werkt, is result vaak None of geen dict.
+        if isinstance(result, dict):
+            clicked_iso = None
+            fingerprint = None
 
-    result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
+            dc = result.get("dateClick") or {}
+            ds = dc.get("dateStr")
+            if isinstance(ds, str) and len(ds) >= 10:
+                clicked_iso = ds[:10]
+                fingerprint = f"date:{clicked_iso}"
 
-    clicked_iso = None
-    fingerprint = None
+            ec = result.get("eventClick")
+            if isinstance(ec, dict):
+                ev = ec.get("event", {}) or {}
+                ds2 = ev.get("start")
+                if isinstance(ds2, str) and len(ds2) >= 10:
+                    clicked_iso = ds2[:10]
+                    fingerprint = f"event:{clicked_iso}:{ev.get('title','')}"
 
-    if isinstance(result, dict):
-        dc = result.get("dateClick") or {}
-        ds = dc.get("dateStr")
-        if isinstance(ds, str) and len(ds) >= 10:
-            clicked_iso = ds[:10]
-            fingerprint = f"date:{clicked_iso}"
+            if clicked_iso and fingerprint:
+                if st.session_state[last_evt_key] != fingerprint:
+                    st.session_state[last_evt_key] = fingerprint
+                    try:
+                        new_day = date.fromisoformat(clicked_iso)
+                    except Exception:
+                        new_day = None
+                    if new_day and new_day != selected:
+                        st.session_state[sel_key] = new_day
 
-        ec = result.get("eventClick")
-        if isinstance(ec, dict):
-            ev = ec.get("event", {}) or {}
-            ds2 = ev.get("start")
-            if isinstance(ds2, str) and len(ds2) >= 10:
-                clicked_iso = ds2[:10]
-                fingerprint = f"event:{clicked_iso}:{ev.get('title','')}"
+            return st.session_state[sel_key]
 
-    if clicked_iso and fingerprint:
-        if st.session_state[last_evt_key] != fingerprint:
-            st.session_state[last_evt_key] = fingerprint
-            try:
-                new_day = date.fromisoformat(clicked_iso)
-            except Exception:
-                new_day = None
-            if new_day and new_day != selected:
-                st.session_state[sel_key] = new_day
+    # ---- Fallback: Streamlit native date picker + prev/next available day ----
+    days_sorted = sorted(days_with_data)
 
+    def _prev_available(d: date) -> date:
+        i = np.searchsorted(days_sorted, d) - 1
+        i = max(0, min(i, len(days_sorted) - 1))
+        return days_sorted[i]
+
+    def _next_available(d: date) -> date:
+        i = np.searchsorted(days_sorted, d, side="right")
+        i = max(0, min(i, len(days_sorted) - 1))
+        return days_sorted[i]
+
+    c1, c2, c3 = st.columns([1, 2, 1], vertical_alignment="center")
+    with c1:
+        if st.button("◀ Vorige", key=f"{key_prefix}_prev_btn"):
+            st.session_state[sel_key] = _prev_available(st.session_state[sel_key])
+    with c2:
+        picked = st.date_input(
+            "Datum",
+            value=st.session_state[sel_key],
+            min_value=min_day,
+            max_value=max_day,
+            key=f"{key_prefix}_date_input",
+        )
+        st.session_state[sel_key] = picked
+    with c3:
+        if st.button("Volgende ▶", key=f"{key_prefix}_next_btn"):
+            st.session_state[sel_key] = _next_available(st.session_state[sel_key])
+
+    st.caption("Kalendercomponent laadde niet; fallback datumkiezer gebruikt.")
     return st.session_state[sel_key]
-
-
 def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> pd.DataFrame:
     df_day = df[df[COL_DATE].dt.date == day].copy()
     if df_day.empty or COL_TYPE not in df_day.columns:
@@ -560,3 +585,4 @@ def session_load_pages_main(
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
