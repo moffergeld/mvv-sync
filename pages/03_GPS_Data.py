@@ -5,14 +5,24 @@
 # Afgesproken:
 # - Summary-only data voor analyses
 # - Default scope: laatste 8 weken (keuze: 8w/12w/Seizoen/Alles)
+# - df_all (scope) = Summary-only + behoud Type (Practice/Match splits)
 # - FFP: altijd ALL, maar alleen laden wanneer FFP wordt geopend
-# - Benchmarks: blijft beschikbaar (in eigen tab)
-# - Data preview tabs: verwijderd
+# - Benchmarks: beschikbaar
+# - Data preview: verwijderd
 # - Kalender (Session Load): all-time tonen via aparte lichte calendar df
-# - Alleen deze metrics worden opgehaald:
-#   duration, total_distance, running, sprint, high_sprint, max_speed,
-#   playerload2d, total_accelerations, high_accelerations,
-#   total_decelerations, high_decelerations
+#
+# Database -> Dashboard kolomnamen (belangrijk voor bestaande subscripts):
+# - duration            -> Duration
+# - total_distance      -> Total Distance
+# - running             -> Running
+# - sprint              -> Sprint
+# - high_sprint         -> High Sprint
+# - max_speed           -> Max Speed
+# - playerload2d        -> PlayerLoad2D
+# - total_accelerations -> Total Accelerations
+# - high_accelerations  -> High Accelerations
+# - total_decelerations -> Total Decelerations
+# - high_decelerations  -> High Decelerations
 # ==========================================================
 
 from __future__ import annotations
@@ -32,7 +42,6 @@ from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
 
 st.set_page_config(page_title="GPS Data", layout="wide")
-
 
 # -------------------------
 # Auth restore
@@ -136,7 +145,7 @@ def rest_get_paged(
 
 
 # -------------------------
-# Minimal select columns (jouw keuze)
+# Minimal select columns (db names)
 # -------------------------
 GPS_SELECT_COLS = [
     "gps_id",
@@ -161,21 +170,48 @@ GPS_SELECT_COLS = [
 ]
 
 
+# -------------------------
+# Transform: Supabase -> Dashboard df
+# -------------------------
+_DB_TO_DASH = {
+    "datum": "Datum",
+    "player_name": "Speler",
+    "type": "Type",
+    "event": "Event",
+    "duration": "Duration",
+    "total_distance": "Total Distance",
+    "running": "Running",
+    "sprint": "Sprint",
+    "high_sprint": "High Sprint",
+    "max_speed": "Max Speed",
+    "playerload2d": "PlayerLoad2D",
+    "total_accelerations": "Total Accelerations",
+    "high_accelerations": "High Accelerations",
+    "total_decelerations": "Total Decelerations",
+    "high_decelerations": "High Decelerations",
+}
+
+
 def _supabase_to_dashboard_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     if df_raw is None or df_raw.empty:
         return pd.DataFrame()
 
     df = df_raw.copy()
-    df = df.rename(columns={"datum": "Datum", "player_name": "Speler", "type": "Type", "event": "Event"})
 
-    df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce").dt.date
+    rename_map = {k: v for k, v in _DB_TO_DASH.items() if k in df.columns}
+    df = df.rename(columns=rename_map)
+
+    if "Datum" in df.columns:
+        df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce").dt.date
+
+    for c in ["Speler", "Type", "Event"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).str.strip()
+
+    non_num = {"Datum", "Speler", "Type", "Event", "gps_id", "week", "year"}
     for c in df.columns:
-        if c not in {"Datum", "Speler", "Type", "Event", "gps_id"}:
+        if c not in non_num:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    df["Event"] = df["Event"].astype(str).str.strip()
-    df["Type"] = df["Type"].astype(str).str.strip()
-    df["Speler"] = df["Speler"].astype(str).str.strip()
 
     return df
 
@@ -238,7 +274,6 @@ def fetch_summary_all_cached(access_token: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_calendar_dates_all_cached(access_token: str) -> pd.DataFrame:
-    # Licht: alleen datum/type/event, ALL-time
     q = "select=datum,type,event&event=eq.Summary&order=datum.asc"
     raw = rest_get_paged(access_token, "gps_records", q, page_size=5000, timeout=120)
     return _supabase_to_calendar_df(raw)
@@ -262,20 +297,14 @@ if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
 
-# Set user_id once (used by benchmarks)
-try:
-    u = auth_get_user(access_token)
-    st.session_state["user_id"] = u.get("id") or ""
-except Exception as e:
-    st.error(f"Kon user niet ophalen: {e}")
-    st.stop()
+u = auth_get_user(access_token)
+st.session_state["user_id"] = u.get("id") or ""
 
 scope_key = st.selectbox(
     "Data scope (Summary-only)",
     options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
     index=0,
     key="gps_scope",
-    help="Default is snel (8 weken). 'Alles' kan zwaar zijn. FFP laadt altijd 'Alles' maar pas als je FFP opent.",
 )
 
 sub_page = st.radio(
@@ -287,12 +316,8 @@ sub_page = st.radio(
 
 st.divider()
 
-# Kalender ALL-time (los van scope), cached
 calendar_df_all = fetch_calendar_dates_all_cached(access_token)
 
-# -------------------------
-# Session Load
-# -------------------------
 if sub_page == "Session Load":
     tab_dash, tab_bench = st.tabs(["Dashboard", "Benchmarks"])
 
@@ -321,9 +346,6 @@ if sub_page == "Session Load":
             user_id=st.session_state.get("user_id", ""),
         )
 
-# -------------------------
-# ACWR
-# -------------------------
 elif sub_page == "ACWR":
     tab_acwr, tab_bench = st.tabs(["ACWR module", "Benchmarks"])
 
@@ -345,9 +367,6 @@ elif sub_page == "ACWR":
             user_id=st.session_state.get("user_id", ""),
         )
 
-# -------------------------
-# FFP (ALWAYS ALL; only loads here)
-# -------------------------
 elif sub_page == "FFP":
     tab_ffp, tab_bench = st.tabs(["FFP module", "Benchmarks"])
 
