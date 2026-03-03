@@ -146,84 +146,56 @@ def _build_calendar_events(df: pd.DataFrame, selected: date) -> list[dict]:
     return events
 
 
-def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -> date:
-    days_with_data, _ = _compute_day_sets(df)
+def calendar_day_picker_fullcalendar(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
+    days_with_data, _ = _compute_day_sets(df_calendar)
     max_day = max(days_with_data) if days_with_data else date.today()
 
     sel_key = f"{key_prefix}_selected"
-    last_evt_key = f"{key_prefix}_last_calendar_evt"
+    last_evt_key = f"{key_prefix}_last_calendar_clicked"
 
     if sel_key not in st.session_state:
         st.session_state[sel_key] = max_day
-    if last_evt_key not in st.session_state:
-        st.session_state[last_evt_key] = None
-
     selected: date = st.session_state[sel_key]
-
-    st.markdown(
-        """
-        <style>
-          .fc { font-size: 13px; }
-          .fc .fc-toolbar-title { font-weight: 800; }
-          .fc .fc-button { border-radius: 8px; }
-          .fc .fc-daygrid-day-number { opacity: .9; font-weight: 700; }
-          .fc .fc-daygrid-day-frame { cursor: pointer; }
-          .fc .fc-event { border-radius: 6px; padding: 2px 6px; font-weight: 800; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     options = {
         "initialView": "dayGridMonth",
         "initialDate": selected.isoformat(),
-        "height": "auto",
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
+        "height": 740,
         "firstDay": 1,
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "fixedWeekCount": False,
         "dayMaxEvents": True,
         "eventDisplay": "block",
         "selectable": True,
     }
 
-    events = _build_calendar_events(df, selected)
+    events = _build_calendar_events(df_calendar, selected)
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    # ---- Veilig verwerken (geen rerun-loop) ----
-    clicked_date = None
-    event_fingerprint = None
-
+    clicked_iso = None
     if isinstance(result, dict):
-        dc = result.get("dateClick")
-        if dc and dc.get("dateStr"):
-            ds = str(dc["dateStr"])[:10]
-            clicked_date = date.fromisoformat(ds)
-            event_fingerprint = f"dateClick:{ds}"
+        dc = result.get("dateClick") or {}
+        ds = dc.get("dateStr")
+        if isinstance(ds, str) and len(ds) >= 10:
+            clicked_iso = ds[:10]  # normalize: "YYYY-MM-DD"
 
-        ec = result.get("eventClick")
-        if ec:
-            ev = ec.get("event", {}) or {}
-            ds = ev.get("start")
-            if ds:
-                ds = str(ds)[:10]
-                clicked_date = date.fromisoformat(ds)
-                # fingerprint op start + title zodat dezelfde klik niet steeds triggert
-                event_fingerprint = f"eventClick:{ds}:{ev.get('title', '')}"
+    # Update alleen als er écht een nieuwe dag is gekozen
+    if clicked_iso:
+        if st.session_state.get(last_evt_key) != clicked_iso:
+            # voorkom loop: eerst markeren dat we dit event al verwerkt hebben
+            st.session_state[last_evt_key] = clicked_iso
 
-    if clicked_date is not None and event_fingerprint is not None:
-        prev_selected = st.session_state[sel_key]
-        prev_evt = st.session_state[last_evt_key]
+            # alleen aanpassen als selected echt anders is
+            try:
+                new_day = date.fromisoformat(clicked_iso)
+            except Exception:
+                new_day = None
 
-        # Alleen reageren op NIEUWE click
-        if event_fingerprint != prev_evt:
-            st.session_state[last_evt_key] = event_fingerprint
-
-            # Alleen rerun als de datum echt verandert
-            if clicked_date != prev_selected:
-                st.session_state[sel_key] = clicked_date
-                st.rerun()
+            if new_day and new_day != selected:
+                st.session_state[sel_key] = new_day
 
     return st.session_state[sel_key]
+    
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -635,4 +607,5 @@ def session_load_pages_main(df_gps: pd.DataFrame, *, calendar_df_all: Optional[p
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
 
