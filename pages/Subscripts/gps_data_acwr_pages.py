@@ -890,7 +890,52 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 st.rerun()
             else:
                 st.error(msg)
-        
+    
+        # --------------------------------------------------------
+        # Targets per speler (absolute waarden) - TERUG
+        # --------------------------------------------------------
+        st.subheader("Targets per speler (absolute waarden)")
+    
+        chronic_players = compute_chronic_last4weeks(
+            df=df_weekly,
+            metrics=params_thr,
+            group_col="player",
+            week_col="week_key",
+        )
+        if chronic_players.empty:
+            st.info("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
+            st.stop()
+    
+        rows = []
+        for _, r in chronic_players.iterrows():
+            player = r["player"]
+            for m in params_thr:
+                chronic_val = float(r[m])
+                ratio_low = float(fallback_low)
+                ratio_high = float(fallback_high)
+                rows.append(
+                    {
+                        "Speler": player,
+                        "Parameter": m,
+                        "Chronic (mean last4w)": chronic_val,
+                        "Target low": chronic_val * ratio_low,
+                        "Target high": chronic_val * ratio_high,
+                    }
+                )
+    
+        df_targets = pd.DataFrame(rows).sort_values(["Speler", "Parameter"]).reset_index(drop=True)
+    
+        st.dataframe(
+            df_targets.style.format(
+                {
+                    "Chronic (mean last4w)": "{:.2f}",
+                    "Target low": "{:.2f}",
+                    "Target high": "{:.2f}",
+                }
+            ),
+            width="stretch",
+            height=520,
+        )
     # ========================================================
     # TAB 3: Targets vs Workload
     # Layout:
@@ -1023,6 +1068,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
 
 
 
