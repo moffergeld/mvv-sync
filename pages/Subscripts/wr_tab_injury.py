@@ -37,7 +37,7 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
             "Periode (dagen terug)",
             min_value=1,
             max_value=120,
-            value=14,
+            value=4,
             step=1,
             key="inj_days",
         )
