@@ -1,4 +1,33 @@
 # pages/Subscripts/player_tab_data.py
+# ============================================================
+# Player Page - Data Tab
+#
+# Doel
+# - Snelle "Data" tab met:
+#   - GPS (laatste 14 dagen): tabel + over time grafiek
+#   - Wellness:
+#       * Session view (1 datum)
+#       * Over time (laatste 14 dagen)
+#   - RPE:
+#       * Session view (1 datum)
+#       * Over time (laatste 7 dagen)
+#
+# Performance strategie
+# 1) Server-side filtering:
+#    - .eq("player_id", ...) + datum range (gte/lte) in Supabase query
+#    -> laadt NIET de hele tabel, alleen relevante rijen.
+# 2) Caching:
+#    - @st.cache_data(ttl=120) per speler/datum
+#    -> snelle player-switch (staff) en minder herhaalde calls.
+# 3) Static Plotly charts:
+#    - config={"staticPlot": True}
+#    -> minder "gevoelig" op telefoon (geen zoom/pan per ongeluk).
+#
+# Aggregatie GPS per dag
+# - default: som per dag (total_distance/running/sprint/high_sprint)
+# - max_speed: MAX per dag (niet som!)
+# ============================================================
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -12,7 +41,6 @@ CHART_H = 340
 
 GPS_TABLE = "v_gps_summary"
 
-# Labels -> keys in v_gps_summary
 GPS_METRICS: List[Tuple[str, str]] = [
     ("Total Distance (m)", "total_distance"),
     ("14.4–19.7 km/h", "running"),
@@ -50,6 +78,10 @@ ASRM_COLS: List[Tuple[str, str]] = [
 ]
 
 
+# ============================================================
+# INTERNAL HELPERS
+# ============================================================
+
 def _df(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
@@ -59,7 +91,11 @@ def _to_date_series(s: pd.Series) -> pd.Series:
 
 
 def _plotly_config_static() -> Dict[str, Any]:
-    # Static plot: geen zoom/pan/hover gedoe op telefoon
+    """
+    Static plot:
+    - Geen zoom/pan/hover gedrag op mobiel
+    - Sneller en minder "gevoelig"
+    """
     return {
         "staticPlot": True,
         "displayModeBar": False,
@@ -80,6 +116,7 @@ def _strip_titles(fig: go.Figure) -> None:
 
 
 def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10) -> None:
+    """Kleurzones (groen/oranje/rood) voor wellness/RPE (0–10)."""
     zones = [
         (0, 4.5, "rgba(0, 200, 0, 0.12)"),
         (4.5, 7.5, "rgba(255, 165, 0, 0.14)"),
@@ -107,6 +144,10 @@ def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10) ->
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_gps_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: int = 1000) -> pd.DataFrame:
+    """
+    Haalt GPS summary rijen op voor 1 speler binnen datumbereik.
+    Server-side filter: eq(player_id) + gte/lte(datum).
+    """
     sb = st.session_state.get("_sb_for_cache")
     if sb is None:
         return pd.DataFrame()
@@ -134,6 +175,11 @@ def fetch_gps_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: in
 
 
 def fetch_gps_14d(sb, player_id: str, days: int = 14) -> pd.DataFrame:
+    """
+    Wrapper die:
+    - sb in session_state zet voor cached functies
+    - standaard laatste 14 dagen pakt
+    """
     st.session_state["_sb_for_cache"] = sb
     end_d = date.today()
     start_d = end_d - timedelta(days=days - 1)
@@ -141,6 +187,7 @@ def fetch_gps_14d(sb, player_id: str, days: int = 14) -> pd.DataFrame:
 
 
 def gps_table_pretty(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Tabel view (laatste 14 dagen, desc op datum)."""
     if df_raw.empty:
         return df_raw
     show = df_raw.sort_values("datum", ascending=False).copy()
@@ -150,7 +197,9 @@ def gps_table_pretty(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 def gps_daily_aggregate(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
     """
-    Som per dag voor alle metrics behalve max_speed -> max per dag.
+    Aggregatie per dag:
+    - alle metrics: som per dag
+    - max_speed: MAX per dag (belangrijk!)
     """
     if df_raw.empty:
         return df_raw
@@ -169,6 +218,7 @@ def gps_daily_aggregate(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
 
 
 def plot_gps_over_time(df_daily: pd.DataFrame, metric_label: str, metric_key: str) -> None:
+    """GPS line chart (static)."""
     if df_daily.empty:
         st.info("Onvoldoende data voor grafiek.")
         return
@@ -195,6 +245,7 @@ def plot_gps_over_time(df_daily: pd.DataFrame, metric_label: str, metric_key: st
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_asrm_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: int = 200) -> pd.DataFrame:
+    """Haalt wellness entries voor 14 dagen (server-side date range)."""
     sb = st.session_state.get("_sb_for_cache")
     if sb is None:
         return pd.DataFrame()
@@ -230,6 +281,7 @@ def fetch_asrm_14d(sb, player_id: str, days: int = 14) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=120)
 def load_asrm_cached(player_id: str, entry_date_iso: str) -> Optional[Dict[str, Any]]:
+    """1 wellness entry op 1 dag (cached)."""
     sb = st.session_state.get("_sb_for_cache")
     if sb is None:
         return None
@@ -253,6 +305,7 @@ def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
 
 
 def plot_asrm_over_time(df: pd.DataFrame, param_key: str) -> None:
+    """Wellness over time (static)."""
     if df.empty or param_key not in df.columns:
         st.info("Geen wellness data voor deze periode.")
         return
@@ -275,6 +328,7 @@ def plot_asrm_over_time(df: pd.DataFrame, param_key: str) -> None:
 
 
 def plot_asrm_session(row: Dict[str, Any]) -> None:
+    """Wellness per sessie (bar chart, static)."""
     labels = [x[0] for x in ASRM_COLS]
     keys = [x[1] for x in ASRM_COLS]
     values = [int(row.get(k, 0) or 0) for k in keys]
@@ -293,6 +347,11 @@ def plot_asrm_session(row: Dict[str, Any]) -> None:
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_rpe_for_date_cached(player_id: str, entry_date_iso: str) -> pd.DataFrame:
+    """
+    RPE session view:
+    - pakt rpe_entries header (id) voor player+date
+    - pakt rpe_sessions voor die header (session_index, rpe)
+    """
     sb = st.session_state.get("_sb_for_cache")
     if sb is None:
         return pd.DataFrame()
@@ -340,6 +399,12 @@ def fetch_rpe_for_date(sb, player_id: str, d: date) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_rpe_over_time_7d_cached(player_id: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    """
+    RPE over time (laatste 7 dagen):
+    - haalt rpe_entries in dat range
+    - haalt sessions per entry (max 7 entries)
+    - geeft gemiddelde RPE per dag terug
+    """
     sb = st.session_state.get("_sb_for_cache")
     if sb is None:
         return pd.DataFrame()
@@ -400,6 +465,7 @@ def fetch_rpe_over_time_7d(sb, player_id: str) -> pd.DataFrame:
 
 
 def plot_rpe_session(sessions_df: pd.DataFrame) -> None:
+    """RPE session bar chart (static)."""
     if sessions_df is None or sessions_df.empty:
         st.info("Geen RPE sessions gevonden voor deze datum.")
         return
@@ -425,6 +491,7 @@ def plot_rpe_session(sessions_df: pd.DataFrame) -> None:
 
 
 def plot_rpe_over_time(df_7d: pd.DataFrame) -> None:
+    """RPE over time line chart (static)."""
     if df_7d.empty:
         st.info("Geen RPE data in de laatste 7 dagen.")
         return
@@ -451,7 +518,15 @@ def plot_rpe_over_time(df_7d: pd.DataFrame) -> None:
 # ============================================================
 
 def render_data_tab(sb, target_player_id: str) -> None:
+    """
+    Main renderer voor Player Page -> Data tab.
+    """
     st.session_state["_sb_for_cache"] = sb
+
+    st.header("Data")
+    st.caption(
+        "GPS & Wellness: laatste 14 dagen | RPE over time: laatste 7 dagen | Grafieken: static (mobiel vriendelijk)"
+    )
 
     # ---- GPS last 14d (server-side) ----
     gps_raw = fetch_gps_14d(sb, target_player_id, days=14)
@@ -460,13 +535,15 @@ def render_data_tab(sb, target_player_id: str) -> None:
 
     with left:
         st.subheader("GPS – Laatste 14 dagen")
+        st.caption("Tabel bevat sessions binnen de laatste 14 dagen (server-side gefilterd).")
         if gps_raw.empty:
             st.info("Geen GPS summary data gevonden (v_gps_summary).")
         else:
             st.dataframe(gps_table_pretty(gps_raw), use_container_width=True, hide_index=True)
 
     with right:
-        st.subheader("GPS – Over time (14 dagen)")
+        st.subheader("GPS – Over time")
+        st.caption("Per dag geaggregeerd: som (behalve Max Speed = max).")
         if gps_raw.empty:
             st.info("Geen GPS summary data gevonden (v_gps_summary).")
         else:
@@ -475,6 +552,7 @@ def render_data_tab(sb, target_player_id: str) -> None:
                 options=[m[0] for m in GPS_METRICS],
                 index=0,
                 key="gps_metric_sel",
+                help="Kies metric voor de grafiek. Aggregatie is per dag.",
             )
             metric_key = dict(GPS_METRICS)[metric_label]
             daily = gps_daily_aggregate(gps_raw, metric_key=metric_key)
@@ -487,7 +565,13 @@ def render_data_tab(sb, target_player_id: str) -> None:
     # ---- Wellness ----
     with well_col:
         st.subheader("Wellness")
-        mode_w = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="well_mode")
+        mode_w = st.radio(
+            "Weergave",
+            ["Session", "Over time"],
+            horizontal=True,
+            key="well_mode",
+            help="Session: 1 dag | Over time: laatste 14 dagen",
+        )
 
         if mode_w == "Session":
             d = st.date_input("Datum (Wellness)", value=date.today(), key="well_date")
@@ -501,14 +585,26 @@ def render_data_tab(sb, target_player_id: str) -> None:
             if dfw.empty:
                 st.info("Geen Wellness entries in laatste 14 dagen.")
             else:
-                param_label = st.selectbox("Parameter", options=[x[0] for x in ASRM_COLS], index=0, key="well_param")
+                param_label = st.selectbox(
+                    "Parameter",
+                    options=[x[0] for x in ASRM_COLS],
+                    index=0,
+                    key="well_param",
+                    help="Kies wellness parameter voor de grafiek (0–10).",
+                )
                 param_key = dict(ASRM_COLS)[param_label]
                 plot_asrm_over_time(dfw, param_key)
 
     # ---- RPE ----
     with rpe_col:
         st.subheader("RPE")
-        mode_r = st.radio("Weergave", ["Session", "Over time"], horizontal=True, key="rpe_mode")
+        mode_r = st.radio(
+            "Weergave",
+            ["Session", "Over time"],
+            horizontal=True,
+            key="rpe_mode",
+            help="Session: 1 dag | Over time: laatste 7 dagen",
+        )
 
         if mode_r == "Session":
             d = st.date_input("Datum (RPE)", value=date.today(), key="rpe_date")
