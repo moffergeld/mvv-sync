@@ -1,4 +1,22 @@
 # pages/Subscripts/wr_tab_injury.py
+# ============================================================
+# Injury tab (Team / Staff)
+#
+# Doel
+# - Toon alle relevante "injury signals" vanuit public.rpe_entries
+# - Relevantie = injury=True OF notes gevuld OF pain>0
+# - Entries die volledig leeg zijn (injury=False AND notes leeg AND pain<=0) worden altijd weggelaten
+#
+# UI
+# - Periode (dagen terug)
+# - Min. pain filter
+# - Toggle: Alleen injury=True  (uitgebreid: injury OR notes OR pain)
+#
+# Output
+# - Tabel met Severity (emoji), Date, Player, Type, Pain, Notes, Attachment
+# - Samenvatting onderaan
+# ============================================================
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -11,17 +29,18 @@ from pages.Subscripts.wr_common import fetch_rpe_injuries_range_cached
 
 
 def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, str]) -> None:
-    """
-    Injury tab (staff):
-    - toont alle rpe_entries met injury=True in een datumbereik
-    - highlight op basis van pain (0–10) via sortering + emoji labels
-    """
-
     st.subheader("Injuries (RPE)")
 
     c1, c2, c3 = st.columns([1.1, 1.1, 1.0])
     with c1:
-        days_back = st.number_input("Periode (dagen terug)", min_value=1, max_value=120, value=14, step=1, key="inj_days")
+        days_back = st.number_input(
+            "Periode (dagen terug)",
+            min_value=1,
+            max_value=120,
+            value=14,
+            step=1,
+            key="inj_days",
+        )
     with c2:
         min_pain = st.slider("Min. pain", 0, 10, value=0, step=1, key="inj_min_pain")
     with c3:
@@ -32,26 +51,46 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
     st.caption(f"Periode: {d0.isoformat()} t/m {d1.isoformat()}")
 
     df = fetch_rpe_injuries_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
-
     if df.empty:
-        st.info("Geen injuries gevonden in deze periode.")
+        st.info("Geen entries gevonden in deze periode.")
         return
 
-    # map player name
-    df["Player"] = df["player_id"].map(pid_to_name).fillna(df["player_id"])
+    # --------------------------------------------------------
+    # Normaliseren
+    # --------------------------------------------------------
+    df["Player"] = df["player_id"].map(pid_to_name).fillna(df["player_id"]).astype(str)
 
-    # filters
-    df["injury_pain"] = pd.to_numeric(df["injury_pain"], errors="coerce")
+    df["injury"] = df["injury"].astype(bool)
+    df["injury_pain"] = pd.to_numeric(df["injury_pain"], errors="coerce").fillna(0)
+    df["notes"] = df["notes"].fillna("").astype(str)
+    df["_has_notes"] = df["notes"].str.strip().ne("")
+
+    # --------------------------------------------------------
+    # Basisregel: drop "lege" rijen
+    # leeg = injury=False AND notes leeg AND pain<=0
+    # --------------------------------------------------------
+    df = df[~((df["injury"] == False) & (~df["_has_notes"]) & (df["injury_pain"] <= 0))]  # noqa: E712
+
+    # --------------------------------------------------------
+    # Toggle logica: "Alleen injury=True" betekent:
+    # toon injury=True OF notes gevuld OF pain>0
+    # --------------------------------------------------------
     if only_open:
-        df = df[df["injury"] == True]  # noqa: E712
+        df = df[(df["injury"] == True) | (df["_has_notes"]) | (df["injury_pain"] > 0)]  # noqa: E712
+
+    # --------------------------------------------------------
+    # Min pain filter (na bovenstaande)
+    # --------------------------------------------------------
     if int(min_pain) > 0:
-        df = df[df["injury_pain"].fillna(0) >= int(min_pain)]
+        df = df[df["injury_pain"] >= int(min_pain)]
 
     if df.empty:
         st.info("Geen injuries voor deze selectie.")
         return
 
-    # severity label
+    # --------------------------------------------------------
+    # Severity label
+    # --------------------------------------------------------
     def _sev(p):
         try:
             p = float(p)
@@ -63,14 +102,17 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
             return "🟠"
         if p > 0:
             return "🟢"
-        return ""
+        # pain==0 maar notes/injury kan nog relevant zijn
+        return "⚪"
 
     df["Severity"] = df["injury_pain"].apply(_sev)
 
     # sort: pain desc, date desc, player
     df = df.sort_values(["injury_pain", "entry_date", "Player"], ascending=[False, False, True])
 
-    # show table
+    # --------------------------------------------------------
+    # Tabel output
+    # --------------------------------------------------------
     show_cols = [
         "Severity",
         "entry_date",
@@ -93,8 +135,21 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
 
     st.dataframe(show, width="stretch", hide_index=True)
 
-    # quick summary
-    n = len(df)
-    n_red = int((df["injury_pain"].fillna(-1) >= 8).sum())
-    n_orange = int(((df["injury_pain"].fillna(-1) >= 5) & (df["injury_pain"].fillna(-1) < 8)).sum())
-    st.caption(f"Totaal: {n} | 🔴 pain≥8: {n_red} | 🟠 pain 5–7: {n_orange}")
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
+    pain = df["injury_pain"].fillna(0)
+    n = int(len(df))
+    n_red = int((pain >= 8).sum())
+    n_orange = int(((pain >= 5) & (pain < 8)).sum())
+    n_green = int(((pain > 0) & (pain < 5)).sum())
+    n_notes_only = int(((pain <= 0) & (df["_has_notes"])).sum())
+    n_injury_flag = int((df["injury"] == True).sum())  # noqa: E712
+
+    st.caption(
+        f"Totaal: {n} | injury=True: {n_injury_flag} | 🔴≥8: {n_red} | 🟠5–7: {n_orange} | 🟢1–4: {n_green} | ⚪ notes/pain0: {n_notes_only}"
+    )
+
+    # cleanup (not shown, but keeps df clean if reused)
+    # (no effect after this function ends, but harmless)
+    df.drop(columns=["_has_notes"], inplace=True, errors="ignore")
