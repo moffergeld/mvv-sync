@@ -173,7 +173,7 @@ GPS_SELECT_COLS = [
     "hrzone3",
     "hrzone4",
     "hrzone5",
-    "hrTrimp", 
+    "hrtrimp", 
 ]
 
 
