@@ -1,7 +1,7 @@
 # pages/Subscripts/gps_data_session_load_pages.py
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Callable, Optional
 
 import numpy as np
@@ -9,11 +9,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
-
-try:
-    from streamlit_calendar import calendar as st_calendar
-except Exception:
-    st_calendar = None  # fallback naar date_input
 
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
@@ -31,12 +26,6 @@ COL_DEC_HI = "High Decelerations"
 HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
 TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
-MVV_RED = "#FF0033"
-PRACTICE_BLUE = "#4AA3FF"
-
-SELECT_BG = "rgba(255, 215, 0, 0.55)"
-SELECT_BORDER = "rgba(255, 215, 0, 1.0)"
-
 SELECT_ALL_OPT = "— Select all —"
 
 
@@ -44,23 +33,20 @@ def _normalize_event(e: str) -> str:
     return "summary" if str(e).strip().lower() == "summary" else str(e).strip().lower()
 
 
-def _is_match_type(t: str) -> bool:
-    return "match" in str(t).strip().lower()
-
-
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df = df_gps.copy()
-
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
         return df.iloc[0:0].copy()
 
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce")
     df = df.dropna(subset=[COL_DATE, COL_PLAYER]).copy()
 
+    # Alleen Summary
     if COL_EVENT in df.columns:
         df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["_event_norm"] == "summary"].copy()
 
+    # TRIMP fallback
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -84,153 +70,32 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _compute_day_sets(df: pd.DataFrame) -> tuple[set[date], set[date]]:
-    if df is None or df.empty or COL_DATE not in df.columns:
-        return set(), set()
-
-    d = df.copy()
+def _available_days(df_calendar: pd.DataFrame) -> list[date]:
+    if df_calendar is None or df_calendar.empty or COL_DATE not in df_calendar.columns:
+        return []
+    d = df_calendar.copy()
     d[COL_DATE] = pd.to_datetime(d[COL_DATE], errors="coerce").dt.date
     d = d.dropna(subset=[COL_DATE])
-
-    days_with_data = set(d[COL_DATE].unique().tolist())
-
-    match_days: set[date] = set()
-    if COL_TYPE in d.columns:
-        mask = d[COL_TYPE].map(_is_match_type)
-        match_days = set(d.loc[mask, COL_DATE].unique().tolist())
-
-    return days_with_data, match_days
+    days = sorted(set(d[COL_DATE].tolist()))
+    return days
 
 
-def _build_calendar_events(df_calendar: pd.DataFrame, selected: date, window_days: int = 180) -> list[dict]:
-    """
-    Belangrijk: beperk events, anders kan streamlit_calendar leeg/instabiel worden.
-    """
-    days_with_data, match_days = _compute_day_sets(df_calendar)
-
-    # window
-    start_win = selected - timedelta(days=window_days)
-    end_win = selected + timedelta(days=7)
-
-    events: list[dict] = []
-
-    events.append(
-        {
-            "title": "",
-            "start": selected.isoformat(),
-            "allDay": True,
-            "display": "background",
-            "backgroundColor": SELECT_BG,
-            "borderColor": SELECT_BORDER,
-        }
-    )
-
-    for d in sorted(days_with_data):
-        if d < start_win or d > end_win:
-            continue
-        is_match = d in match_days
-        events.append(
-            {
-                "title": "Match" if is_match else "Training",
-                "start": d.isoformat(),
-                "allDay": True,
-                "color": MVV_RED if is_match else PRACTICE_BLUE,
-                "textColor": "#ffffff",
-            }
-        )
-
-    return events
-
-
-def _calendar_picker(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
-    """
-    Robust picker:
-    1) Probeer streamlit_calendar (FullCalendar)
-    2) Als hij NIETS rendert / geen dict teruggeeft: fallback naar Streamlit date_input
-       + prev/next buttons op basis van beschikbare dagen.
-    """
-    days_with_data, _ = _compute_day_sets(df_calendar)
-    if not days_with_data:
-        # no dates at all -> plain date input today
+def _pick_day_native(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
+    days = _available_days(df_calendar)
+    if not days:
         return st.date_input("Datum", value=date.today(), key=f"{key_prefix}_date_input_empty")
 
-    max_day = max(days_with_data)
-    min_day = min(days_with_data)
-
     sel_key = f"{key_prefix}_selected"
-    last_evt_key = f"{key_prefix}_last_evt"
-
     if sel_key not in st.session_state:
-        st.session_state[sel_key] = max_day
-    if last_evt_key not in st.session_state:
-        st.session_state[last_evt_key] = None
+        st.session_state[sel_key] = days[-1]  # laatste beschikbare dag
 
-    selected: date = st.session_state[sel_key]
+    def _prev_available(cur: date) -> date:
+        idx = max(0, np.searchsorted(days, cur) - 1)
+        return days[idx]
 
-    # ---- Try FullCalendar ----
-    if st_calendar is not None:
-        options = {
-            "initialView": "dayGridMonth",
-            "initialDate": selected.isoformat(),
-            "height": 740,
-            "firstDay": 1,
-            "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
-            "fixedWeekCount": False,
-            "dayMaxEvents": True,
-            "eventDisplay": "block",
-            "selectable": True,
-        }
-
-        events = _build_calendar_events(df_calendar, selected, window_days=180)
-
-        try:
-            result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
-        except Exception:
-            result = None
-
-        # Als de component NIET werkt, is result vaak None of geen dict.
-        if isinstance(result, dict):
-            clicked_iso = None
-            fingerprint = None
-
-            dc = result.get("dateClick") or {}
-            ds = dc.get("dateStr")
-            if isinstance(ds, str) and len(ds) >= 10:
-                clicked_iso = ds[:10]
-                fingerprint = f"date:{clicked_iso}"
-
-            ec = result.get("eventClick")
-            if isinstance(ec, dict):
-                ev = ec.get("event", {}) or {}
-                ds2 = ev.get("start")
-                if isinstance(ds2, str) and len(ds2) >= 10:
-                    clicked_iso = ds2[:10]
-                    fingerprint = f"event:{clicked_iso}:{ev.get('title','')}"
-
-            if clicked_iso and fingerprint:
-                if st.session_state[last_evt_key] != fingerprint:
-                    st.session_state[last_evt_key] = fingerprint
-                    try:
-                        new_day = date.fromisoformat(clicked_iso)
-                    except Exception:
-                        new_day = None
-                    if new_day and new_day != selected:
-                        st.session_state[sel_key] = new_day
-
-            return st.session_state[sel_key]
-
-    # ---- Fallback: Streamlit native date picker + prev/next available day ----
-    days_sorted = sorted(days_with_data)
-
-    def _prev_available(d: date) -> date:
-        i = np.searchsorted(days_sorted, d) - 1
-        i = max(0, min(i, len(days_sorted) - 1))
-        return days_sorted[i]
-
-    def _next_available(d: date) -> date:
-        i = np.searchsorted(days_sorted, d, side="right")
-        i = max(0, min(i, len(days_sorted) - 1))
-        return days_sorted[i]
+    def _next_available(cur: date) -> date:
+        idx = min(len(days) - 1, np.searchsorted(days, cur, side="right"))
+        return days[idx]
 
     c1, c2, c3 = st.columns([1, 2, 1], vertical_alignment="center")
     with c1:
@@ -240,8 +105,8 @@ def _calendar_picker(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
         picked = st.date_input(
             "Datum",
             value=st.session_state[sel_key],
-            min_value=min_day,
-            max_value=max_day,
+            min_value=days[0],
+            max_value=days[-1],
             key=f"{key_prefix}_date_input",
         )
         st.session_state[sel_key] = picked
@@ -249,76 +114,7 @@ def _calendar_picker(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
         if st.button("Volgende ▶", key=f"{key_prefix}_next_btn"):
             st.session_state[sel_key] = _next_available(st.session_state[sel_key])
 
-    st.caption("Kalendercomponent laadde niet; fallback datumkiezer gebruikt.")
     return st.session_state[sel_key]
-def _get_day_session_subset(df: pd.DataFrame, day: date, session_mode: str) -> pd.DataFrame:
-    df_day = df[df[COL_DATE].dt.date == day].copy()
-    if df_day.empty or COL_TYPE not in df_day.columns:
-        return df_day
-
-    types_day = sorted(df_day[COL_TYPE].dropna().astype(str).unique().tolist())
-    if "Practice (1)" in types_day and "Practice (2)" in types_day:
-        if session_mode == "Practice (1)":
-            return df_day[df_day[COL_TYPE] == "Practice (1)"].copy()
-        if session_mode == "Practice (2)":
-            return df_day[df_day[COL_TYPE] == "Practice (2)"].copy()
-        return df_day[df_day[COL_TYPE].isin(["Practice (1)", "Practice (2)"])].copy()
-
-    return df_day
-
-
-def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
-    ]
-    metric_cols = [c for c in metric_cols if c in df.columns]
-    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
-
-
-def _legend_directly_under_title(fig: go.Figure, *, n_items: int) -> None:
-    top_margin = 84 if n_items <= 2 else 96 if n_items <= 4 else 112 if n_items <= 6 else 128
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=top_margin, b=80),
-        legend=dict(
-            orientation="h",
-            xanchor="left",
-            x=0.0,
-            yanchor="top",
-            y=1.085,
-            tracegroupgap=8,
-        ),
-    )
-
-
-def _median_safe(a: np.ndarray) -> float | None:
-    a = np.asarray(a, dtype=float)
-    a = a[~np.isnan(a)]
-    return None if a.size == 0 else float(np.median(a))
-
-
-def _median_for_players(df_agg: pd.DataFrame, players: list[str], col: str) -> float | None:
-    if df_agg.empty or col not in df_agg.columns:
-        return None
-    sub = df_agg[df_agg[COL_PLAYER].astype(str).isin(players)]
-    if sub.empty:
-        return None
-    return _median_safe(sub[col].to_numpy())
-
-
-def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
-    fig.add_hline(
-        y=y,
-        line_dash="dot",
-        line_width=2,
-        line_color="rgba(255,255,255,0.55)",
-        annotation_text=label,
-        annotation_position="top left",
-        annotation_font_size=10,
-    )
 
 
 def _resolve_select_all(selected: list[str], players_all: list[str]) -> list[str]:
@@ -371,14 +167,51 @@ def _team_selection_ui_inline(players_all: list[str]) -> tuple[bool, list[str], 
         )
 
     subs_resolved = _resolve_select_all(subs_raw, subs_pool)
-
     starters_final = starters_resolved
     subs_final = [p for p in subs_resolved if p not in set(starters_final)]
-
     return True, starters_final, subs_final
 
 
-def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
+def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    metric_cols = [
+        COL_TD, COL_SPRINT, COL_HS,
+        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
+        *HR_COLS, "TRIMP",
+    ]
+    metric_cols = [c for c in metric_cols if c in df.columns]
+    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
+
+
+def _median_safe(a: np.ndarray) -> float | None:
+    a = np.asarray(a, dtype=float)
+    a = a[~np.isnan(a)]
+    return None if a.size == 0 else float(np.median(a))
+
+
+def _median_for_players(df_agg: pd.DataFrame, players: list[str], col: str) -> float | None:
+    if df_agg.empty or col not in df_agg.columns:
+        return None
+    sub = df_agg[df_agg[COL_PLAYER].astype(str).isin(players)]
+    if sub.empty:
+        return None
+    return _median_safe(sub[col].to_numpy())
+
+
+def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
+    fig.add_hline(
+        y=y,
+        line_dash="dot",
+        line_width=2,
+        line_color="rgba(255,255,255,0.55)",
+        annotation_text=label,
+        annotation_position="top left",
+        annotation_font_size=10,
+    )
+
+
+def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden.")
         return
@@ -388,16 +221,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] |
     vals = data[COL_TD].to_numpy()
 
     fig = go.Figure()
-    fig.add_bar(
-        x=players,
-        y=vals,
-        marker_color="rgba(255,150,150,0.9)",
-        text=[f"{v:,.0f}".replace(",", " ") for v in vals],
-        textposition="inside",
-        insidetextanchor="middle",
-        name="Total Distance",
-        showlegend=True,
-    )
+    fig.add_bar(x=players, y=vals, name="Total Distance")
 
     med_team = _median_safe(vals)
     if med_team is not None:
@@ -409,15 +233,13 @@ def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] |
             if med is not None:
                 _add_median_line(fig, med, f"Mediaan ({gname}): {med:,.0f} m".replace(",", " "))
 
-    fig.update_layout(title="Total Distance", yaxis_title="Total Distance (m)", xaxis_title=None)
+    fig.update_layout(title="Total Distance", yaxis_title="m", xaxis_title=None)
     fig.update_xaxes(tickangle=90)
-    _legend_directly_under_title(fig, n_items=1)
     st.plotly_chart(fig, width="stretch")
 
 
-def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
+def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
-        st.info("Sprint / High Sprint kolommen niet compleet.")
         return
 
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
@@ -427,82 +249,27 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None
 
     x = np.arange(len(players))
     fig = go.Figure()
-    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint", marker_color="rgba(255,180,180,0.9)")
-    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint", marker_color="rgba(150,0,0,0.9)")
+    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint")
+    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint")
 
-    med_s_team = _median_safe(sprint_vals)
-    med_h_team = _median_safe(hs_vals)
-    if med_s_team is not None:
-        _add_median_line(fig, med_s_team, f"Mediaan Sprint (team): {med_s_team:,.0f} m".replace(",", " "))
-    if med_h_team is not None:
-        _add_median_line(fig, med_h_team, f"Mediaan High Sprint (team): {med_h_team:,.0f} m".replace(",", " "))
+    ms = _median_safe(sprint_vals)
+    mh = _median_safe(hs_vals)
+    if ms is not None:
+        _add_median_line(fig, ms, f"Mediaan Sprint (team): {ms:,.0f} m".replace(",", " "))
+    if mh is not None:
+        _add_median_line(fig, mh, f"Mediaan High Sprint (team): {mh:,.0f} m".replace(",", " "))
 
     if groups:
         for gname, gplayers in groups.items():
-            ms = _median_for_players(df_agg, gplayers, COL_SPRINT)
-            mh = _median_for_players(df_agg, gplayers, COL_HS)
-            if ms is not None:
-                _add_median_line(fig, ms, f"Mediaan Sprint ({gname}): {ms:,.0f} m".replace(",", " "))
-            if mh is not None:
-                _add_median_line(fig, mh, f"Mediaan High Sprint ({gname}): {mh:,.0f} m".replace(",", " "))
+            m1 = _median_for_players(df_agg, gplayers, COL_SPRINT)
+            m2 = _median_for_players(df_agg, gplayers, COL_HS)
+            if m1 is not None:
+                _add_median_line(fig, m1, f"Mediaan Sprint ({gname}): {m1:,.0f} m".replace(",", " "))
+            if m2 is not None:
+                _add_median_line(fig, m2, f"Mediaan High Sprint ({gname}): {m2:,.0f} m".replace(",", " "))
 
-    fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="Distance (m)", xaxis_title=None, barmode="group")
+    fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="m", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _legend_directly_under_title(fig, n_items=2)
-    st.plotly_chart(fig, width="stretch")
-
-
-def _plot_acc_dec(df_agg: pd.DataFrame):
-    have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
-    if not have_cols:
-        st.info("Geen Acceleration/Deceleration kolommen gevonden.")
-        return
-
-    sort_col = COL_ACC_TOT if COL_ACC_TOT in df_agg.columns else have_cols[0]
-    data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
-    players = data[COL_PLAYER].astype(str).tolist()
-    x = np.arange(len(players))
-    width = 0.18
-
-    fig = go.Figure()
-    if COL_ACC_TOT in data.columns:
-        fig.add_bar(x=x - 1.5 * width, y=data[COL_ACC_TOT], width=width, name="Total Accelerations")
-    if COL_ACC_HI in data.columns:
-        fig.add_bar(x=x - 0.5 * width, y=data[COL_ACC_HI], width=width, name="High Accelerations")
-    if COL_DEC_TOT in data.columns:
-        fig.add_bar(x=x + 0.5 * width, y=data[COL_DEC_TOT], width=width, name="Total Decelerations")
-    if COL_DEC_HI in data.columns:
-        fig.add_bar(x=x + 1.5 * width, y=data[COL_DEC_HI], width=width, name="High Decelerations")
-
-    fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None, barmode="group")
-    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
-    _legend_directly_under_title(fig, n_items=4)
-    st.plotly_chart(fig, width="stretch")
-
-
-def _plot_hr_trimp(df_agg: pd.DataFrame):
-    have_hr = [c for c in HR_COLS if c in df_agg.columns]
-    has_trimp = "TRIMP" in df_agg.columns
-    if not have_hr and not has_trimp:
-        return
-
-    players = df_agg[COL_PLAYER].astype(str).tolist()
-    base_x = np.arange(len(players))
-
-    fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
-    if have_hr:
-        for z in have_hr:
-            fig.add_bar(x=base_x, y=df_agg[z], name=z, secondary_y=False)
-    if has_trimp:
-        fig.add_trace(go.Scatter(x=base_x, y=df_agg["TRIMP"], mode="lines+markers", name="HR Trimp"), secondary_y=True)
-
-    fig.update_layout(title="Time in HR zone", xaxis_title=None, barmode="group")
-    fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
-    fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
-    if has_trimp:
-        fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
-
-    _legend_directly_under_title(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)))
     st.plotly_chart(fig, width="stretch")
 
 
@@ -513,11 +280,10 @@ def session_load_pages_main(
 ):
     st.header("Session Load")
 
-    # kalender dataset
     cal_df = calendar_df_all if calendar_df_all is not None else df_gps_scope
 
     with st.expander("📅 Kalender", expanded=True):
-        selected_day = _calendar_picker(cal_df, key_prefix="sl")
+        selected_day = _pick_day_native(cal_df, key_prefix="sl")
 
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 
@@ -541,22 +307,10 @@ def session_load_pages_main(
         st.warning("Geen bruikbare GPS-data gevonden.")
         return
 
-    df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
-    if df_day_all.empty:
+    df_day = df[df[COL_DATE].dt.date == selected_day].copy()
+    if df_day.empty:
         st.info("Geen data op deze datum.")
         return
-
-    types_day = sorted(df_day_all[COL_TYPE].dropna().astype(str).unique().tolist()) if COL_TYPE in df_day_all.columns else []
-    session_mode = "Beide (1+2)"
-    if "Practice (1)" in types_day and "Practice (2)" in types_day:
-        session_mode = st.radio("Sessie", ["Practice (1)", "Practice (2)", "Beide (1+2)"], index=2, key="session_load_session_mode")
-
-    df_day = _get_day_session_subset(df, selected_day, session_mode)
-    if df_day.empty:
-        st.warning("Geen data gevonden voor deze selectie.")
-        return
-
-    st.caption("Beschikbare sessie op deze dag: " + (", ".join(types_day) if types_day else "—"))
 
     df_agg = _agg_by_player(df_day)
     if df_agg.empty:
@@ -574,15 +328,8 @@ def session_load_pages_main(
         if subs:
             groups["Wissels"] = subs
 
-    col_top1, col_top2 = st.columns(2)
-    with col_top1:
-        _plot_total_distance(df_agg, groups=groups)
-    with col_top2:
-        _plot_sprint_hs(df_agg, groups=groups)
-
-    col_bot1, col_bot2 = st.columns(2)
-    with col_bot1:
-        _plot_acc_dec(df_agg)
-    with col_bot2:
-        _plot_hr_trimp(df_agg)
-
+    c1, c2 = st.columns(2)
+    with c1:
+        _plot_total_distance(df_agg, groups)
+    with c2:
+        _plot_sprint_hs(df_agg, groups)
