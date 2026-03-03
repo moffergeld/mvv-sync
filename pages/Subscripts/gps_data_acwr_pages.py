@@ -61,7 +61,7 @@ THRESH_TABLE = "acwr_week_thresholds"
 DEFAULT_TEAM = "MVV"
 
 # Metrics filtering
-EXCLUDE_METRICS = {"HRzone1","HRzone2","HRzone3","HRzone4","HRzone5","HRtrimp","Max Speed", "Avg Speed", "Avg HR", "Max HR"}
+EXCLUDE_METRICS = {"Week","gps_id","Year","HRzone1","HRzone2","HRzone3","HRzone4","HRzone5","HRtrimp","Max Speed", "Avg Speed", "Avg HR", "Max HR"}
 EXCLUDE_SUFFIXES = ("/min",)
 
 # Standaard metrics die direct geselecteerd worden (bestaat-matching is case-sensitive)
@@ -1095,5 +1095,6 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
 
 
