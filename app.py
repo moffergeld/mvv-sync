@@ -2,7 +2,7 @@
 # ============================================================
 # MVV Dashboard - Main App (Streamlit)
 # - Player ziet alleen Player + Match Reports tiles
-# - Staff ziet alle tiles
+# - Staff ziet alle tiles (in 2 rijen: 3 + 3 voor lichtere render)
 # - Auth/profile centraal via roles.py
 # ============================================================
 
@@ -88,7 +88,7 @@ def maintenance_banner():
 def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
     """
     Tile met image + knop. In SAFE_MODE geen images (lichter).
-    Belangrijk: als je tile() niet aanroept, wordt image ook niet geladen.
+    Als je tile() niet aanroept, wordt image ook niet geladen/rendered.
     """
     if not SAFE_MODE:
         b64 = img_to_b64_safe(img_path)
@@ -159,7 +159,7 @@ def login_ui():
 
         set_tokens_in_cookie(token, refresh_token, email)
 
-        # minimale settle (optioneel)
+        # minimale settle (optioneel; zet naar 0 als alles stabiel is)
         import time
         time.sleep(0.10)
 
@@ -285,7 +285,7 @@ role = (st.session_state.get("role") or "").lower()
 is_player = role == "player"
 
 if is_player:
-    # Alleen 2 tiles renderen => alleen 2 images laden/renderen
+    # Alleen 2 tiles renderen
     c1, c2 = st.columns(2, gap="large")
     with c1:
         tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
@@ -293,23 +293,21 @@ if is_player:
         tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
 
 else:
-    # Staff: alle tiles
-    c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
-
-    with c1:
+    # Staff: 2 rijen (3 + 3) -> iets lichtere render dan 6 in 1 rij
+    r1c1, r1c2, r1c3 = st.columns(3, gap="large")
+    with r1c1:
         tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
-
-    with c2:
+    with r1c2:
         tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
-
-    with c3:
+    with r1c3:
         tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py")
 
-    with c4:
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    r2c1, r2c2, r2c3 = st.columns(3, gap="large")
+    with r2c1:
         tile("gpsimport", "Assets/Afbeeldingen/Script/GPS_Import.PNG", "pages/06_GPS_Import.py")
-
-    with c5:
+    with r2c2:
         tile("medical", "Assets/Afbeeldingen/Script/Medical.PNG", None, disabled=True)
-
-    with c6:
+    with r2c3:
         tile("accounts", "Assets/Afbeeldingen/Script/Accounts.PNG", None, disabled=True)
