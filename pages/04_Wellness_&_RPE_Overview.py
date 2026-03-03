@@ -1,3 +1,4 @@
+# pages/04_Wellness_&_RPE_Overview.py
 from __future__ import annotations
 
 import streamlit as st
@@ -7,6 +8,7 @@ from pages.Subscripts.wr_common import fetch_active_players_cached
 from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
 from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
+from pages.Subscripts.wr_tab_injury import render_wellness_rpe_tab_injury
 
 
 def render_staff_wellness_rpe_page():
@@ -26,7 +28,7 @@ def render_staff_wellness_rpe_page():
 
     st.title("Wellness / RPE (Team)")
 
-    # cache key per project/env (zet hier iets dat bij jou altijd bestaat, bv st.secrets["SUPABASE_URL"])
+    # cache key per project/env
     sb_url_key = str(st.secrets.get("SUPABASE_URL", "sb"))
 
     players = fetch_active_players_cached(sb_url_key, sb)
@@ -36,14 +38,17 @@ def render_staff_wellness_rpe_page():
 
     pid_to_name = dict(zip(players["player_id"], players["full_name"]))
 
-    tab_day, tab_week, tab_checklist = st.tabs(["Dag", "Week", "Checklist"])
+    tab_day, tab_week, tab_injury, tab_checklist = st.tabs(["Dag", "Week", "Injury", "Checklist"])
 
     with tab_day:
         render_wellness_rpe_tab_day(sb, sb_url_key, pid_to_name)
-    
+
     with tab_week:
         render_wellness_rpe_tab_week(sb, sb_url_key, pid_to_name)
-    
+
+    with tab_injury:
+        render_wellness_rpe_tab_injury(sb, sb_url_key, pid_to_name)
+
     with tab_checklist:
         render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
 
