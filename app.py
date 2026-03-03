@@ -8,51 +8,39 @@ import streamlit as st
 import extra_streamlit_components as stx
 from supabase import create_client
 
-# ----------------------------
-# Page config (1x!)
-# ----------------------------
+ACCESS_COOKIE_SECONDS = 60 * 60
+REFRESH_COOKIE_DAYS = 30
+REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
+
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
 
-# --------------------------------------------------
-# QUERY PARAM MODES (must run BEFORE any heavy init)
-# --------------------------------------------------
 DIAG_MODE = st.query_params.get("diag") == "1"
 SAFE_MODE = st.query_params.get("safe") == "1"
 
 if DIAG_MODE:
     st.title("DIAG OK")
     st.write("Als je dit ziet, werkt Streamlit op dit toestel/netwerk.")
-    st.write("Als het nog steeds wit blijft, dan blokkeert het toestel/netwerk Streamlit assets/JS (adblock/VPN/Private DNS/WebView/netwerkfilter).")
-    st.write("")
-    st.write("Testlinks:")
-    st.write("- Normaal: /")
-    st.write("- Safe mode: ?safe=1")
     st.stop()
 
-# ----------------------------
-# Maintenance toggle
-# ----------------------------
 MAINTENANCE_MODE = False
 MAINTENANCE_TITLE = "⚠️ MAINTENANCE"
 MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk (tijdelijk) uitgelogd worden."
 
-# ----------------------------
-# Supabase (fail-safe)
-# ----------------------------
-try:
-    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
-    SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        st.error("Missing secrets: SUPABASE_URL / SUPABASE_ANON_KEY")
-        st.stop()
-    sb = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-except Exception as e:
-    st.error(f"Boot error (supabase/secrets): {e}")
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
+SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
+if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+    st.error("Missing secrets: SUPABASE_URL / SUPABASE_ANON_KEY")
     st.stop()
 
-# ----------------------------
-# Helpers
-# ----------------------------
+
+@st.cache_resource(show_spinner=False)
+def get_sb_client():
+    return create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+
+sb = get_sb_client()
+
+
 def normalize_role(v):
     if v is None:
         return "player"
@@ -64,6 +52,7 @@ def normalize_role(v):
     return s or "player"
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
 def img_to_b64_safe(path: str) -> str | None:
     p = Path(path)
     if not p.exists():
@@ -72,10 +61,6 @@ def img_to_b64_safe(path: str) -> str | None:
 
 
 def cookie_mgr():
-    """
-    Maak CookieManager maar 1x per run aan, anders krijg je
-    StreamlitDuplicateElementKey (default key='init').
-    """
     if "_cookie_mgr_instance" not in st.session_state:
         st.session_state["_cookie_mgr_instance"] = stx.CookieManager(key="mvv_cookie_mgr")
     return st.session_state["_cookie_mgr_instance"]
@@ -83,16 +68,14 @@ def cookie_mgr():
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
-    # Elke set-call unieke key geven (anders duplicate key='set')
-    cm.set("sb_access", str(access_token or ""), max_age=60 * 60, key="set_sb_access")               # 1 uur
-    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30, key="set_sb_refresh")  # 30 dagen
+    cm.set("sb_access", str(access_token or ""), max_age=ACCESS_COOKIE_SECONDS, key="set_sb_access")
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_refresh")
     if email:
-        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30, key="set_sb_email")
+        cm.set("sb_email", str(email), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_email")
 
 
 def clear_tokens_in_cookie():
     cm = cookie_mgr()
-    # Overschrijven + korte expiry, ook met unieke keys
     cm.set("sb_access", "", max_age=1, key="clear_sb_access")
     cm.set("sb_refresh", "", max_age=1, key="clear_sb_refresh")
     cm.set("sb_email", "", max_age=1, key="clear_sb_email")
@@ -108,12 +91,7 @@ def _set_postgrest_auth_safely(token: str | None):
 
 
 def try_restore_or_refresh_session() -> bool:
-    """
-    Herstelt sessie vanuit cookies wanneer session_state leeg is geraakt
-    (bijv. mobiel tab-switch / reconnect / websocket reset).
-    """
     cm = cookie_mgr()
-
     access = cm.get("sb_access")
     refresh = cm.get("sb_refresh")
     email = cm.get("sb_email")
@@ -125,7 +103,6 @@ def try_restore_or_refresh_session() -> bool:
         return False
 
     last_err = None
-
     for _ in range(2):
         try:
             if access:
@@ -142,11 +119,7 @@ def try_restore_or_refresh_session() -> bool:
                 st.session_state["sb_session"] = sess
 
                 _set_postgrest_auth_safely(sess.access_token)
-                set_tokens_in_cookie(
-                    sess.access_token,
-                    sess.refresh_token,
-                    st.session_state.get("user_email"),
-                )
+                set_tokens_in_cookie(sess.access_token, sess.refresh_token, st.session_state.get("user_email"))
 
                 time.sleep(0.35)
                 return True
@@ -162,34 +135,11 @@ def try_restore_or_refresh_session() -> bool:
 def maintenance_banner():
     if not MAINTENANCE_MODE:
         return
-
     st.markdown(
         f"""
-        <style>
-        .maintenance-banner{{
-            padding: 16px 18px;
-            border-radius: 14px;
-            border: 2px solid rgba(255, 0, 0, 0.55);
-            background: rgba(255, 0, 0, 0.12);
-            color: #fff;
-            font-weight: 800;
-            font-size: 20px;
-            line-height: 1.25;
-            margin: 8px 0 16px 0;
-            box-shadow: 0 10px 30px rgba(0,0,0,.25);
-        }}
-        .maintenance-banner small{{
-            display:block;
-            font-weight: 600;
-            font-size: 14px;
-            opacity: .9;
-            margin-top: 6px;
-        }}
-        </style>
-
-        <div class="maintenance-banner">
-            {MAINTENANCE_TITLE}
-            <small>{MAINTENANCE_TEXT}</small>
+        <div style="padding:12px 14px;border-radius:12px;border:2px solid rgba(255,0,0,.55);
+                    background:rgba(255,0,0,.12);font-weight:800;">
+            {MAINTENANCE_TITLE}<div style="font-weight:600;opacity:.9;margin-top:6px">{MAINTENANCE_TEXT}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -223,8 +173,6 @@ def login_ui():
         st.session_state["sb_session"] = sess
 
         set_tokens_in_cookie(token, refresh_token, email)
-
-        # Laat component cookies wegschrijven vóór rerun
         time.sleep(0.6)
 
         _set_postgrest_auth_safely(token)
@@ -232,6 +180,7 @@ def login_ui():
         st.session_state.pop("role", None)
         st.session_state.pop("player_id", None)
         st.session_state.pop("profile_loaded", None)
+        st.session_state.pop("_profile_cache", None)
 
         st.rerun()
 
@@ -310,12 +259,7 @@ def load_profile():
         st.stop()
 
     if not prof:
-        st.error(
-            "Geen profiel gevonden voor dit account (of geen rechten via RLS).\n\n"
-            f"user_id = {user_id}\n\n"
-            "Controleer in Supabase: Authentication → Users (id) moet exact gelijk zijn aan profiles.user_id "
-            "en dat RLS SELECT op profiles voor eigen rij is toegestaan."
-        )
+        st.error("Geen profiel gevonden voor dit account.")
         st.stop()
 
     st.session_state["role"] = normalize_role(prof.get("role"))
@@ -323,84 +267,14 @@ def load_profile():
     st.session_state["profile_loaded"] = True
 
 
-def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
-    if not SAFE_MODE:
-        b64 = img_to_b64_safe(img_path)
-        if b64:
-            st.markdown(
-                f"""
-                <div class="tile-wrap">
-                  <div class="tile-img">
-                    <img src="data:image/png;base64,{b64}" />
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f"""
-                <div class="tile-wrap">
-                  <div class="tile-img" style="display:flex;align-items:center;justify-content:center;">
-                    <div style="opacity:.75;">Missing asset:<br>{img_path}</div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    if disabled:
-        st.button("Geen toegang", use_container_width=True, disabled=True, key=f"btn_{tile_id}_noaccess")
-        return
-
-    if target_page is None:
-        st.button("Coming soon", use_container_width=True, disabled=True, key=f"btn_{tile_id}_soon")
-        return
-
-    if st.button("Open", use_container_width=True, key=f"btn_{tile_id}_open"):
-        st.switch_page(target_page)
-
-
-# ----------------------------
-# CSS (alleen als niet safe)
-# ----------------------------
-if not SAFE_MODE:
-    st.markdown(
-        """
-        <style>
-          .tile-wrap { width: 100%; }
-          .tile-img{
-            width: 100%;
-            height: 300px;
-            border-radius: 22px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,.35);
-            border: 1px solid rgba(255,255,255,.10);
-          }
-          .tile-img img{
-            width: 100%;
-            height: 100%;
-            object-fit: fill;
-            object-position: center;
-            display: block;
-          }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ------------------------------------
-# Cookie component vroeg initialiseren
-# ------------------------------------
+# Boot cookie component vroeg
 try:
     _cm_boot = cookie_mgr()
     _ = _cm_boot.get("sb_refresh")
 except Exception:
     pass
 
-# ----------------------------
-# Auth gate
-# ----------------------------
+
 if "access_token" not in st.session_state:
     restored = try_restore_or_refresh_session()
     if not restored:
@@ -410,47 +284,10 @@ if "access_token" not in st.session_state:
 _set_postgrest_auth_safely(st.session_state.get("access_token"))
 load_profile()
 
-# ----------------------------
-# Sidebar / top
-# ----------------------------
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
-
-with st.sidebar.expander("Auth debug", expanded=False):
-    cm = cookie_mgr()
-    st.write("session access:", bool(st.session_state.get("access_token")))
-    st.write("cookie access:", bool(cm.get("sb_access")))
-    st.write("cookie refresh:", bool(cm.get("sb_refresh")))
-    st.write("auth_err:", st.session_state.get("auth_err"))
-
 logout_button()
-
 maintenance_banner()
 
 st.title("MVV Dashboard")
-if SAFE_MODE:
-    st.warning("Safe mode actief (minimale UI). Zet uit door ?safe=0 te gebruiken.")
 st.write("Klik op een tegel om een module te openen.")
-
-role = (st.session_state.get("role") or "").lower()
-is_player = role == "player"
-
-c1, c2, c3, c4, c5, c6 = st.columns(6, gap="large")
-
-with c1:
-    tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
-
-with c2:
-    tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
-
-with c3:
-    tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py", disabled=is_player)
-
-with c4:
-    tile("gpsimport", "Assets/Afbeeldingen/Script/GPS_Import.PNG", "pages/06_GPS_Import.py", disabled=is_player)
-
-with c5:
-    tile("medical", "Assets/Afbeeldingen/Script/Medical.PNG", None, disabled=True)
-
-with c6:
-    tile("accounts", "Assets/Afbeeldingen/Script/Accounts.PNG", None, disabled=True)
