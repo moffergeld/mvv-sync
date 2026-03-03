@@ -26,6 +26,13 @@ COL_DEC_HI = "High Decelerations"
 HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
 TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
+# --- kleuren (terug zoals "vroeger" style) ---
+MVV_RED = "#FF0033"
+DARK_RED = "#8B0000"
+SOFT_BLUE = "#7EC8FF"
+BLUE = "#1E6BFF"
+GRAY_LINE = "rgba(255,255,255,0.55)"
+
 SELECT_ALL_OPT = "— Select all —"
 
 
@@ -55,9 +62,15 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
 
     numeric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -76,11 +89,10 @@ def _available_days(df_calendar: pd.DataFrame) -> list[date]:
     d = df_calendar.copy()
     d[COL_DATE] = pd.to_datetime(d[COL_DATE], errors="coerce").dt.date
     d = d.dropna(subset=[COL_DATE])
-    days = sorted(set(d[COL_DATE].tolist()))
-    return days
+    return sorted(set(d[COL_DATE].tolist()))
 
 
-def _pick_day_native(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
+def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
     days = _available_days(df_calendar)
     if not days:
         return st.date_input("Datum", value=date.today(), key=f"{key_prefix}_date_input_empty")
@@ -89,32 +101,60 @@ def _pick_day_native(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
     if sel_key not in st.session_state:
         st.session_state[sel_key] = days[-1]  # laatste beschikbare dag
 
-    def _prev_available(cur: date) -> date:
-        idx = max(0, np.searchsorted(days, cur) - 1)
-        return days[idx]
+    picked = st.date_input(
+        "Datum",
+        value=st.session_state[sel_key],
+        min_value=days[0],
+        max_value=days[-1],
+        key=f"{key_prefix}_date_input",
+    )
+    st.session_state[sel_key] = picked
+    return picked
 
-    def _next_available(cur: date) -> date:
-        idx = min(len(days) - 1, np.searchsorted(days, cur, side="right"))
-        return days[idx]
 
-    c1, c2, c3 = st.columns([1, 2, 1], vertical_alignment="center")
-    with c1:
-        if st.button("◀ Vorige", key=f"{key_prefix}_prev_btn"):
-            st.session_state[sel_key] = _prev_available(st.session_state[sel_key])
-    with c2:
-        picked = st.date_input(
-            "Datum",
-            value=st.session_state[sel_key],
-            min_value=days[0],
-            max_value=days[-1],
-            key=f"{key_prefix}_date_input",
-        )
-        st.session_state[sel_key] = picked
-    with c3:
-        if st.button("Volgende ▶", key=f"{key_prefix}_next_btn"):
-            st.session_state[sel_key] = _next_available(st.session_state[sel_key])
+def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    metric_cols = [
+        COL_TD,
+        COL_SPRINT,
+        COL_HS,
+        COL_ACC_TOT,
+        COL_ACC_HI,
+        COL_DEC_TOT,
+        COL_DEC_HI,
+        *HR_COLS,
+        "TRIMP",
+    ]
+    metric_cols = [c for c in metric_cols if c in df.columns]
+    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
 
-    return st.session_state[sel_key]
+
+def _median_safe(a: np.ndarray) -> float | None:
+    a = np.asarray(a, dtype=float)
+    a = a[~np.isnan(a)]
+    return None if a.size == 0 else float(np.median(a))
+
+
+def _median_for_players(df_agg: pd.DataFrame, players: list[str], col: str) -> float | None:
+    if df_agg.empty or col not in df_agg.columns:
+        return None
+    sub = df_agg[df_agg[COL_PLAYER].astype(str).isin(players)]
+    if sub.empty:
+        return None
+    return _median_safe(sub[col].to_numpy())
+
+
+def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
+    fig.add_hline(
+        y=y,
+        line_dash="dot",
+        line_width=2,
+        line_color=GRAY_LINE,
+        annotation_text=label,
+        annotation_position="top left",
+        annotation_font_size=10,
+    )
 
 
 def _resolve_select_all(selected: list[str], players_all: list[str]) -> list[str]:
@@ -172,45 +212,6 @@ def _team_selection_ui_inline(players_all: list[str]) -> tuple[bool, list[str], 
     return True, starters_final, subs_final
 
 
-def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
-    metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS,
-        COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI,
-        *HR_COLS, "TRIMP",
-    ]
-    metric_cols = [c for c in metric_cols if c in df.columns]
-    return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
-
-
-def _median_safe(a: np.ndarray) -> float | None:
-    a = np.asarray(a, dtype=float)
-    a = a[~np.isnan(a)]
-    return None if a.size == 0 else float(np.median(a))
-
-
-def _median_for_players(df_agg: pd.DataFrame, players: list[str], col: str) -> float | None:
-    if df_agg.empty or col not in df_agg.columns:
-        return None
-    sub = df_agg[df_agg[COL_PLAYER].astype(str).isin(players)]
-    if sub.empty:
-        return None
-    return _median_safe(sub[col].to_numpy())
-
-
-def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
-    fig.add_hline(
-        y=y,
-        line_dash="dot",
-        line_width=2,
-        line_color="rgba(255,255,255,0.55)",
-        annotation_text=label,
-        annotation_position="top left",
-        annotation_font_size=10,
-    )
-
-
 def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_TD not in df_agg.columns:
         st.info("Kolom 'Total Distance' niet gevonden.")
@@ -221,7 +222,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
     vals = data[COL_TD].to_numpy()
 
     fig = go.Figure()
-    fig.add_bar(x=players, y=vals, name="Total Distance")
+    fig.add_bar(x=players, y=vals, name="Total Distance", marker_color=SOFT_BLUE)
 
     med_team = _median_safe(vals)
     if med_team is not None:
@@ -233,13 +234,14 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
             if med is not None:
                 _add_median_line(fig, med, f"Mediaan ({gname}): {med:,.0f} m".replace(",", " "))
 
-    fig.update_layout(title="Total Distance", yaxis_title="m", xaxis_title=None)
+    fig.update_layout(title="Total Distance", yaxis_title="m", xaxis_title=None, showlegend=False)
     fig.update_xaxes(tickangle=90)
     st.plotly_chart(fig, width="stretch")
 
 
 def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
+        st.info("Sprint / High Sprint kolommen niet compleet.")
         return
 
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
@@ -249,8 +251,8 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
 
     x = np.arange(len(players))
     fig = go.Figure()
-    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint")
-    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint")
+    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint", marker_color=SOFT_BLUE)
+    fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint", marker_color=DARK_RED)
 
     ms = _median_safe(sprint_vals)
     mh = _median_safe(hs_vals)
@@ -273,6 +275,89 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     st.plotly_chart(fig, width="stretch")
 
 
+def _plot_acc_dec(df_agg: pd.DataFrame):
+    have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
+    if not have_cols:
+        st.info("Geen Acceleration/Deceleration kolommen gevonden.")
+        return
+
+    sort_col = COL_ACC_TOT if COL_ACC_TOT in df_agg.columns else have_cols[0]
+    data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str).tolist()
+    x = np.arange(len(players))
+    w = 0.18
+
+    fig = go.Figure()
+    if COL_ACC_TOT in data.columns:
+        fig.add_bar(x=x - 1.5 * w, y=data[COL_ACC_TOT], width=w, name="Total Acc", marker_color=SOFT_BLUE)
+    if COL_ACC_HI in data.columns:
+        fig.add_bar(x=x - 0.5 * w, y=data[COL_ACC_HI], width=w, name="High Acc", marker_color=MVV_RED)
+    if COL_DEC_TOT in data.columns:
+        fig.add_bar(x=x + 0.5 * w, y=data[COL_DEC_TOT], width=w, name="Total Dec", marker_color="rgba(180,210,255,0.95)")
+    if COL_DEC_HI in data.columns:
+        fig.add_bar(x=x + 1.5 * w, y=data[COL_DEC_HI], width=w, name="High Dec", marker_color=BLUE)
+
+    fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None, barmode="group")
+    fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
+    st.plotly_chart(fig, width="stretch")
+
+
+def _plot_hr_trimp(df_agg: pd.DataFrame):
+    have_hr = [c for c in HR_COLS if c in df_agg.columns]
+    has_trimp = "TRIMP" in df_agg.columns
+    if not have_hr and not has_trimp:
+        st.info("Geen HR zone/TRIMP data gevonden.")
+        return
+
+    players = df_agg[COL_PLAYER].astype(str).tolist()
+    base_x = np.arange(len(players))
+
+    fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
+    color_map = {
+        "HRzone1": "rgba(180,180,180,0.9)",
+        "HRzone2": "rgba(150,200,255,0.9)",
+        "HRzone3": "rgba(0,150,0,0.9)",
+        "HRzone4": "rgba(220,220,50,0.9)",
+        "HRzone5": "rgba(255,0,0,0.9)",
+    }
+
+    if have_hr:
+        n = len(have_hr)
+        group_w = 0.80
+        bar_w = group_w / max(n, 1)
+        start = -group_w / 2 + bar_w / 2
+        for idx, z in enumerate(have_hr):
+            x = base_x + (start + idx * bar_w)
+            fig.add_bar(
+                x=x,
+                y=df_agg[z],
+                name=z,
+                marker_color=color_map.get(z, "gray"),
+                width=bar_w * 0.95,
+                secondary_y=False,
+            )
+
+    if has_trimp:
+        fig.add_trace(
+            go.Scatter(
+                x=base_x,
+                y=df_agg["TRIMP"],
+                mode="lines+markers",
+                name="HR Trimp",
+                line=dict(color="rgba(0,255,100,1.0)", width=3, shape="spline"),
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_layout(title="Time in HR zone", xaxis_title=None, barmode="group", bargap=0.15)
+    fig.update_xaxes(tickvals=base_x, ticktext=players, tickangle=90)
+    fig.update_yaxes(title_text="Time in HR zone (min)", secondary_y=False)
+    if has_trimp:
+        fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
+
+    st.plotly_chart(fig, width="stretch")
+
+
 def session_load_pages_main(
     df_gps_scope: pd.DataFrame,
     calendar_df_all: Optional[pd.DataFrame] = None,
@@ -283,11 +368,11 @@ def session_load_pages_main(
     cal_df = calendar_df_all if calendar_df_all is not None else df_gps_scope
 
     with st.expander("📅 Kalender", expanded=True):
-        selected_day = _pick_day_native(cal_df, key_prefix="sl")
+        selected_day = _pick_day_dateinput(cal_df, key_prefix="sl")
 
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 
-    # on-demand dag ophalen
+    # On-demand dag ophalen als datum niet in scope zit
     df_work = df_gps_scope.copy()
     if fetch_day_fn is not None:
         try:
@@ -296,7 +381,6 @@ def session_load_pages_main(
             has_day = bool((tmp[COL_DATE].dt.date == selected_day).any())
         except Exception:
             has_day = False
-
         if not has_day:
             day_df = fetch_day_fn(selected_day.isoformat())
             if day_df is not None and not day_df.empty:
@@ -328,8 +412,14 @@ def session_load_pages_main(
         if subs:
             groups["Wissels"] = subs
 
-    c1, c2 = st.columns(2)
-    with c1:
+    col_top1, col_top2 = st.columns(2)
+    with col_top1:
         _plot_total_distance(df_agg, groups)
-    with c2:
+    with col_top2:
         _plot_sprint_hs(df_agg, groups)
+
+    col_bot1, col_bot2 = st.columns(2)
+    with col_bot1:
+        _plot_acc_dec(df_agg)
+    with col_bot2:
+        _plot_hr_trimp(df_agg)
