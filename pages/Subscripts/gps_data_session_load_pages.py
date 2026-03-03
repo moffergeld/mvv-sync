@@ -1,16 +1,16 @@
 # pages/Subscripts/gps_data_session_load_pages.py
 # ============================================================
 # Session Load (Streamlit)
+#
 # - FullCalendar maand view + direct Session Load
 # - Team selectie (Aan/Uit):
 #    * Vaste selectie (XI) + Wisselspelers
-#    * "Select all" als optie IN de dropdowns (geen aparte toggle)
-#    * Layout: Team selectie aan + beide dropdowns naast elkaar (zelfde rij)
+#    * "Select all" als optie IN de dropdowns
 #    * Mediaan-lijnen:
 #        - Total Distance: mediaan team + (optioneel) vaste/wissels
 #        - Sprint & High Sprint: altijd medianen + (optioneel) vaste/wissels
 #
-# PATCHES (nieuw):
+# PATCHES:
 # 1) All-time kalender support:
 #    - calendar_df_all: lichte df met Datum/Type/Event (all-time)
 # 2) On-demand dag laden:
@@ -18,7 +18,9 @@
 # 3) Fix "continu refreshen":
 #    - GEEN st.rerun() in calendar click handler
 #    - session_state alleen updaten als click écht nieuw is en datum écht verandert
-# 4) Streamlit deprecation:
+# 4) Kalender altijd zichtbaar:
+#    - kalender staat bovenaan in een expander (default open)
+# 5) Streamlit deprecation:
 #    - use_container_width=True -> width="stretch"
 # ============================================================
 
@@ -76,7 +78,7 @@ def _is_match_type(t: str) -> bool:
 
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     """
-    Verwacht dashboard-kolomnamen (zoals jij ze gebruikt):
+    Verwacht dashboard-kolomnamen:
     Datum, Speler, Type, Event, Total Distance, Sprint, High Sprint, etc.
     """
     df = df_gps.copy()
@@ -92,6 +94,7 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["_event_norm"] == "summary"].copy()
 
+    # TRIMP fallback
     trimp_col = None
     for c in TRIMP_CANDIDATES:
         if c in df.columns:
@@ -209,7 +212,7 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
     options = {
         "initialView": "dayGridMonth",
         "initialDate": selected.isoformat(),
-        "height": "auto",
+        "height": 740,
         "firstDay": 1,
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": ""},
         "fixedWeekCount": False,
@@ -250,11 +253,8 @@ def calendar_day_picker_fullcalendar(df: pd.DataFrame, key_prefix: str = "sl") -
         prev_selected: date = st.session_state[sel_key]
         prev_evt = st.session_state[last_evt_key]
 
-        # Alleen reageren op NIEUWE click
         if event_fingerprint != prev_evt:
             st.session_state[last_evt_key] = event_fingerprint
-
-            # Alleen aanpassen als de datum echt verandert
             if clicked_date != prev_selected:
                 st.session_state[sel_key] = clicked_date
 
@@ -552,7 +552,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     have_hr = [c for c in HR_COLS if c in df_agg.columns]
     has_trimp = "TRIMP" in df_agg.columns
     if not have_hr and not has_trimp:
-        st.info("Geen HR-zone kolommen of TRIMP gevonden.")
         return
 
     players = df_agg[COL_PLAYER].astype(str).tolist()
@@ -613,21 +612,18 @@ def session_load_pages_main(
     calendar_df_all: Optional[pd.DataFrame] = None,
     fetch_day_fn: Optional[Callable[[str], pd.DataFrame]] = None,
 ):
-    """
-    Nieuwe signature (voor GPS Data main):
-    - df_gps_scope: scope df (bv. 8 weken) met metrics
-    - calendar_df_all: all-time kalender df (Datum/Type/Event)
-    - fetch_day_fn: callback om 1 dag te laden (Summary) als die buiten scope valt
-    """
     st.header("Session Load")
 
     # Kalenderbron
     cal_df = calendar_df_all if calendar_df_all is not None else df_gps_scope
 
-    selected_day = calendar_day_picker_fullcalendar(cal_df, key_prefix="sl")
+    # Kalender altijd zichtbaar bovenaan
+    with st.expander("📅 Kalender", expanded=True):
+        selected_day = calendar_day_picker_fullcalendar(cal_df, key_prefix="sl")
+
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 
-    # Zorg dat selected day in dataset zit (on-demand)
+    # On-demand dag ophalen
     df_work = df_gps_scope.copy()
 
     if fetch_day_fn is not None:
@@ -643,7 +639,7 @@ def session_load_pages_main(
             if day_df is not None and not day_df.empty:
                 df_work = pd.concat([df_work, day_df], ignore_index=True)
 
-    # Oude logica (ongewijzigd, behalve inputs)
+    # Oude logica
     missing = [c for c in [COL_DATE, COL_PLAYER] if c not in df_work.columns]
     if missing:
         st.error(f"Ontbrekende kolommen in GPS-data: {missing}")
@@ -709,8 +705,3 @@ def session_load_pages_main(
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
-
-
-# Backwards compatible alias (als ergens nog de oude call staat)
-def session_load_pages_main_legacy(df_gps: pd.DataFrame):
-    return session_load_pages_main(df_gps_scope=df_gps, calendar_df_all=None, fetch_day_fn=None)
