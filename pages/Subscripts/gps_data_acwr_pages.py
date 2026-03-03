@@ -484,7 +484,7 @@ def line_chart_acwr(
         margin=dict(l=10, r=10, t=40, b=10),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ------------------------------------------------------------
@@ -881,7 +881,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         df_edit = st.data_editor(
             df_edit,
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
             num_rows="fixed",
             column_config={
                 "metric": st.column_config.TextColumn("Parameter", disabled=True),
@@ -905,7 +905,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
 
         note = st.text_input("Notitie (optioneel)", value="", key="thr_note")
 
-        if st.button("Opslaan", type="primary", use_container_width=True):
+        if st.button("Opslaan", type="primary", width="stretch"):
             ok, msg = sb_upsert_thresholds(
                 team=team,
                 week_key=plan_week_key,
@@ -959,7 +959,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                     "Target high": "{:.2f}",
                 }
             ),
-            use_container_width=True,
+            width="stretch",
             height=520,
         )
 
@@ -1069,7 +1069,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                         title_prefix=f"Week target (ratio {rlow:.2f}–{rhigh:.2f})",
                         min_line=min_line,
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
         # -------- tabel ----------
         st.subheader("Absolute waardes t.o.v. targets")
@@ -1094,4 +1094,4 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 )
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
-            st.dataframe(styled, use_container_width=True)
+            st.dataframe(styled, width="stretch")
