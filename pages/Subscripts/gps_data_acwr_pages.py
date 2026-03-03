@@ -65,7 +65,7 @@ EXCLUDE_METRICS = {"Max Speed", "Avg Speed", "Avg HR", "Max HR"}
 EXCLUDE_SUFFIXES = ("/min",)
 
 # Standaard metrics die direct geselecteerd worden (bestaat-matching is case-sensitive)
-DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerload2D"]
+DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "PlayerLoad2D"]
 
 
 # ------------------------------------------------------------
@@ -1095,3 +1095,4 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
