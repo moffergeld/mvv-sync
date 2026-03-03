@@ -2,11 +2,12 @@
 # ============================================================
 # MVV Dashboard - Main App (Streamlit)
 # - Player ziet alleen Player + Match Reports tiles
-# - Staff ziet alle tiles (in 2 rijen: 3 + 3 voor lichtere render)
+# - Staff ziet alle tiles (in 2 rijen: 3 + 3)
+# - Tiles gebruiken st.image() i.p.v. base64 HTML
+# - Auth debug expander alleen zichtbaar in DIAG_MODE (?diag=1)
 # - Auth/profile centraal via roles.py
 # ============================================================
 
-import base64
 from pathlib import Path
 
 import streamlit as st
@@ -37,10 +38,10 @@ MAINTENANCE_MODE = False
 MAINTENANCE_TITLE = "⚠️ MAINTENANCE"
 MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk (tijdelijk) uitgelogd worden."
 
-
 if DIAG_MODE:
     st.title("DIAG OK")
     st.write("Als je dit ziet, werkt Streamlit op dit toestel/netwerk.")
+    st.write("Zet diag uit door ?diag=0 of verwijder de query parameter.")
     st.stop()
 
 
@@ -57,14 +58,6 @@ if sb is None:
 # ============================================================
 # 3) UI HELPERS
 # ============================================================
-
-@st.cache_data(show_spinner=False, ttl=3600)
-def img_to_b64_safe(path: str) -> str | None:
-    p = Path(path)
-    if not p.exists():
-        return None
-    return base64.b64encode(p.read_bytes()).decode()
-
 
 def maintenance_banner():
     if not MAINTENANCE_MODE:
@@ -87,33 +80,16 @@ def maintenance_banner():
 
 def tile(tile_id: str, img_path: str, target_page: str | None, disabled: bool = False):
     """
-    Tile met image + knop. In SAFE_MODE geen images (lichter).
-    Als je tile() niet aanroept, wordt image ook niet geladen/rendered.
+    Tile met image + knop.
+    - In SAFE_MODE geen images (lichter)
+    - In normale mode: st.image() i.p.v. base64 HTML (lichter)
     """
     if not SAFE_MODE:
-        b64 = img_to_b64_safe(img_path)
-        if b64:
-            st.markdown(
-                f"""
-                <div class="tile-wrap">
-                  <div class="tile-img">
-                    <img src="data:image/png;base64,{b64}" />
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+        p = Path(img_path)
+        if p.exists():
+            st.image(str(p), use_container_width=True)
         else:
-            st.markdown(
-                f"""
-                <div class="tile-wrap">
-                  <div class="tile-img" style="display:flex;align-items:center;justify-content:center;">
-                    <div style="opacity:.75;">Missing asset:<br>{img_path}</div>
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            st.warning(f"Missing asset: {img_path}")
 
     if disabled:
         st.button("Geen toegang", use_container_width=True, disabled=True, key=f"btn_{tile_id}_noaccess")
@@ -194,25 +170,18 @@ def logout_button():
 # 5) CSS (HOME)
 # ============================================================
 
+# Styling voor st.image tiles (globaal op deze pagina):
+# - ronde hoeken + schaduw
+# - voorkomt dat tiles er "vlak" uitzien zonder HTML wrapper
 if not SAFE_MODE:
     st.markdown(
         """
         <style>
-          .tile-wrap { width: 100%; }
-          .tile-img{
-            width: 100%;
-            height: 300px;
+          /* st.image wrapper */
+          [data-testid="stImage"] img{
             border-radius: 22px;
-            overflow: hidden;
             box-shadow: 0 10px 30px rgba(0,0,0,.35);
             border: 1px solid rgba(255,255,255,.10);
-          }
-          .tile-img img{
-            width: 100%;
-            height: 100%;
-            object-fit: fill;
-            object-position: center;
-            display: block;
           }
         </style>
         """,
@@ -261,12 +230,14 @@ if not profile:
 st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email','')}")
 st.sidebar.info(f"Role: {st.session_state.get('role','')}")
 
-with st.sidebar.expander("Auth debug", expanded=False):
-    cm = cookie_mgr()
-    st.write("session access:", bool(st.session_state.get("access_token")))
-    st.write("cookie access:", bool(cm.get("sb_access")))
-    st.write("cookie refresh:", bool(cm.get("sb_refresh")))
-    st.write("auth_err:", st.session_state.get("auth_err"))
+# Debug alleen in DIAG_MODE (via ?diag=1)
+if DIAG_MODE:
+    with st.sidebar.expander("Auth debug", expanded=True):
+        cm = cookie_mgr()
+        st.write("session access:", bool(st.session_state.get("access_token")))
+        st.write("cookie access:", bool(cm.get("sb_access")))
+        st.write("cookie refresh:", bool(cm.get("sb_refresh")))
+        st.write("auth_err:", st.session_state.get("auth_err"))
 
 logout_button()
 maintenance_banner()
@@ -293,7 +264,7 @@ if is_player:
         tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
 
 else:
-    # Staff: 2 rijen (3 + 3) -> iets lichtere render dan 6 in 1 rij
+    # Staff: 2 rijen (3 + 3) -> lichtere render dan 6 in 1 rij
     r1c1, r1c2, r1c3 = st.columns(3, gap="large")
     with r1c1:
         tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
