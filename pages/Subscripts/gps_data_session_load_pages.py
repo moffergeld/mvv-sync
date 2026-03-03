@@ -397,7 +397,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] |
     fig.update_layout(title="Total Distance", yaxis_title="Total Distance (m)", xaxis_title=None)
     fig.update_xaxes(tickangle=90)
     _legend_directly_under_title(fig, n_items=1)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None):
@@ -444,7 +444,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, *, groups: dict[str, list[str]] | None
     fig.update_layout(title="Sprint & High Sprint Distance", yaxis_title="Distance (m)", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     _legend_directly_under_title(fig, n_items=2)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _plot_acc_dec(df_agg: pd.DataFrame):
@@ -476,7 +476,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
     fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
     _legend_directly_under_title(fig, n_items=4)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _plot_hr_trimp(df_agg: pd.DataFrame):
@@ -529,11 +529,21 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         fig.update_yaxes(title_text="HR Trimp", secondary_y=True)
 
     _legend_directly_under_title(fig, n_items=(len(have_hr) + (1 if has_trimp else 0)))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
-def session_load_pages_main(df_gps: pd.DataFrame):
+def session_load_pages_main(df_gps: pd.DataFrame, *, calendar_df_all: Optional[pd.DataFrame] = None, fetch_day_fn: Optional[Callable[[str], pd.DataFrame]] = None):
     st.header("Session Load")
+
+
+    # ------------------------------------------------------------
+    # Kalender data source (all-time) + on-demand day fetch
+    # - calendar_df_all: lichte df over ALL summary dagen (Datum/Type/Event)
+    # - df_gps kan scope-beperkt zijn (bv. 8 weken)
+    # - als user een dag kiest buiten df_gps en fetch_day_fn is gezet:
+    #   -> haal die dag op en concat zodat berekeningen kloppen
+    # ------------------------------------------------------------
+    df_calendar = calendar_df_all if isinstance(calendar_df_all, pd.DataFrame) and not calendar_df_all.empty else df_gps
 
     missing = [c for c in [COL_DATE, COL_PLAYER] if c not in df_gps.columns]
     if missing:
@@ -546,6 +556,27 @@ def session_load_pages_main(df_gps: pd.DataFrame):
         return
 
     selected_day = calendar_day_picker_fullcalendar(df, key_prefix="sl")
+
+    # On-demand: voeg geselecteerde dag toe als hij niet in scope df zit
+    if fetch_day_fn is not None:
+        try:
+            _tmp = df_gps.copy()
+            if "Datum" in _tmp.columns:
+                _tmp["Datum"] = pd.to_datetime(_tmp["Datum"], errors="coerce")
+                has_day = bool((_tmp["Datum"].dt.date == selected_day).any())
+            else:
+                has_day = True
+        except Exception:
+            has_day = True
+
+        if not has_day:
+            try:
+                day_df = fetch_day_fn(selected_day.isoformat())
+                if isinstance(day_df, pd.DataFrame) and not day_df.empty:
+                    df_gps = pd.concat([df_gps, day_df], ignore_index=True)
+            except Exception:
+                pass
+
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 
     df_day_all = df[df[COL_DATE].dt.date == selected_day].copy()
