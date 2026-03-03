@@ -1,14 +1,9 @@
 # roles.py
 # ============================================================
 # Centrale role/auth helpers voor alle pagina's
-#
-# Belangrijk:
-# - profiles.team is verwijderd -> NIET selecteren.
-# - uid ophalen via sb.auth.get_user(token) zodat uid klopt.
-# - Role altijd normalizen (enum/qualified strings).
-# - OPEN_MODE standaard UIT (False), anders wordt iedereen "staff" in de UI.
-# - Herstelt auth automatisch vanuit cookies bij Streamlit session reset
-#   (mobiel/tab switch/reconnect), mits app.py cookies zet.
+# - CookieManager singleton met vaste key
+# - Session restore/refresh via refresh token cookie (30 dagen)
+# - Profile caching in session_state
 # ============================================================
 
 from __future__ import annotations
@@ -25,8 +20,7 @@ except Exception:
     create_client = None
 
 
-# Zet op True om UI-gates te omzeilen (iedereen = staff in UI).
-# Laat dit in productie op False.
+# Laat dit in productie op False
 OPEN_MODE = False
 
 STAFF_ROLES = {
@@ -38,14 +32,12 @@ STAFF_ROLES = {
     "admin",
 }
 
+ACCESS_COOKIE_SECONDS = 60 * 60
+REFRESH_COOKIE_DAYS = 30
+REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
+
 
 def normalize_role(v: Any) -> str:
-    """
-    Normaliseert role-waardes zoals:
-    - "player"
-    - "public.user_role_v2.player"
-    - "player::something"
-    """
     if v is None:
         return "player"
     s = str(v).strip().lower()
@@ -61,14 +53,17 @@ def normalize_role(v: Any) -> str:
 def get_sb():
     if create_client is None:
         return None
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+    url = st.secrets.get("SUPABASE_URL", "").strip()
+    key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
+    if not url or not key:
+        return None
+    return create_client(url, key)
 
 
-# ----------------------------
-# Cookie/session restore helpers
-# ----------------------------
-def _cookie_mgr():
-    return stx.CookieManager()
+def cookie_mgr():
+    if "_cookie_mgr_instance" not in st.session_state:
+        st.session_state["_cookie_mgr_instance"] = stx.CookieManager(key="mvv_cookie_mgr")
+    return st.session_state["_cookie_mgr_instance"]
 
 
 def _set_postgrest_auth_safely(sb, token: Optional[str]) -> None:
@@ -77,24 +72,22 @@ def _set_postgrest_auth_safely(sb, token: Optional[str]) -> None:
     try:
         sb.postgrest.auth(token)
     except Exception:
-        # Sommige supabase-py versies gooien hier soms een error; dan werkt het alsnog vaak.
         pass
 
 
-def _set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None) -> None:
-    cm = _cookie_mgr()
-    cm.set("sb_access", access_token or "", max_age=60 * 60)               # 1 uur
-    cm.set("sb_refresh", refresh_token or "", max_age=60 * 60 * 24 * 30)   # 30 dagen
+def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None) -> None:
+    cm = cookie_mgr()
+    cm.set("sb_access", str(access_token or ""), max_age=ACCESS_COOKIE_SECONDS, key="set_sb_access")
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_refresh")
     if email:
-        cm.set("sb_email", email, max_age=60 * 60 * 24 * 30)
+        cm.set("sb_email", str(email), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_email")
 
 
-def _clear_tokens_in_cookie() -> None:
-    cm = _cookie_mgr()
-    # delete bestaat niet in alle versies
-    cm.set("sb_access", "", max_age=1)
-    cm.set("sb_refresh", "", max_age=1)
-    cm.set("sb_email", "", max_age=1)
+def clear_tokens_in_cookie() -> None:
+    cm = cookie_mgr()
+    cm.set("sb_access", "", max_age=1, key="clear_sb_access")
+    cm.set("sb_refresh", "", max_age=1, key="clear_sb_refresh")
+    cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
 def _get_access_token_from_state() -> Optional[str]:
@@ -110,18 +103,14 @@ def _get_access_token_from_state() -> Optional[str]:
     return None
 
 
-def _try_restore_or_refresh_session(sb=None) -> bool:
-    """
-    Herstelt sessie uit cookies wanneer session_state leeg is geraakt.
-    Vereist dat app.py bij login tokens in cookies opslaat.
-    """
+def try_restore_or_refresh_session(sb=None) -> bool:
     if sb is None:
         sb = get_sb()
     if sb is None:
         st.session_state["auth_err"] = "Supabase client niet beschikbaar"
         return False
 
-    cm = _cookie_mgr()
+    cm = cookie_mgr()
     access = cm.get("sb_access")
     refresh = cm.get("sb_refresh")
     email = cm.get("sb_email")
@@ -133,8 +122,6 @@ def _try_restore_or_refresh_session(sb=None) -> bool:
         return False
 
     last_err = None
-
-    # Soft retries bij korte netwerkdip
     for _ in range(2):
         try:
             if access:
@@ -150,12 +137,12 @@ def _try_restore_or_refresh_session(sb=None) -> bool:
                 st.session_state["access_token"] = sess.access_token
                 st.session_state["sb_session"] = sess
                 _set_postgrest_auth_safely(sb, sess.access_token)
-
-                _set_tokens_in_cookie(
+                set_tokens_in_cookie(
                     sess.access_token,
                     sess.refresh_token,
                     st.session_state.get("user_email"),
                 )
+                time.sleep(0.35)
                 return True
 
         except Exception as e:
@@ -167,17 +154,13 @@ def _try_restore_or_refresh_session(sb=None) -> bool:
 
 
 def require_auth() -> None:
-    """
-    Zorgt dat er een geldige access_token aanwezig is.
-    Probeert eerst cookie-restore als session_state leeg is.
-    """
     token = _get_access_token_from_state()
     if token:
         st.session_state["access_token"] = token
         return
 
     sb = get_sb()
-    ok = _try_restore_or_refresh_session(sb)
+    ok = try_restore_or_refresh_session(sb)
     if ok and _get_access_token_from_state():
         return
 
@@ -195,26 +178,18 @@ def get_access_token() -> str:
 
 
 def sb_postgrest_auth(sb) -> None:
-    """
-    Zet Authorization header voor PostgREST table() calls.
-    """
     token = get_access_token()
     _set_postgrest_auth_safely(sb, token)
 
 
 def get_auth_uid(sb) -> Optional[str]:
-    """
-    Haalt user_id op via GoTrue met token.
-    Probeert 1x silent refresh bij verlopen token.
-    """
     token = get_access_token()
     try:
         u = sb.auth.get_user(token)
         return u.user.id
     except Exception:
-        # mogelijk verlopen token -> probeer restore/refresh
         st.session_state.pop("access_token", None)
-        if _try_restore_or_refresh_session(sb):
+        if try_restore_or_refresh_session(sb):
             token = _get_access_token_from_state()
             if token:
                 try:
@@ -226,14 +201,10 @@ def get_auth_uid(sb) -> Optional[str]:
 
 
 def get_profile(sb) -> Optional[Dict[str, Any]]:
-    """
-    Leest public.profiles voor de huidige user.
+    cached = st.session_state.get("_profile_cache")
+    if isinstance(cached, dict) and cached.get("user_id") and cached.get("role"):
+        return cached
 
-    Verwacht kolommen:
-    - user_id (uuid)
-    - role (user_role_v2 / text)
-    - player_id (uuid, nullable)
-    """
     sb_postgrest_auth(sb)
     uid = get_auth_uid(sb)
     if not uid:
@@ -251,11 +222,12 @@ def get_profile(sb) -> Optional[Dict[str, Any]]:
         if prof is None:
             return None
 
-        # Normaliseer role direct en zet ook in session_state (handig voor UI gates)
         prof["role"] = normalize_role(prof.get("role"))
         st.session_state["role"] = prof["role"]
         if prof.get("player_id"):
             st.session_state["player_id"] = str(prof["player_id"])
+
+        st.session_state["_profile_cache"] = prof
         return prof
     except Exception:
         return None
@@ -270,10 +242,11 @@ def is_staff_user(profile: Optional[Dict[str, Any]]) -> bool:
     return role in STAFF_ROLES
 
 
-def list_players(sb) -> List[Dict[str, Any]]:
-    """
-    Returns actieve spelers (player_id, full_name).
-    """
+@st.cache_data(show_spinner=False, ttl=300)
+def _list_players_cached(_cache_buster: str = "v1") -> List[Dict[str, Any]]:
+    sb = get_sb()
+    if sb is None:
+        return []
     sb_postgrest_auth(sb)
     try:
         resp = (
@@ -283,19 +256,20 @@ def list_players(sb) -> List[Dict[str, Any]]:
             .order("full_name")
             .execute()
         )
-        rows = resp.data or []
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            # extra guard
-            if r.get("is_active") is False:
-                continue
-            out.append(r)
-        return out
+        return resp.data or []
     except Exception:
         return []
 
 
-def get_player_name(sb, player_id: str) -> str:
+def list_players(sb) -> List[Dict[str, Any]]:
+    return _list_players_cached("v1")
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _get_player_name_cached(player_id: str, _cache_buster: str = "v1") -> str:
+    sb = get_sb()
+    if sb is None:
+        return "Onbekend"
     sb_postgrest_auth(sb)
     try:
         resp = sb.table("players").select("full_name").eq("player_id", player_id).maybe_single().execute()
@@ -304,19 +278,16 @@ def get_player_name(sb, player_id: str) -> str:
         return "Onbekend"
 
 
+def get_player_name(sb, player_id: str) -> str:
+    return _get_player_name_cached(str(player_id), "v1")
+
+
 def pick_target_player(
     sb,
     profile: Optional[Dict[str, Any]],
     label: str = "Speler",
     key: str = "target_player_select",
 ) -> Tuple[Optional[str], Optional[str], bool]:
-    """
-    Bepaalt target speler voor Player Page:
-    - staff/open-mode: dropdown met alle actieve spelers
-    - player: altijd eigen player_id uit profile (geen dropdown)
-
-    Returns: (player_id, player_name, is_staff_mode)
-    """
     staff_mode = is_staff_user(profile)
 
     if staff_mode:
@@ -333,7 +304,6 @@ def pick_target_player(
         pid = name_to_id.get(sel_name)
         return (str(pid) if pid else None), sel_name, True
 
-    # Player: force eigen speler
     if not profile or not profile.get("player_id"):
         return None, None, False
 
