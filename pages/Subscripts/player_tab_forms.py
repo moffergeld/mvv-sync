@@ -213,7 +213,7 @@ def render_forms_tab(sb, target_player_id: str):
             stress = st.slider("Stress (1–10)", 1, 10, value=int(existing_asrm.get("stress", 5)), key="asrm_stress")
             mood = st.slider("Mood (1–10)", 1, 10, value=int(existing_asrm.get("mood", 5)), key="asrm_mood")
 
-            asrm_submit = st.form_submit_button("ASRM opslaan", use_container_width=True)
+            asrm_submit = st.form_submit_button("ASRM opslaan", width='stretch')
 
         if asrm_submit:
             try:
@@ -300,7 +300,7 @@ def render_forms_tab(sb, target_player_id: str):
                 injury_pain = st.slider("Pain (0–10)", 0, 10, value=int(rpe_header.get("injury_pain", 0) or 0), key="rpe_pain")
 
             notes = st.text_area("Notes (optional)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
-            rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
+            rpe_submit = st.form_submit_button("RPE opslaan", width='stretch')
 
         if rpe_submit:
             try:
