@@ -1,10 +1,27 @@
 # pages/03_GPS_Data.py
 # ==========================================================
-# GPS Data pagina
-# + Benchmarks tab (Gref) als subscript
+# GPS Data pagina (OPTIMALIZED)
+#
+# Afgesproken gedrag:
+# - Default: laatste 8 weken (Summary-only) -> snelle load
+# - Scope selector: Laatste 8 weken / Laatste 12 weken / Seizoen / Alles
+# - df_all voor Session Load + ACWR = Summary-only binnen scope
+# - Practice/Match splits blijven werken via kolom 'Type'
+# - FFP: laadt altijd ALLES (Summary-only) maar alleen als FFP geopend wordt
+# - Benchmarks tab blijft "alles" (eigen fetch in benchmarks subscript)
+# - Kalender (Session Load) moet all-time blijven:
+#   -> lichte calendar_df_all (Datum/Type/Event) over ALL summary records
+#   -> als gebruiker een oude datum klikt buiten scope: on-demand 1-dag fetch
+#
+# Tech:
+# - REST paging blijft, maar nu server-side gefilterd op event=Summary + datum-range
+# - Caching per scope en per dag
+# - use_container_width vervangen door width="stretch"
 # ==========================================================
 
 from __future__ import annotations
+
+from datetime import date, timedelta
 
 import pandas as pd
 import requests
@@ -13,7 +30,7 @@ import streamlit as st
 import pages.Subscripts.gps_data_session_load_pages as session_load_pages
 import pages.Subscripts.gps_data_acwr_pages as acwr_pages
 import pages.Subscripts.gps_data_ffp_pages as ffp_pages
-import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages  # NEW
+import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages  # Benchmarks tab (Gref)
 
 from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
@@ -120,6 +137,7 @@ def rest_get_paged(
 
 # -------------------------
 # Supabase fetch -> DataFrame voor dashboards
+# (zelfde mapping als je oorspronkelijke script)
 # -------------------------
 GPS_SELECT_COLS = [
     "gps_id",
@@ -160,8 +178,8 @@ GPS_SELECT_COLS = [
 
 
 def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
-    if df.empty:
-        return df
+    if df is None or df.empty:
+        return pd.DataFrame()
 
     df = df.copy()
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
@@ -217,10 +235,94 @@ def _supabase_to_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _supabase_to_calendar_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["Datum", "Type", "Event"])
+    out = df.copy()
+    out["datum"] = pd.to_datetime(out["datum"], errors="coerce")
+    out = out.rename(columns={"datum": "Datum", "type": "Type", "event": "Event"})
+    out = out.dropna(subset=["Datum"]).copy()
+    out["Datum"] = out["Datum"].dt.date
+    out["Type"] = out["Type"].astype(str).str.strip()
+    out["Event"] = out["Event"].astype(str).str.strip()
+    return out[["Datum", "Type", "Event"]]
+
+
+# -------------------------
+# Scope helpers
+# -------------------------
+def _season_start(today: date) -> date:
+    if today.month >= 7:
+        return date(today.year, 7, 1)
+    return date(today.year - 1, 7, 1)
+
+
+def _scope_to_dates(scope_key: str) -> tuple[date | None, date | None]:
+    today = date.today()
+    if scope_key == "Laatste 8 weken":
+        return today - timedelta(days=56 - 1), today
+    if scope_key == "Laatste 12 weken":
+        return today - timedelta(days=84 - 1), today
+    if scope_key == "Seizoen":
+        return _season_start(today), today
+    if scope_key == "Alles":
+        return None, None
+    return today - timedelta(days=56 - 1), today
+
+
+# -------------------------
+# Cached fetchers
+# -------------------------
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_gps_df_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
+def fetch_gps_summary_scope_cached(access_token: str, user_id: str, scope_key: str) -> pd.DataFrame:
+    d0, d1 = _scope_to_dates(scope_key)
     select = ",".join(GPS_SELECT_COLS)
-    base_query = f"select={select}&order=datum.asc,gps_id.asc"
+    base_query = f"select={select}&event=eq.Summary&order=datum.asc,gps_id.asc"
+    if d0 and d1:
+        base_query += f"&datum=gte.{d0.isoformat()}&datum=lte.{d1.isoformat()}"
+
+    raw = rest_get_paged(
+        access_token=access_token,
+        table="gps_records",
+        base_query=base_query,
+        page_size=5000,
+        timeout=120,
+    )
+    return _supabase_to_dashboard_df(raw)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_gps_summary_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
+    select = ",".join(GPS_SELECT_COLS)
+    base_query = f"select={select}&event=eq.Summary&order=datum.asc,gps_id.asc"
+    raw = rest_get_paged(
+        access_token=access_token,
+        table="gps_records",
+        base_query=base_query,
+        page_size=5000,
+        timeout=180,
+    )
+    return _supabase_to_dashboard_df(raw)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_calendar_all_cached(access_token: str, user_id: str) -> pd.DataFrame:
+    # lichte fetch: alleen datum/type/event, alleen Summary
+    base_query = "select=datum,type,event&event=eq.Summary&order=datum.asc"
+    raw = rest_get_paged(
+        access_token=access_token,
+        table="gps_records",
+        base_query=base_query,
+        page_size=5000,
+        timeout=120,
+    )
+    return _supabase_to_calendar_df(raw)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_gps_summary_day_cached(access_token: str, user_id: str, day_iso: str) -> pd.DataFrame:
+    select = ",".join(GPS_SELECT_COLS)
+    base_query = f"select={select}&event=eq.Summary&datum=eq.{day_iso}&order=gps_id.asc"
     raw = rest_get_paged(
         access_token=access_token,
         table="gps_records",
@@ -241,6 +343,7 @@ if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
 
+# user_id alleen voor cache-key stabiliteit
 try:
     u = auth_get_user(access_token)
     user_id = u.get("id") or "unknown"
@@ -259,12 +362,14 @@ except Exception as e:
         st.error(f"Kon user niet ophalen: {e}")
         st.stop()
 
-with st.spinner("GPS data laden..."):
-    df_all = fetch_gps_df_all_cached(access_token=access_token, user_id=user_id)
-
-if df_all.empty:
-    st.info("Geen GPS data gevonden in Supabase.")
-    st.stop()
+# scope selector
+scope_key = st.selectbox(
+    "Data scope (Summary-only)",
+    options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+    index=0,
+    key="gps_scope",
+    help="Default is snel (8 weken). 'Alles' kan zwaar zijn. FFP laadt altijd 'Alles' maar pas als je FFP opent.",
+)
 
 sub_page = st.radio(
     "Subpagina",
@@ -276,13 +381,33 @@ sub_page = st.radio(
 
 st.divider()
 
+# kalender data (all-time, light)
+with st.spinner("Kalender laden (all-time)..."):
+    calendar_df_all = fetch_calendar_all_cached(access_token, user_id)
+
 # =========================
 # SESSION LOAD
 # =========================
 if sub_page == "Session Load":
     tabs = st.tabs(["Dashboard", "Benchmarks", "Data preview"])
+
     with tabs[0]:
-        session_load_pages.session_load_pages_main(df_all)
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_gps_summary_scope_cached(access_token, user_id, scope_key)
+
+        if df_scope.empty:
+            st.info("Geen Summary GPS data gevonden in deze scope.")
+            st.stop()
+
+        def _fetch_day(day_iso: str) -> pd.DataFrame:
+            return fetch_gps_summary_day_cached(access_token, user_id, day_iso)
+
+        session_load_pages.session_load_pages_main(
+            df_scope,
+            calendar_df_all=calendar_df_all,
+            fetch_day_fn=_fetch_day,
+        )
+
     with tabs[1]:
         benchmarks_pages.benchmarks_pages_main(
             supabase_url=SUPABASE_URL,
@@ -290,25 +415,28 @@ if sub_page == "Session Load":
             access_token=access_token,
             user_id=user_id,
         )
+
     with tabs[2]:
-        st.dataframe(df_all, use_container_width=True, height=520)
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_gps_summary_scope_cached(access_token, user_id, scope_key)
+        st.dataframe(df_scope, width="stretch", height=520)
 
 # =========================
-# ACWR (forced Summary-only)
+# ACWR (Summary-only; uses scope df)
 # =========================
 elif sub_page == "ACWR":
-    if "Event" in df_all.columns:
-        df_acwr = df_all[df_all["Event"].astype(str).str.strip().str.lower() == "summary"].copy()
-    else:
-        df_acwr = df_all.iloc[0:0].copy()
-
-    if df_acwr.empty:
-        st.info("Geen Summary GPS data gevonden.")
-        st.stop()
-
     tabs = st.tabs(["ACWR module", "Benchmarks", "Data preview"])
+
     with tabs[0]:
-        acwr_pages.acwr_pages_main(df_acwr)
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_gps_summary_scope_cached(access_token, user_id, scope_key)
+
+        if df_scope.empty:
+            st.info("Geen Summary GPS data gevonden in deze scope.")
+            st.stop()
+
+        acwr_pages.acwr_pages_main(df_scope)
+
     with tabs[1]:
         benchmarks_pages.benchmarks_pages_main(
             supabase_url=SUPABASE_URL,
@@ -316,16 +444,28 @@ elif sub_page == "ACWR":
             access_token=access_token,
             user_id=user_id,
         )
+
     with tabs[2]:
-        st.dataframe(df_acwr, use_container_width=True, height=520)
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_gps_summary_scope_cached(access_token, user_id, scope_key)
+        st.dataframe(df_scope, width="stretch", height=520)
 
 # =========================
-# FFP
+# FFP (ALWAYS ALL, lazy-load)
 # =========================
 elif sub_page == "FFP":
-    tabs = st.tabs(["Dashboard", "Benchmarks", "Data preview"])
+    tabs = st.tabs(["Dashboard", "Benchmarks", "Data preview (ALL)"])
+
     with tabs[0]:
+        with st.spinner("FFP: Summary data laden (ALLES)..."):
+            df_all = fetch_gps_summary_all_cached(access_token, user_id)
+
+        if df_all.empty:
+            st.info("Geen Summary GPS data gevonden.")
+            st.stop()
+
         ffp_pages.ffp_pages_main(df_all)
+
     with tabs[1]:
         benchmarks_pages.benchmarks_pages_main(
             supabase_url=SUPABASE_URL,
@@ -333,5 +473,8 @@ elif sub_page == "FFP":
             access_token=access_token,
             user_id=user_id,
         )
+
     with tabs[2]:
-        st.dataframe(df_all, use_container_width=True, height=520)
+        with st.spinner("FFP: Summary data laden (ALLES)..."):
+            df_all = fetch_gps_summary_all_cached(access_token, user_id)
+        st.dataframe(df_all, width="stretch", height=520)
