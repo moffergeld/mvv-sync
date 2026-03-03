@@ -164,53 +164,51 @@ def _resolve_select_all(selected: list[str], players_all: list[str]) -> list[str
 
 
 def _team_selection_ui_inline(players_all: list[str]) -> tuple[bool, list[str], list[str]]:
-    st.markdown("### Team selectie")
+    # Team selectie in expander zodat de pagina minder "geclusterd" is
+    with st.expander("Team selectie", expanded=False):
+        if "sl_team_sel_on" not in st.session_state:
+            st.session_state["sl_team_sel_on"] = False
+        if "sl_starters_raw" not in st.session_state:
+            st.session_state["sl_starters_raw"] = []
+        if "sl_subs_raw" not in st.session_state:
+            st.session_state["sl_subs_raw"] = []
 
-    if "sl_team_sel_on" not in st.session_state:
-        st.session_state["sl_team_sel_on"] = False
-    if "sl_starters_raw" not in st.session_state:
-        st.session_state["sl_starters_raw"] = []
-    if "sl_subs_raw" not in st.session_state:
-        st.session_state["sl_subs_raw"] = []
+        enabled = st.toggle("Team selectie aan", value=st.session_state["sl_team_sel_on"], key="sl_team_sel_on")
 
-    opt_all = [SELECT_ALL_OPT] + players_all
+        if not enabled:
+            st.info("Zet aan om vaste selectie en wissels te definiëren.")
+            return False, [], []
 
-    c1, c2, c3 = st.columns([0.9, 3.0, 3.0], vertical_alignment="center")
-    with c1:
-        enabled = st.toggle("Aan", value=st.session_state["sl_team_sel_on"], key="sl_team_sel_on")
+        opt_all = [SELECT_ALL_OPT] + players_all
 
-    if not enabled:
+        st.caption("Kies eerst Vaste selectie. Wisselspelers toont daarna alleen de resterende spelers.")
+        c1, c2 = st.columns(2, vertical_alignment="top")
+
+        with c1:
+            starters_raw = st.multiselect(
+                "Vaste selectie",
+                options=opt_all,
+                default=[p for p in st.session_state["sl_starters_raw"] if p in opt_all],
+                key="sl_starters_raw",
+            )
+
+        starters_resolved = _resolve_select_all(starters_raw, players_all)
+        subs_pool = [p for p in players_all if p not in set(starters_resolved)]
+        opt_all_subs = [SELECT_ALL_OPT] + subs_pool
+
         with c2:
-            st.multiselect("Vaste selectie", options=opt_all, default=[], key="sl_starters_raw_disabled")
-        with c3:
-            st.multiselect("Wisselspelers", options=opt_all, default=[], key="sl_subs_raw_disabled")
-        return False, [], []
+            subs_raw = st.multiselect(
+                "Wisselspelers",
+                options=opt_all_subs,
+                default=[p for p in st.session_state["sl_subs_raw"] if p in opt_all_subs],
+                key="sl_subs_raw",
+            )
 
-    with c2:
-        starters_raw = st.multiselect(
-            "Vaste selectie",
-            options=opt_all,
-            default=[p for p in st.session_state["sl_starters_raw"] if p in opt_all],
-            key="sl_starters_raw",
-        )
+        subs_resolved = _resolve_select_all(subs_raw, subs_pool)
+        starters_final = starters_resolved
+        subs_final = [p for p in subs_resolved if p not in set(starters_final)]
 
-    starters_resolved = _resolve_select_all(starters_raw, players_all)
-    subs_pool = [p for p in players_all if p not in set(starters_resolved)]
-    opt_all_subs = [SELECT_ALL_OPT] + subs_pool
-
-    with c3:
-        subs_raw = st.multiselect(
-            "Wisselspelers",
-            options=opt_all_subs,
-            default=[p for p in st.session_state["sl_subs_raw"] if p in opt_all_subs],
-            key="sl_subs_raw",
-        )
-
-    subs_resolved = _resolve_select_all(subs_raw, subs_pool)
-    starters_final = starters_resolved
-    subs_final = [p for p in subs_resolved if p not in set(starters_final)]
-    return True, starters_final, subs_final
-
+        return True, starters_final, subs_final
 
 def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_TD not in df_agg.columns:
@@ -423,3 +421,4 @@ def session_load_pages_main(
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
