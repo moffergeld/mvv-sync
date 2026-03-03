@@ -27,9 +27,10 @@ HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
 TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
 
 # --- kleuren (terug zoals "vroeger" style) ---
-MVV_RED = "#FF0033"
-DARK_RED = "#8B0000"
-SOFT_BLUE = "#7EC8FF"
+MVV_RED = "#FF0033"          # accent / high
+LIGHT_RED = "#FF9AA2"        # hoofd-balken (licht rood)
+DARK_RED = "#8B0000"         # high sprint / high acc
+LIGHT_BLUE = "#BFD9FF"       # optioneel (decel tot)
 BLUE = "#1E6BFF"
 GRAY_LINE = "rgba(255,255,255,0.55)"
 
@@ -220,7 +221,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
     vals = data[COL_TD].to_numpy()
 
     fig = go.Figure()
-    fig.add_bar(x=players, y=vals, name="Total Distance", marker_color=SOFT_BLUE)
+    fig.add_bar(x=players, y=vals, name="Total Distance", marker_color=MVV_RED)
 
     med_team = _median_safe(vals)
     if med_team is not None:
@@ -249,7 +250,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
 
     x = np.arange(len(players))
     fig = go.Figure()
-    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint", marker_color=SOFT_BLUE)
+    fig.add_bar(x=x - 0.2, y=sprint_vals, width=0.4, name="Sprint", marker_color=MVV_RED)
     fig.add_bar(x=x + 0.2, y=hs_vals, width=0.4, name="High Sprint", marker_color=DARK_RED)
 
     ms = _median_safe(sprint_vals)
@@ -287,13 +288,13 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
     fig = go.Figure()
     if COL_ACC_TOT in data.columns:
-        fig.add_bar(x=x - 1.5 * w, y=data[COL_ACC_TOT], width=w, name="Total Acc", marker_color=SOFT_BLUE)
+        fig.add_bar(x=x - 1.5 * w, y=data[COL_ACC_TOT], width=w, name="Total Acc", marker_color=MVV_RED)
     if COL_ACC_HI in data.columns:
-        fig.add_bar(x=x - 0.5 * w, y=data[COL_ACC_HI], width=w, name="High Acc", marker_color=MVV_RED)
+        fig.add_bar(x=x - 0.5 * w, y=data[COL_ACC_HI], width=w, name="High Acc", marker_color=LIGHT_RED)
     if COL_DEC_TOT in data.columns:
-        fig.add_bar(x=x + 0.5 * w, y=data[COL_DEC_TOT], width=w, name="Total Dec", marker_color="rgba(180,210,255,0.95)")
+        fig.add_bar(x=x + 0.5 * w, y=data[COL_DEC_TOT], width=w, name="Total Dec", marker_color=BLUE)
     if COL_DEC_HI in data.columns:
-        fig.add_bar(x=x + 1.5 * w, y=data[COL_DEC_HI], width=w, name="High Dec", marker_color=BLUE)
+        fig.add_bar(x=x + 1.5 * w, y=data[COL_DEC_HI], width=w, name="High Dec", marker_color=LIGHT_BLUE)
 
     fig.update_layout(title="Accelerations / Decelerations", yaxis_title="Aantal (N)", xaxis_title=None, barmode="group")
     fig.update_xaxes(tickvals=x, ticktext=players, tickangle=90)
@@ -421,4 +422,5 @@ def session_load_pages_main(
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+
 
