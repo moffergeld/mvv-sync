@@ -1,9 +1,21 @@
 # roles.py
 # ============================================================
-# Centrale role/auth helpers voor alle pagina's
-# - CookieManager singleton met vaste key
-# - Session restore/refresh via refresh token cookie (30 dagen)
-# - Profile caching in session_state
+# Single Source of Truth for Auth + Roles (Optie A)
+#
+# Functies die je overal gebruikt:
+# - get_sb()
+# - cookie_mgr()
+# - try_restore_or_refresh_session()
+# - require_auth()
+# - get_access_token()
+# - get_profile()
+# - pick_target_player()
+#
+# Belangrijk:
+# - 30 dagen refresh cookie
+# - Supabase client is cached (st.cache_resource)
+# - Profile wordt gecached in session_state (_profile_cache)
+# - time.sleep geminimaliseerd (0.10) voor snellere UX
 # ============================================================
 
 from __future__ import annotations
@@ -36,6 +48,9 @@ ACCESS_COOKIE_SECONDS = 60 * 60
 REFRESH_COOKIE_DAYS = 30
 REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
 
+# Kleine settle voor cookie refresh (zet naar 0 als je wil testen)
+COOKIE_SETTLE_SECONDS = 0.10
+
 
 def normalize_role(v: Any) -> str:
     if v is None:
@@ -49,6 +64,10 @@ def normalize_role(v: Any) -> str:
     return s or "player"
 
 
+# ============================================================
+# SUPABASE CLIENT
+# ============================================================
+
 @st.cache_resource(show_spinner=False)
 def get_sb():
     if create_client is None:
@@ -59,6 +78,10 @@ def get_sb():
         return None
     return create_client(url, key)
 
+
+# ============================================================
+# COOKIES
+# ============================================================
 
 def cookie_mgr():
     if "_cookie_mgr_instance" not in st.session_state:
@@ -90,6 +113,10 @@ def clear_tokens_in_cookie() -> None:
     cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
+# ============================================================
+# SESSION STATE HELPERS
+# ============================================================
+
 def _get_access_token_from_state() -> Optional[str]:
     tok = st.session_state.get("access_token")
     if tok:
@@ -102,6 +129,10 @@ def _get_access_token_from_state() -> Optional[str]:
             return str(token)
     return None
 
+
+# ============================================================
+# RESTORE / REFRESH SESSION
+# ============================================================
 
 def try_restore_or_refresh_session(sb=None) -> bool:
     if sb is None:
@@ -136,22 +167,27 @@ def try_restore_or_refresh_session(sb=None) -> bool:
             if sess and getattr(sess, "access_token", None) and getattr(sess, "refresh_token", None):
                 st.session_state["access_token"] = sess.access_token
                 st.session_state["sb_session"] = sess
+
                 _set_postgrest_auth_safely(sb, sess.access_token)
-                set_tokens_in_cookie(
-                    sess.access_token,
-                    sess.refresh_token,
-                    st.session_state.get("user_email"),
-                )
-                time.sleep(0.35)
+                set_tokens_in_cookie(sess.access_token, sess.refresh_token, st.session_state.get("user_email"))
+
+                if COOKIE_SETTLE_SECONDS > 0:
+                    time.sleep(COOKIE_SETTLE_SECONDS)
+
                 return True
 
         except Exception as e:
             last_err = e
-            time.sleep(0.35)
+            if COOKIE_SETTLE_SECONDS > 0:
+                time.sleep(COOKIE_SETTLE_SECONDS)
 
     st.session_state["auth_err"] = str(last_err) if last_err else "Unknown auth restore error"
     return False
 
+
+# ============================================================
+# AUTH GATE
+# ============================================================
 
 def require_auth() -> None:
     token = _get_access_token_from_state()
@@ -200,6 +236,10 @@ def get_auth_uid(sb) -> Optional[str]:
         return None
 
 
+# ============================================================
+# PROFILE / ROLES
+# ============================================================
+
 def get_profile(sb) -> Optional[Dict[str, Any]]:
     cached = st.session_state.get("_profile_cache")
     if isinstance(cached, dict) and cached.get("user_id") and cached.get("role"):
@@ -241,6 +281,10 @@ def is_staff_user(profile: Optional[Dict[str, Any]]) -> bool:
     role = normalize_role(profile.get("role"))
     return role in STAFF_ROLES
 
+
+# ============================================================
+# PLAYER HELPERS (staff dropdown)
+# ============================================================
 
 @st.cache_data(show_spinner=False, ttl=300)
 def _list_players_cached(_cache_buster: str = "v1") -> List[Dict[str, Any]]:
