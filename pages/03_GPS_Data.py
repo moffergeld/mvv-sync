@@ -167,6 +167,13 @@ GPS_SELECT_COLS = [
     "high_accelerations",
     "total_decelerations",
     "high_decelerations",
+    # HR / TRIMP 
+    "hrzone1",
+    "hrzone2",
+    "hrzone3",
+    "hrzone4",
+    "hrzone5",
+    "hrTrimp", 
 ]
 
 
@@ -189,6 +196,12 @@ _DB_TO_DASH = {
     "high_accelerations": "High Accelerations",
     "total_decelerations": "Total Decelerations",
     "high_decelerations": "High Decelerations",
+    "hrzone1": "HRzone1",
+    "hrzone2": "HRzone2",
+    "hrzone3": "HRzone3",
+    "hrzone4": "HRzone4",
+    "hrzone5": "HRzone5",
+    "hrtrimp": "HRtrimp",
 }
 
 
