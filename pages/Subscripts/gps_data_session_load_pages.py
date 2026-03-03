@@ -3,9 +3,14 @@
 # Session Load (Streamlit)
 #
 # FIX:
-# - Voorkom rerun-loop door streamlit_calendar:
-#   Update session_state alleen als gebruiker ECHT een nieuwe datum klikt.
-# - Normaliseer dateStr naar YYYY-MM-DD (ds[:10]).
+# - Stop rerun-loop door streamlit_calendar:
+#   Update session_state alleen bij echte nieuwe click.
+# - Normaliseer dateStr naar "YYYY-MM-DD" (ds[:10]).
+#
+# NOTE:
+# - Dit script behoudt de minimale "selected day" workflow.
+# - Je bestaande uitgebreide Session Load UI kan onderaan
+#   (waar nu dataframe preview staat) teruggezet worden.
 # ============================================================
 
 from __future__ import annotations
@@ -18,7 +23,6 @@ import streamlit as st
 from streamlit_calendar import calendar as st_calendar
 
 COL_DATE = "Datum"
-COL_EVENT = "Event"
 COL_TYPE = "Type"
 
 MVV_RED = "#E30613"
@@ -50,7 +54,8 @@ def _build_calendar_events(df_calendar: pd.DataFrame, selected: date) -> list[di
     days_with_data, match_days = _compute_day_sets(df_calendar)
 
     events: list[dict] = []
-    # selected background
+
+    # Selected day highlight (background)
     events.append(
         {
             "title": "",
@@ -62,6 +67,7 @@ def _build_calendar_events(df_calendar: pd.DataFrame, selected: date) -> list[di
         }
     )
 
+    # Add "Training/Match" markers for all days with data
     for d in sorted(days_with_data):
         is_match = d in match_days
         events.append(
@@ -83,7 +89,6 @@ def calendar_day_picker_fullcalendar(df_calendar: pd.DataFrame, key_prefix: str 
     sel_key = f"{key_prefix}_selected"
     last_click_key = f"{key_prefix}_last_clicked_iso"
 
-    # init selected once
     if sel_key not in st.session_state:
         st.session_state[sel_key] = max_day
 
@@ -104,15 +109,13 @@ def calendar_day_picker_fullcalendar(df_calendar: pd.DataFrame, key_prefix: str 
     events = _build_calendar_events(df_calendar, selected)
     result = st_calendar(events=events, options=options, key=f"{key_prefix}_fc")
 
-    # Read click (if any)
     clicked_iso = None
     if isinstance(result, dict):
         dc = result.get("dateClick") or {}
         ds = dc.get("dateStr")
         if isinstance(ds, str) and len(ds) >= 10:
-            clicked_iso = ds[:10]  # normalize YYYY-MM-DD
+            clicked_iso = ds[:10]  # normalize
 
-    # Update ONLY if truly new click and new day
     if clicked_iso:
         prev_clicked = st.session_state.get(last_click_key)
         if prev_clicked != clicked_iso:
@@ -166,7 +169,6 @@ def session_load_pages_main(
 
     selected_day = calendar_day_picker_fullcalendar(calendar_df_all, key_prefix="sl")
 
-    # on-demand day fetch if needed
     df_all_for_calc = _ensure_day_in_scope_df(df_gps_scope, selected_day, fetch_day_fn)
 
     if df_all_for_calc is None or df_all_for_calc.empty:
@@ -175,13 +177,11 @@ def session_load_pages_main(
 
     df = df_all_for_calc.copy()
     df[COL_DATE] = pd.to_datetime(df[COL_DATE], errors="coerce").dt.date
-    df = df[df[COL_DATE] == selected_day].copy()
+    df_day = df[df[COL_DATE] == selected_day].copy()
 
-    if df.empty:
+    if df_day.empty:
         st.info("Geen data op deze datum.")
         return
 
-    # Hier laat je jouw bestaande Session Load tabellen/grafieken staan.
-    # (Als je oorspronkelijke script die al had, plak die hier terug.)
     st.caption(f"Geselecteerde datum: {selected_day.isoformat()}")
-    st.dataframe(df, width="stretch", height=520)
+    st.dataframe(df_day, width="stretch", height=520)
