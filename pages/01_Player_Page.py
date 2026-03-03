@@ -2,24 +2,34 @@
 # ============================================================
 # Player Page (Streamlit)
 #
-# Fix voor Streamlit cache error:
-# - Supabase client (sb) is unhashable -> @st.cache_data kan sb niet hashen.
-# - Oplossing: geef sb als _sb mee (leading underscore), dan negeert Streamlit
-#   dat argument bij cache hashing.
-#
-# Overzicht
-# - Tabs: Data + Forms (Checklist is verwijderd)
-# - Staff: dropdown met actieve spelers (cached)
-# - Player: eigen player_id + naam (cached)
+# FIXES:
+# - Robuuste imports (werkt ook als packages niet goed staan)
+# - Checklist tab verwijderd (staat op andere pagina)
+# - Cache: Supabase client is unhashable -> underscore param _sb
 # ============================================================
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-from roles import get_sb, require_auth, get_profile
-from pages.Subscripts.player_tab_data import render_data_tab
-from pages.Subscripts.player_tab_forms import render_forms_tab
+# ------------------------------------------------------------
+# Import path fix (works even if __init__.py is missing/wrong)
+# ------------------------------------------------------------
+THIS_DIR = Path(__file__).resolve().parent          # .../pages
+ROOT_DIR = THIS_DIR.parent                          # project root
+
+if str(THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(THIS_DIR))              # so "Subscripts.*" works
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))              # so "roles" works
+
+
+from roles import get_sb, require_auth, get_profile  # noqa: E402
+from Subscripts.player_tab_data import render_data_tab  # noqa: E402
+from Subscripts.player_tab_forms import render_forms_tab  # noqa: E402
 
 
 # ============================================================
@@ -28,13 +38,7 @@ from pages.Subscripts.player_tab_forms import render_forms_tab
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_active_players_cached(_sb):
-    """
-    Staff dropdown: actieve spelers (cached).
-
-    BELANGRIJK:
-    - _sb underscore => Streamlit negeert dit argument voor hashing.
-    - Daardoor werkt caching zonder UnhashableParamError.
-    """
+    """Staff dropdown: actieve spelers (cached)."""
     try:
         rows = (
             _sb.table("players")
@@ -52,10 +56,7 @@ def fetch_active_players_cached(_sb):
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_player_name_cached(_sb, player_id: str) -> str:
-    """
-    Player role: toon titel met naam (cached).
-    - _sb underscore => niet hashen
-    """
+    """Player role: titel met naam (cached)."""
     try:
         row = (
             _sb.table("players")
@@ -70,17 +71,7 @@ def fetch_player_name_cached(_sb, player_id: str) -> str:
         return "Player"
 
 
-# ============================================================
-# UI HELPERS
-# ============================================================
-
 def pick_active_player_dropdown(sb, key: str = "pp_player_select"):
-    """
-    Staff only: dropdown met actieve spelers.
-
-    Returns:
-      (player_id, player_name)
-    """
     rows = fetch_active_players_cached(sb)
     if not rows:
         return None, None
@@ -101,24 +92,17 @@ def pick_active_player_dropdown(sb, key: str = "pp_player_select"):
     return name_to_id.get(sel_name), sel_name
 
 
-# ============================================================
-# MAIN
-# ============================================================
-
 def main():
-    # --- Auth gate ---
     require_auth()
     sb = get_sb()
     if sb is None:
         st.error("Supabase client niet beschikbaar.")
         st.stop()
 
-    # --- Profile: bepaalt role + player_id ---
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
     my_player_id = profile.get("player_id")
 
-    # --- Select target player (UI) ---
     if role == "player":
         if not my_player_id:
             st.error("Je profiel is niet gekoppeld aan een speler (player_id ontbreekt).")
@@ -127,7 +111,6 @@ def main():
         target_player_id = str(my_player_id)
         target_player_name = fetch_player_name_cached(sb, target_player_id)
         st.caption("Je ziet hier alleen jouw eigen data in de Player Page.")
-
     else:
         st.subheader("Selecteer speler")
         target_player_id, target_player_name = pick_active_player_dropdown(sb, key="pp_player_select")
@@ -135,7 +118,6 @@ def main():
             st.error("Geen speler beschikbaar.")
             st.stop()
 
-    # --- Title ---
     st.title(f"Player: {target_player_name}")
 
     with st.expander("ℹ️ Info (Data-tab)", expanded=False):
@@ -143,10 +125,9 @@ def main():
             "- **GPS & Wellness**: laatste **14 dagen**\n"
             "- **RPE Over time**: laatste **7 dagen**\n"
             "- Grafieken zijn **static** (minder gevoelig op telefoon)\n"
-            "- **Max Speed** wordt per dag als **max** genomen (niet som)\n"
+            "- **Max Speed**: per dag **max** (niet som)\n"
         )
 
-    # --- Tabs (Checklist is verwijderd) ---
     tabs = st.tabs(["Data", "Forms"])
 
     with tabs[0]:
