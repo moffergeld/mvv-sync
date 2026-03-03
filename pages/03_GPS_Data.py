@@ -191,7 +191,7 @@ _DB_TO_DASH = {
     "sprint": "Sprint",
     "high_sprint": "High Sprint",
     "max_speed": "Max Speed",
-    "playerload2d": "PlayerLoad2D",
+    "playerload2d": "playerload2D",
     "total_accelerations": "Total Accelerations",
     "high_accelerations": "High Accelerations",
     "total_decelerations": "Total Decelerations",
