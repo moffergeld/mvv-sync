@@ -8,8 +8,12 @@ import streamlit as st
 import extra_streamlit_components as stx
 from supabase import create_client
 
+ACCESS_COOKIE_SECONDS = 60 * 60
+REFRESH_COOKIE_DAYS = 30
+REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
 
-@st.cache_resource
+
+@st.cache_resource(show_spinner=False)
 def get_sb_client():
     url = st.secrets.get("SUPABASE_URL", "").strip()
     key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
@@ -19,10 +23,6 @@ def get_sb_client():
 
 
 def cookie_mgr():
-    """
-    Maak CookieManager maar 1x per run aan, anders krijg je
-    StreamlitDuplicateElementKey (default key='init').
-    """
     if "_cookie_mgr_instance" not in st.session_state:
         st.session_state["_cookie_mgr_instance"] = stx.CookieManager(key="mvv_cookie_mgr")
     return st.session_state["_cookie_mgr_instance"]
@@ -30,10 +30,10 @@ def cookie_mgr():
 
 def set_tokens_in_cookie(access_token: str, refresh_token: str, email: str | None = None):
     cm = cookie_mgr()
-    cm.set("sb_access", str(access_token or ""), max_age=60 * 60, key="set_sb_access")               # 1 uur
-    cm.set("sb_refresh", str(refresh_token or ""), max_age=60 * 60 * 24 * 30, key="set_sb_refresh")  # 30 dagen
+    cm.set("sb_access", str(access_token or ""), max_age=ACCESS_COOKIE_SECONDS, key="set_sb_access")
+    cm.set("sb_refresh", str(refresh_token or ""), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_refresh")
     if email:
-        cm.set("sb_email", str(email), max_age=60 * 60 * 24 * 30, key="set_sb_email")
+        cm.set("sb_email", str(email), max_age=REFRESH_COOKIE_SECONDS, key="set_sb_email")
 
 
 def clear_tokens_in_cookie():
@@ -65,9 +65,6 @@ def get_access_token_from_state() -> Optional[str]:
 
 
 def try_restore_or_refresh_session(sb=None) -> bool:
-    """
-    Herstel sessie uit cookies wanneer Streamlit session_state leeg is geraakt.
-    """
     if sb is None:
         sb = get_sb_client()
     if sb is None:
