@@ -1,3 +1,4 @@
+# pages/Subscripts/wr_common.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +8,6 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-
 
 # -----------------------------
 # Config / constants
@@ -23,23 +23,18 @@ ASRM_PARAMS = [
 ]
 
 RPE_PARAMS = [
-    ("RPE (weighted avg)", "avg_rpe"),          # 0–10
-    ("RPE Load (sum dur*rpe)", "rpe_load"),     # arbitrary
-    ("Total duration (min)", "duration_min"),   # minutes
+    ("RPE (weighted avg)", "avg_rpe"),
+    ("RPE Load (sum dur*rpe)", "rpe_load"),
+    ("Total duration (min)", "duration_min"),
 ]
 
-# Zones (1 = best, 10 = worst) voor 0–10 schalen
 ZONE_GREEN_MAX = 4.5
 ZONE_ORANGE_MAX = 7.5
 
-# “Rood” detectie voor notice
 ASRM_RED_THRESHOLD = 7.5
-RPE_RED_THRESHOLD = 7.5  # voor avg_rpe
+RPE_RED_THRESHOLD = 7.5
 
 
-# -----------------------------
-# Small helpers
-# -----------------------------
 def _df(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows or [])
 
@@ -49,7 +44,6 @@ def _coerce_date(s: pd.Series) -> pd.Series:
 
 
 def iso_week_start_end(year: int, week: int) -> Tuple[date, date]:
-    # ISO week start = maandag
     d0 = date.fromisocalendar(year, week, 1)
     d1 = d0 + timedelta(days=6)
     return d0, d1
@@ -82,7 +76,6 @@ def add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10) -> 
 # -----------------------------
 @st.cache_data(show_spinner=False, ttl=60)
 def fetch_active_players_cached(sb_url_key: str, _sb, ttl_salt: str = "") -> pd.DataFrame:
-    # sb_url_key + ttl_salt om cache te scheiden per omgeving
     rows = (
         _sb.table("players")
         .select("player_id,full_name,is_active")
@@ -200,17 +193,38 @@ def fetch_rpe_sessions_for_ids_cached(sb_url_key: str, _sb, entry_ids_tuple: Tup
 
 
 # -----------------------------
+# NEW: Injury fetch (from rpe_entries)
+# -----------------------------
+@st.cache_data(show_spinner=False, ttl=60)
+def fetch_rpe_injuries_range_cached(sb_url_key: str, _sb, d0_iso: str, d1_iso: str) -> pd.DataFrame:
+    """
+    Pull injuries directly from rpe_entries (no sessions needed).
+    Uses your index: (player_id, entry_date desc).
+    """
+    rows = (
+        _sb.table("rpe_entries")
+        .select("id,player_id,entry_date,injury,injury_type,injury_pain,attachment_url,notes,created_at,updated_at")
+        .gte("entry_date", d0_iso)
+        .lte("entry_date", d1_iso)
+        .execute()
+        .data
+        or []
+    )
+    df = _df(rows)
+    if df.empty:
+        return df
+    df["id"] = df["id"].astype(str)
+    df["player_id"] = df["player_id"].astype(str)
+    df["entry_date"] = _coerce_date(df["entry_date"])
+    df["injury"] = df["injury"].astype(bool)
+    df["injury_pain"] = pd.to_numeric(df["injury_pain"], errors="coerce")
+    return df
+
+
+# -----------------------------
 # RPE computations
 # -----------------------------
 def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Output columns:
-    - entry_date
-    - player_id
-    - avg_rpe (weighted by duration; fallback mean if duration==0)
-    - rpe_load (sum duration*rpe)
-    - duration_min (sum)
-    """
     if headers_df is None or headers_df.empty:
         return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"])
 
@@ -246,14 +260,7 @@ def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.
     return out
 
 
-# -----------------------------
-# Aggregations for WEEK (per player mean + std)
-# -----------------------------
 def agg_week_player_mean_std(df_long: pd.DataFrame, value_col: str) -> pd.DataFrame:
-    """
-    Input rows: per player per day.
-    Output: per player mean + std + n
-    """
     if df_long is None or df_long.empty:
         return pd.DataFrame(columns=["player_id", "mean", "std", "n"])
 
@@ -271,7 +278,7 @@ def agg_week_player_mean_std(df_long: pd.DataFrame, value_col: str) -> pd.DataFr
 
 
 # -----------------------------
-# Plotting
+# Plotting (deprecation fix: width="stretch")
 # -----------------------------
 def plot_day_bars(df: pd.DataFrame, x_col: str, y_col: str, y_title: str, zone_0_10: bool) -> None:
     if df.empty:
@@ -296,7 +303,7 @@ def plot_day_bars(df: pd.DataFrame, x_col: str, y_col: str, y_title: str, zone_0
     if zone_0_10:
         add_zone_background(fig, 0, 10)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def plot_week_player_mean_std_bars(
@@ -334,4 +341,4 @@ def plot_week_player_mean_std_bars(
     if zone_0_10:
         add_zone_background(fig, 0, 10)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
