@@ -2,23 +2,15 @@
 # ============================================================
 # Player Page (Streamlit)
 #
-# Doel
-# - Centrale pagina voor speler-specifieke modules (Data + Forms)
-# - Snelle laadtijd door:
-#   - caching van spelerslijst (staff) en player name (player)
-#   - tabs zonder Checklist (Checklist staat nu op andere pagina)
+# Fix voor Streamlit cache error:
+# - Supabase client (sb) is unhashable -> @st.cache_data kan sb niet hashen.
+# - Oplossing: geef sb als _sb mee (leading underscore), dan negeert Streamlit
+#   dat argument bij cache hashing.
 #
-# Data-bronnen (Supabase)
-# - public.players          (player_id, full_name, is_active)
-# - public.profiles         (role, player_id) via roles.get_profile()
-#
-# Rollen
-# - role == "player": geen dropdown, altijd eigen player_id (UI)
-# - staff: dropdown met actieve spelers
-#
-# Belangrijk (UI vs security)
-# - Dit script filtert UI op basis van role/player_id, maar dit is geen security.
-#   Als je ooit security nodig hebt: Supabase RLS policies gebruiken.
+# Overzicht
+# - Tabs: Data + Forms (Checklist is verwijderd)
+# - Staff: dropdown met actieve spelers (cached)
+# - Player: eigen player_id + naam (cached)
 # ============================================================
 
 from __future__ import annotations
@@ -31,21 +23,21 @@ from pages.Subscripts.player_tab_forms import render_forms_tab
 
 
 # ============================================================
-# CACHING HELPERS
+# CACHING HELPERS (sb is unhashable -> use _sb)
 # ============================================================
 
 @st.cache_data(show_spinner=False, ttl=300)
-def fetch_active_players_cached(sb):
+def fetch_active_players_cached(_sb):
     """
-    Staff dropdown: actieve spelers.
+    Staff dropdown: actieve spelers (cached).
 
-    TTL=300s:
-    - spelerlijst verandert zelden
-    - maakt player-switch sneller en voorkomt extra queries bij reruns
+    BELANGRIJK:
+    - _sb underscore => Streamlit negeert dit argument voor hashing.
+    - Daardoor werkt caching zonder UnhashableParamError.
     """
     try:
         rows = (
-            sb.table("players")
+            _sb.table("players")
             .select("player_id,full_name,is_active")
             .eq("is_active", True)
             .order("full_name")
@@ -59,17 +51,14 @@ def fetch_active_players_cached(sb):
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def fetch_player_name_cached(sb, player_id: str) -> str:
+def fetch_player_name_cached(_sb, player_id: str) -> str:
     """
-    Player role: toon titel met naam zonder elke rerun een query.
-
-    TTL=300s:
-    - naam verandert vrijwel nooit
-    - voorkomt kleine maar onnodige calls
+    Player role: toon titel met naam (cached).
+    - _sb underscore => niet hashen
     """
     try:
         row = (
-            sb.table("players")
+            _sb.table("players")
             .select("full_name")
             .eq("player_id", player_id)
             .maybe_single()
@@ -131,19 +120,15 @@ def main():
 
     # --- Select target player (UI) ---
     if role == "player":
-        # Player: forceer eigen speler (UI)
         if not my_player_id:
             st.error("Je profiel is niet gekoppeld aan een speler (player_id ontbreekt).")
             st.stop()
 
         target_player_id = str(my_player_id)
         target_player_name = fetch_player_name_cached(sb, target_player_id)
-
-        # Optionele UI tekst (klein + duidelijk)
         st.caption("Je ziet hier alleen jouw eigen data in de Player Page.")
 
     else:
-        # Staff: kies speler
         st.subheader("Selecteer speler")
         target_player_id, target_player_name = pick_active_player_dropdown(sb, key="pp_player_select")
         if not target_player_id:
@@ -153,7 +138,6 @@ def main():
     # --- Title ---
     st.title(f"Player: {target_player_name}")
 
-    # Extra info (handig voor users)
     with st.expander("ℹ️ Info (Data-tab)", expanded=False):
         st.write(
             "- **GPS & Wellness**: laatste **14 dagen**\n"
@@ -162,7 +146,7 @@ def main():
             "- **Max Speed** wordt per dag als **max** genomen (niet som)\n"
         )
 
-    # --- Tabs (Checklist is weggehaald) ---
+    # --- Tabs (Checklist is verwijderd) ---
     tabs = st.tabs(["Data", "Forms"])
 
     with tabs[0]:
