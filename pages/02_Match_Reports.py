@@ -296,7 +296,7 @@ def plot_td_bar(df: pd.DataFrame, title: str):
     fig = go.Figure(data=[go.Bar(x=dff[COL_PLAYER], y=dff[COL_TD], marker=dict(color="#FF0033"), name="TD")])
     fig.update_layout(height=330, margin=dict(l=10, r=10, t=40, b=10), title=title, showlegend=False)
     fig.update_xaxes(tickangle=90)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 def plot_sprint_vs_high(df: pd.DataFrame, title: str):
@@ -317,7 +317,7 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     fig.update_xaxes(tickangle=90)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 
 # -----------------------------
@@ -363,7 +363,7 @@ def render_tables_row(df_phase: pd.DataFrame):
     for i, (tbl, abs_label, per_label) in enumerate(tables):
         with cols[i]:
             sty = _style_table(tbl, abs_col=abs_label, per_min_col=per_label)
-            st.dataframe(sty, use_container_width=True, hide_index=True, height=_calc_height(len(tbl)))
+            st.dataframe(sty, width='stretch', hide_index=True, height=_calc_height(len(tbl)))
 
 
 # -----------------------------
