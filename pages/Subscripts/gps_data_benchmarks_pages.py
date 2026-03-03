@@ -405,7 +405,7 @@ def benchmarks_pages_main(
         return
 
     st.markdown("#### Gref")
-    st.dataframe(df_gref, use_container_width=True, height=420)
+    st.dataframe(df_gref, width="stretch", height=420)
 
     # Table 2: per minute
     df_gref_min = compute_gref_per_min(
@@ -418,4 +418,4 @@ def benchmarks_pages_main(
         return
 
     st.markdown("#### Gref per minuut")
-    st.dataframe(df_gref_min, use_container_width=True, height=420)
+    st.dataframe(df_gref_min, width="stretch", height=420)
