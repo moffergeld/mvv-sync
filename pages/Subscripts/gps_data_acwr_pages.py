@@ -805,114 +805,77 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # Wel: tabel met targets per speler (abs low/high)
     # ========================================================
     with tab_thresholds:
-        st.header("Threshold planner")
+    st.header("Threshold planner")
 
-        if sb is None:
-            st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
-            st.stop()
-    
-        # ---------- Rij 1: Team | Parameters ----------
-        r1c1, r1c2 = st.columns([1.2, 2.8])
-        with r1c1:
-            team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="thr_team")
-        with r1c2:
-            params_thr = st.multiselect(
-                "Parameters",
-                options=metrics,
-                default=default_metrics,
-                key="thr_metrics",
-            )
-            if params_thr:
-                params_thr = params_thr[:4]
-    
-        if not params_thr:
-            st.warning("Kies minimaal 1 parameter.")
-            st.stop()
-    
-        saved_keys = sb_saved_week_keys_cached(team)
-    
-        # include next week option
-        if not df_weeks.empty:
-            max_wk = int(df_weeks["week_key"].astype(int).max())
-            next_wk_key, next_wk_label = _compute_next_week_from_weekkey(max_wk)
-            df_next = pd.DataFrame([{"week_key": next_wk_key, "week_label": next_wk_label}])
-            df_weeks_all = pd.concat([df_weeks, df_next], ignore_index=True)
-        else:
-            df_weeks_all = df_weeks.copy()
-    
-        options, opt_to_key, key_to_label = build_week_options(df_weeks_all, saved_keys)
-        if not options:
-            st.warning("Geen weken gevonden.")
-            st.stop()
-    
-        # default = next week if present else last
-        default_idx = len(options) - 1
-        if not df_weeks.empty:
-            next_opt = f"{next_wk_label} {'✅' if next_wk_key in saved_keys else '⬜'}"
-            if next_opt in opt_to_key:
-                default_idx = options.index(next_opt)
-    
-        # ---------- Rij 2: Low | High | Week ----------
-        r2c1, r2c2, r2c3 = st.columns([1.0, 1.0, 1.2])
-        with r2c1:
-            fallback_low = st.number_input("Default ratio low", value=0.80, step=0.05, key="thr_low")
-        with r2c2:
-            fallback_high = st.number_input("Default ratio high", value=1.00, step=0.05, key="thr_high")
-        with r2c3:
-            sel_opt = st.selectbox("Week (✅ = gesaved)", options=options, index=default_idx, key="thr_week_opt")
-            plan_week_key = int(opt_to_key[sel_opt])
-            plan_week_label = key_to_label.get(plan_week_key, sel_opt.split(" ")[0])
-    
-        if fallback_low <= 0 or fallback_high <= 0:
-            st.error("Ratio's moeten > 0 zijn.")
-            st.stop()
-        if fallback_low > fallback_high:
-            st.error("ratio_low mag niet groter zijn dan ratio_high.")
-            st.stop()
-    
-        # existing thresholds -> start values
-        df_thr_existing = sb_get_thresholds_cached(team=team, week_key=plan_week_key)
-        ratios_existing = ratios_from_threshold_df(
-            df_thr_existing,
-            params_thr,
-            float(fallback_low),
-            float(fallback_high),
+    if sb is None:
+        st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
+        st.stop()
+
+    # ---------- Rij 1: Team | Parameters ----------
+    r1c1, r1c2 = st.columns([1.2, 2.8])
+    with r1c1:
+        team = st.text_input("Team sleutel", value=DEFAULT_TEAM, key="thr_team")
+    with r1c2:
+        params_thr = st.multiselect(
+            "Parameters (max 4)",
+            options=metrics,
+            default=default_metrics,
+            key="thr_metrics",
         )
+        if params_thr:
+            params_thr = params_thr[:4]
 
-    # ---------- GEEN eerste tabel (data_editor) meer ----------
-    st.subheader("Ratio instellingen (per parameter)")
+    if not params_thr:
+        st.warning("Kies minimaal 1 parameter.")
+        st.stop()
 
-    rows = []
-    for m in params_thr:
-        c1, c2, c3 = st.columns([2.2, 1.2, 1.2], vertical_alignment="center")
-        with c1:
-            st.write(m)
-        with c2:
-            lo = st.number_input(
-                "Ratio low",
-                min_value=0.01,
-                step=0.05,
-                value=float(ratios_existing[m][0]),
-                key=f"thr_lo_{m}",
-            )
-        with c3:
-            hi = st.number_input(
-                "Ratio high",
-                min_value=0.01,
-                step=0.05,
-                value=float(ratios_existing[m][1]),
-                key=f"thr_hi_{m}",
-            )
+    saved_keys = sb_saved_week_keys_cached(team)
 
-        if lo <= 0 or hi <= 0 or lo > hi:
-            st.error(f"Ongeldige ratio voor {m}: low en high > 0 en low ≤ high.")
-            st.stop()
+    # include next week option
+    if not df_weeks.empty:
+        max_wk = int(df_weeks["week_key"].astype(int).max())
+        next_wk_key, next_wk_label = _compute_next_week_from_weekkey(max_wk)
+        df_next = pd.DataFrame([{"week_key": next_wk_key, "week_label": next_wk_label}])
+        df_weeks_all = pd.concat([df_weeks, df_next], ignore_index=True)
+    else:
+        df_weeks_all = df_weeks.copy()
 
-        rows.append({"metric": m, "ratio_low": float(lo), "ratio_high": float(hi)})
+    options, opt_to_key, key_to_label = build_week_options(df_weeks_all, saved_keys)
+    if not options:
+        st.warning("Geen weken gevonden.")
+        st.stop()
 
-    df_edit = pd.DataFrame(rows)
+    # default = next week if present else last
+    default_idx = len(options) - 1
+    if not df_weeks.empty:
+        next_opt = f"{next_wk_label} {'✅' if next_wk_key in saved_keys else '⬜'}"
+        if next_opt in opt_to_key:
+            default_idx = options.index(next_opt)
+
+    # ---------- Rij 2: Low | High | Week ----------
+    r2c1, r2c2, r2c3 = st.columns([1.0, 1.0, 1.2])
+    with r2c1:
+        fallback_low = st.number_input("Default ratio low", value=0.80, step=0.05, key="thr_low")
+    with r2c2:
+        fallback_high = st.number_input("Default ratio high", value=1.00, step=0.05, key="thr_high")
+    with r2c3:
+        sel_opt = st.selectbox("Week (✅ = gesaved)", options=options, index=default_idx, key="thr_week_opt")
+        plan_week_key = int(opt_to_key[sel_opt])
+        plan_week_label = key_to_label.get(plan_week_key, sel_opt.split(" ")[0])
+
+    if fallback_low <= 0 or fallback_high <= 0:
+        st.error("Ratio's moeten > 0 zijn.")
+        st.stop()
+    if fallback_low > fallback_high:
+        st.error("ratio_low mag niet groter zijn dan ratio_high.")
+        st.stop()
 
     note = st.text_input("Notitie (optioneel)", value="", key="thr_note")
+
+    # Payload: elke metric krijgt dezelfde default low/high
+    df_edit = pd.DataFrame(
+        [{"metric": m, "ratio_low": float(fallback_low), "ratio_high": float(fallback_high)} for m in params_thr]
+    )
 
     if st.button("Opslaan", type="primary", width="stretch"):
         ok, msg = sb_upsert_thresholds(
@@ -927,50 +890,6 @@ def acwr_pages_main(df_gps: pd.DataFrame):
             st.rerun()
         else:
             st.error(msg)
-
-    # ---- Targets per speler (absolute values low/high) ----
-    st.subheader("Targets per speler (absolute waarden)")
-
-    chronic_players = compute_chronic_last4weeks(
-        df=df_weekly,
-        metrics=params_thr,
-        group_col="player",
-        week_col="week_key",
-    )
-    if chronic_players.empty:
-        st.info("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
-        st.stop()
-
-    rows = []
-    for _, r in chronic_players.iterrows():
-        player = r["player"]
-        for m in params_thr:
-            chronic_val = float(r[m])
-            ratio_low = float(df_edit.loc[df_edit["metric"] == m, "ratio_low"].iloc[0])
-            ratio_high = float(df_edit.loc[df_edit["metric"] == m, "ratio_high"].iloc[0])
-            rows.append(
-                {
-                    "Speler": player,
-                    "Parameter": m,
-                    "Chronic (mean last4w)": chronic_val,
-                    "Target low": chronic_val * ratio_low,
-                    "Target high": chronic_val * ratio_high,
-                }
-            )
-
-    df_targets = pd.DataFrame(rows).sort_values(["Speler", "Parameter"]).reset_index(drop=True)
-
-    st.dataframe(
-        df_targets.style.format(
-            {
-                "Chronic (mean last4w)": "{:.2f}",
-                "Target low": "{:.2f}",
-                "Target high": "{:.2f}",
-            }
-        ),
-        width="stretch",
-        height=520,
-    )
     
     # ========================================================
     # TAB 3: Targets vs Workload
@@ -1104,6 +1023,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
             st.dataframe(styled, width="stretch")
+
 
 
 
