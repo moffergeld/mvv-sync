@@ -236,7 +236,7 @@ def plot_gps_over_time(df_daily: pd.DataFrame, metric_label: str, metric_key: st
     _strip_titles(fig)
     fig.update_xaxes(type="date", tickformat="%d-%m", title_text=None)
     fig.update_yaxes(title_text=metric_label)
-    st.plotly_chart(fig, use_container_width=True, config=_plotly_config_static())
+    st.plotly_chart(fig, width="stretch", config=_plotly_config_static())
 
 
 # ============================================================
@@ -324,7 +324,7 @@ def plot_asrm_over_time(df: pd.DataFrame, param_key: str) -> None:
     _strip_titles(fig)
     fig.update_xaxes(type="date", tickformat="%d-%m", title_text=None)
     fig.update_yaxes(title_text="Score (0–10)")
-    st.plotly_chart(fig, use_container_width=True, config=_plotly_config_static())
+    st.plotly_chart(fig, width="stretch", config=_plotly_config_static())
 
 
 def plot_asrm_session(row: Dict[str, Any]) -> None:
@@ -338,7 +338,7 @@ def plot_asrm_session(row: Dict[str, Any]) -> None:
     _add_zone_background(fig, 0, 10)
     _strip_titles(fig)
     fig.update_yaxes(title_text="Score (0–10)")
-    st.plotly_chart(fig, use_container_width=True, config=_plotly_config_static())
+    st.plotly_chart(fig, width="stretch", config=_plotly_config_static())
 
 
 # ============================================================
@@ -487,7 +487,7 @@ def plot_rpe_session(sessions_df: pd.DataFrame) -> None:
     _strip_titles(fig)
     fig.update_xaxes(type="category", tickmode="array", tickvals=["1", "2"], ticktext=["1", "2"], title_text=None)
     fig.update_yaxes(title_text="RPE (0–10)", tick0=0, dtick=1)
-    st.plotly_chart(fig, use_container_width=True, config=_plotly_config_static())
+    st.plotly_chart(fig, width="stretch", config=_plotly_config_static())
 
 
 def plot_rpe_over_time(df_7d: pd.DataFrame) -> None:
@@ -510,7 +510,7 @@ def plot_rpe_over_time(df_7d: pd.DataFrame) -> None:
     _strip_titles(fig)
     fig.update_xaxes(type="date", tickformat="%d-%m", title_text=None)
     fig.update_yaxes(title_text="RPE (gemiddelde)")
-    st.plotly_chart(fig, use_container_width=True, config=_plotly_config_static())
+    st.plotly_chart(fig, width="stretch", config=_plotly_config_static())
 
 
 # ============================================================
@@ -539,7 +539,7 @@ def render_data_tab(sb, target_player_id: str) -> None:
         if gps_raw.empty:
             st.info("Geen GPS summary data gevonden (v_gps_summary).")
         else:
-            st.dataframe(gps_table_pretty(gps_raw), use_container_width=True, hide_index=True)
+            st.dataframe(gps_table_pretty(gps_raw), width="stretch", hide_index=True)
 
     with right:
         st.subheader("GPS – Over time")
