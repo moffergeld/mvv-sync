@@ -8,12 +8,17 @@
 # - try_restore_or_refresh_session()
 # - require_auth()
 # - get_access_token()
+# - sb_postgrest_auth()
 # - get_profile()
 # - pick_target_player()
 #
-# Belangrijk:
+# Belangrijk (fix voor mobile/RLS issues):
+# - Supabase client NIET meer global cachen (geen st.cache_resource)
+# - Supabase client per Streamlit session (st.session_state["_sb_client"])
+# - PostgREST auth header wordt bij elke get_sb() call gezet op basis van access_token
+#
+# Overig:
 # - 30 dagen refresh cookie
-# - Supabase client is cached (st.cache_resource)
 # - Profile wordt gecached in session_state (_profile_cache)
 # - time.sleep geminimaliseerd (0.10) voor snellere UX
 # ============================================================
@@ -65,21 +70,6 @@ def normalize_role(v: Any) -> str:
 
 
 # ============================================================
-# SUPABASE CLIENT
-# ============================================================
-
-@st.cache_resource(show_spinner=False)
-def get_sb():
-    if create_client is None:
-        return None
-    url = st.secrets.get("SUPABASE_URL", "").strip()
-    key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
-    if not url or not key:
-        return None
-    return create_client(url, key)
-
-
-# ============================================================
 # COOKIES
 # ============================================================
 
@@ -94,6 +84,11 @@ def _set_postgrest_auth_safely(sb, token: Optional[str]) -> None:
         return
     try:
         sb.postgrest.auth(token)
+    except Exception:
+        pass
+    # (optioneel) storage auth; kan geen kwaad
+    try:
+        sb.storage.auth(token)
     except Exception:
         pass
 
@@ -128,6 +123,40 @@ def _get_access_token_from_state() -> Optional[str]:
         if token:
             return str(token)
     return None
+
+
+# ============================================================
+# SUPABASE CLIENT  (FIX: per-session, geen global cache)
+# ============================================================
+
+def get_sb():
+    """
+    Supabase client per Streamlit session.
+
+    Waarom:
+    - st.cache_resource deelt objecten tussen users/sessies.
+    - postgrest auth header kan dan door andere users overschreven worden.
+    - op mobiel (meer reruns) resulteert dat in RLS errors bij writes.
+    """
+    if create_client is None:
+        return None
+
+    url = st.secrets.get("SUPABASE_URL", "").strip()
+    key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
+    if not url or not key:
+        return None
+
+    # per-session client
+    if "_sb_client" not in st.session_state or st.session_state.get("_sb_client") is None:
+        st.session_state["_sb_client"] = create_client(url, key)
+
+    sb = st.session_state["_sb_client"]
+
+    # zet ALTIJD postgrest auth voor deze sessie (als token er al is)
+    tok = _get_access_token_from_state()
+    _set_postgrest_auth_safely(sb, tok)
+
+    return sb
 
 
 # ============================================================
