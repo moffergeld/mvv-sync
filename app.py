@@ -261,7 +261,7 @@ if is_player:
     with c1:
         tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
     with c2:
-        tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
+        tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/02_Match_Reports.py")
 
 else:
     # Staff: 2 rijen (3 + 3) -> lichtere render dan 6 in 1 rij
@@ -269,9 +269,9 @@ else:
     with r1c1:
         tile("player", "Assets/Afbeeldingen/Script/Player_page.PNG", "pages/01_Player_Page.py")
     with r1c2:
-        tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/03_Match_Reports.py")
+        tile("matchreports", "Assets/Afbeeldingen/Script/Match Report.PNG", "pages/02_Match_Reports.py")
     with r1c3:
-        tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/02_GPS_Data.py")
+        tile("gpsdata", "Assets/Afbeeldingen/Script/GPS_Data.PNG", "pages/03_GPS_Data.py")
 
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
