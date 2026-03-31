@@ -94,11 +94,26 @@ def tab_matches_main(access_token: str) -> None:
         row = df_list[df_list["match_id"] == match_id].iloc[0].to_dict()
 
         st.markdown("**Aanpassen:** (alleen score + match type + season)")
+
+        def _safe_int(val, default: int = 0) -> int:
+            """Converteert None, NaN, lege string etc. veilig naar int.
+            Vangt alle gevallen op waarbij Supabase NULL teruggeeft."""
+            try:
+                if val is None:
+                    return default
+                import math
+                f = float(val)
+                if math.isnan(f) or math.isinf(f):
+                    return default
+                return int(f)
+            except (TypeError, ValueError):
+                return default
+
         e1, e2, e3 = st.columns([1, 1, 1.2])
         with e1:
-            goals_for = st.number_input("Goals for", min_value=0, step=1, value=int(row.get("goals_for") or 0), key="m_gf")
+            goals_for = st.number_input("Goals for", min_value=0, step=1, value=_safe_int(row.get("goals_for")), key="m_gf")
         with e2:
-            goals_against = st.number_input("Goals against", min_value=0, step=1, value=int(row.get("goals_against") or 0), key="m_ga")
+            goals_against = st.number_input("Goals against", min_value=0, step=1, value=_safe_int(row.get("goals_against")), key="m_ga")
         with e3:
             match_type = st.selectbox(
                 "Match type",
