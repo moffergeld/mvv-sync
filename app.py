@@ -376,55 +376,61 @@ def login_ui():
             password = st.text_input("Wachtwoord", type="password", key="login_pw", placeholder="••••••••")
             submitted = st.form_submit_button("Inloggen", use_container_width=True)
 
-        # Inject autocomplete attributes AFTER the form renders.
-        # Streamlit does not set autocomplete/name on inputs, which breaks
-        # mobile autofill and password managers. This JS waits for the DOM
-        # and patches the attributes on the two login fields.
+        # MutationObserver-gebaseerde autocomplete patch voor iOS Safari.
+        #
+        # Probleem met setInterval: Streamlit vervangt de DOM bij elke rerender.
+        # De attributen die setInterval zet verdwijnen dan weer, waarna iOS Safari
+        # het wachtwoordveld als "nieuw account" behandelt ("Sterk wachtwoord genereren").
+        #
+        # MutationObserver blijft actief en herplaatst de attributen na ELKE
+        # DOM-wijziging, ook na Streamlit rerenders door toetsaanslagen.
+        #
+        # iOS Safari autocomplete-regels:
+        #   - email veld:    autocomplete="username"        → toont Keychain-login
+        #   - ww veld:       autocomplete="current-password" → toont opgeslagen ww
+        #   - type="email" NIET zetten: dat triggert iOS naar de registratie-flow
+        #   - form:          autocomplete="on"
         st.markdown("""
         <script>
         (function patchLoginAutofill() {
-            function patch() {
-                // Find the Streamlit form element
+            function applyAttrs() {
                 var form = document.querySelector('form[data-testid="stForm"]');
-                if (!form) return false;
-
-                var inputs = form.querySelectorAll('input');
-                if (inputs.length < 2) return false;
-
-                // First visible non-password input = email
+                if (!form) return;
                 var emailInput = null;
-                var pwInput    = null;
-                inputs.forEach(function(inp) {
+                var pwInput = null;
+                form.querySelectorAll('input').forEach(function(inp) {
                     if (inp.type === 'password') {
                         pwInput = inp;
-                    } else if (!emailInput && inp.type !== 'hidden') {
+                    } else if (!emailInput && inp.type !== 'hidden' && inp.type !== 'submit') {
                         emailInput = inp;
                     }
                 });
-
-                if (emailInput) {
-                    emailInput.setAttribute('autocomplete', 'email');
-                    emailInput.setAttribute('name',         'email');
-                    emailInput.setAttribute('type',         'email');
-                    emailInput.setAttribute('inputmode',    'email');
+                if (emailInput && emailInput.getAttribute('autocomplete') !== 'username') {
+                    emailInput.setAttribute('autocomplete', 'username');
+                    emailInput.setAttribute('name', 'username');
+                    emailInput.setAttribute('inputmode', 'email');
                 }
-                if (pwInput) {
+                if (pwInput && pwInput.getAttribute('autocomplete') !== 'current-password') {
                     pwInput.setAttribute('autocomplete', 'current-password');
-                    pwInput.setAttribute('name',         'password');
+                    pwInput.setAttribute('name', 'password');
                 }
-                // Mark the form itself
-                if (form) {
+                if (form.getAttribute('autocomplete') !== 'on') {
                     form.setAttribute('autocomplete', 'on');
                 }
-                return true;
             }
-
-            // Retry until Streamlit has rendered the inputs
-            var attempts = 0;
-            var timer = setInterval(function() {
-                attempts++;
-                if (patch() || attempts > 40) clearInterval(timer);
-            }, 150);
+            applyAttrs();
+            var observer = new MutationObserver(function(mutations) {
+                var relevant = mutations.some(function(m) {
+                    return Array.from(m.addedNodes).some(function(n) {
+                        return n.nodeType === 1 && (
+                            n.tagName === 'INPUT' || n.tagName === 'FORM' ||
+                            (n.querySelector && n.querySelector('input'))
+                        );
+                    });
+                });
+                if (relevant) applyAttrs();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
         })();
         </script>
         """, unsafe_allow_html=True)
