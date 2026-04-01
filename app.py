@@ -9,6 +9,7 @@
 from pathlib import Path
 import base64
 import streamlit as st
+import streamlit.components.v1 as components
 
 from roles import (
     get_sb,
@@ -376,26 +377,23 @@ def login_ui():
             password = st.text_input("Wachtwoord", type="password", key="login_pw", placeholder="••••••••")
             submitted = st.form_submit_button("Inloggen", use_container_width=True)
 
-        # MutationObserver-gebaseerde autocomplete patch voor iOS Safari.
-        #
-        # Probleem met setInterval: Streamlit vervangt de DOM bij elke rerender.
-        # De attributen die setInterval zet verdwijnen dan weer, waarna iOS Safari
-        # het wachtwoordveld als "nieuw account" behandelt ("Sterk wachtwoord genereren").
-        #
-        # MutationObserver blijft actief en herplaatst de attributen na ELKE
-        # DOM-wijziging, ook na Streamlit rerenders door toetsaanslagen.
+        # st.markdown() strips <script> tags — ook met unsafe_allow_html=True.
+        # components.html() rendert in een sandboxed iframe en kan via
+        # window.parent.document wél de parent DOM bereiken en patchen.
         #
         # iOS Safari autocomplete-regels:
-        #   - email veld:    autocomplete="username"        → toont Keychain-login
-        #   - ww veld:       autocomplete="current-password" → toont opgeslagen ww
-        #   - type="email" NIET zetten: dat triggert iOS naar de registratie-flow
-        #   - form:          autocomplete="on"
-        st.markdown("""
+        #   autocomplete="username"          → emailveld → toont Keychain-login
+        #   autocomplete="current-password"  → wachtwoord → toont opgeslagen ww, GEEN "Sterk wachtwoord"
+        #   form autocomplete="on"           → verplicht voor iOS Keychain
+        components.html("""
         <script>
-        (function patchLoginAutofill() {
+        (function() {
+            var doc = window.parent.document;
+
             function applyAttrs() {
-                var form = document.querySelector('form[data-testid="stForm"]');
+                var form = doc.querySelector('form[data-testid="stForm"]');
                 if (!form) return;
+
                 var emailInput = null;
                 var pwInput = null;
                 form.querySelectorAll('input').forEach(function(inp) {
@@ -405,21 +403,26 @@ def login_ui():
                         emailInput = inp;
                     }
                 });
-                if (emailInput && emailInput.getAttribute('autocomplete') !== 'username') {
+
+                if (emailInput) {
                     emailInput.setAttribute('autocomplete', 'username');
-                    emailInput.setAttribute('name', 'username');
-                    emailInput.setAttribute('inputmode', 'email');
+                    emailInput.setAttribute('name',         'username');
+                    emailInput.setAttribute('inputmode',    'email');
                 }
-                if (pwInput && pwInput.getAttribute('autocomplete') !== 'current-password') {
+                if (pwInput) {
                     pwInput.setAttribute('autocomplete', 'current-password');
-                    pwInput.setAttribute('name', 'password');
+                    pwInput.setAttribute('name',         'password');
                 }
-                if (form.getAttribute('autocomplete') !== 'on') {
+                if (form) {
                     form.setAttribute('autocomplete', 'on');
                 }
             }
+
+            // Direct uitvoeren
             applyAttrs();
-            var observer = new MutationObserver(function(mutations) {
+
+            // MutationObserver op de PARENT document — herplaatst na elke rerender
+            var observer = new window.parent.MutationObserver(function(mutations) {
                 var relevant = mutations.some(function(m) {
                     return Array.from(m.addedNodes).some(function(n) {
                         return n.nodeType === 1 && (
@@ -430,10 +433,10 @@ def login_ui():
                 });
                 if (relevant) applyAttrs();
             });
-            observer.observe(document.body, { childList: true, subtree: true });
+            observer.observe(doc.body, { childList: true, subtree: true });
         })();
         </script>
-        """, unsafe_allow_html=True)
+        """, height=0)
 
     if not submitted:
         return
