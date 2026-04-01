@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import pandas as pd
@@ -27,6 +28,22 @@ from pages.Subscripts.gps_import_common import (
     toast_err,
     toast_ok,
 )
+
+
+def _safe_int(val, default: int = 0) -> int:
+    """Converteert None, NaN, pd.NA, lege string etc. veilig naar int.
+    Module-level zodat hij beschikbaar is voor alle code in dit bestand."""
+    try:
+        if val is None:
+            return default
+        if pd.isna(val):
+            return default
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return int(f)
+    except Exception:
+        return default
 
 
 def tab_matches_main(access_token: str) -> None:
@@ -94,20 +111,6 @@ def tab_matches_main(access_token: str) -> None:
         row = df_list[df_list["match_id"] == match_id].iloc[0].to_dict()
 
         st.markdown("**Aanpassen:** (alleen score + match type + season)")
-
-        def _safe_int(val, default: int = 0) -> int:
-            """Converteert None, NaN, lege string etc. veilig naar int.
-            Vangt alle gevallen op waarbij Supabase NULL teruggeeft."""
-            try:
-                if val is None:
-                    return default
-                import math
-                f = float(val)
-                if math.isnan(f) or math.isinf(f):
-                    return default
-                return int(f)
-            except (TypeError, ValueError):
-                return default
 
         e1, e2, e3 = st.columns([1, 1, 1.2])
         with e1:
