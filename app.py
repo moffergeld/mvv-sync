@@ -372,74 +372,196 @@ def login_ui():
 
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
+        # ── AANPAK ──────────────────────────────────────────────────────────
+        # iOS Safari bepaalt "login vs registratie" op het MOMENT van eerste
+        # render — vóór elke JS-patch kan draaien. Achteraf autocomplete
+        # patchen werkt dus niet voor het wachtwoordveld.
+        #
+        # Oplossing: toon een custom HTML form via components.html() met de
+        # juiste autocomplete attributen er VANAF HET BEGIN op. De waarden
+        # worden via React's native value setter doorgegeven aan Streamlit's
+        # verborgen form-inputs, waarna de Streamlit submit-knop programmatisch
+        # wordt geklikt zodat de bestaande Python auth-flow intact blijft.
+        #
+        # iOS Keychain-regels:
+        #   form            autocomplete="on"
+        #   email veld      autocomplete="username"          (= Keychain-sleutel voor login-email)
+        #   wachtwoord veld autocomplete="current-password"  (= toont opgeslagen ww, GEEN "Sterk wachtwoord")
+        # ────────────────────────────────────────────────────────────────────
+
+        # Verberg het Streamlit form visueel maar houd het in de DOM
+        # zodat Python de waarden en submit-event nog steeds kan lezen.
+        st.markdown("""
+        <style>
+        div[data-testid="stForm"] {
+            position: absolute !important;
+            width: 1px !important; height: 1px !important;
+            overflow: hidden !important; opacity: 0 !important;
+            pointer-events: none !important; z-index: -1 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         with st.form("login_form", clear_on_submit=False):
-            email    = st.text_input("Email",      key="login_email", placeholder="jouw@email.nl")
-            password = st.text_input("Wachtwoord", type="password", key="login_pw", placeholder="••••••••")
+            email    = st.text_input("Email",      key="login_email")
+            password = st.text_input("Wachtwoord", type="password", key="login_pw")
             submitted = st.form_submit_button("Inloggen", use_container_width=True)
 
-        # st.markdown() strips <script> tags — ook met unsafe_allow_html=True.
-        # components.html() rendert in een sandboxed iframe en kan via
-        # window.parent.document wél de parent DOM bereiken en patchen.
-        #
-        # iOS Safari autocomplete-regels:
-        #   autocomplete="username"          → emailveld → toont Keychain-login
-        #   autocomplete="current-password"  → wachtwoord → toont opgeslagen ww, GEEN "Sterk wachtwoord"
-        #   form autocomplete="on"           → verplicht voor iOS Keychain
+        # Custom HTML form — autocomplete correct vanaf eerste render
+        # Op submit: React native setter → Streamlit inputs → click submit knop
         components.html("""
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { background: transparent; font-family: 'DM Sans', 'Helvetica Neue', sans-serif; }
+          .field { margin-bottom: 14px; }
+          .field label {
+            display: block;
+            font-size: 11px; font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            color: rgba(240,240,240,0.5);
+            margin-bottom: 6px;
+          }
+          .field input {
+            width: 100%; padding: 10px 14px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            color: #F0F0F0; font-size: 15px;
+            outline: none;
+            -webkit-appearance: none;
+            transition: border-color .2s;
+          }
+          .field input:focus {
+            border-color: rgba(200,16,46,0.6);
+            box-shadow: 0 0 0 2px rgba(200,16,46,0.2);
+          }
+          /* Keep autofill styling dark */
+          .field input:-webkit-autofill,
+          .field input:-webkit-autofill:focus {
+            -webkit-box-shadow: 0 0 0 100px #1a1a1f inset !important;
+            -webkit-text-fill-color: #F0F0F0 !important;
+          }
+          button[type="submit"] {
+            width: 100%; padding: 11px;
+            background: linear-gradient(135deg, #C8102E, #8B0A1F);
+            border: none; border-radius: 10px;
+            color: white; font-size: 14px; font-weight: 700;
+            letter-spacing: 0.06em; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(200,16,46,0.35);
+            -webkit-appearance: none;
+            margin-top: 4px;
+          }
+          #err {
+            color: #ff6b6b; font-size: 12px;
+            margin-top: 10px; display: none;
+          }
+        </style>
+
+        <form id="mvvForm" autocomplete="on" novalidate>
+          <div class="field">
+            <label for="mvv_email">Email</label>
+            <input id="mvv_email" type="email"
+                   name="username"
+                   autocomplete="username"
+                   inputmode="email"
+                   placeholder="jouw@email.nl" required>
+          </div>
+          <div class="field">
+            <label for="mvv_pw">Wachtwoord</label>
+            <input id="mvv_pw" type="password"
+                   name="password"
+                   autocomplete="current-password"
+                   placeholder="••••••••" required>
+          </div>
+          <button type="submit">Inloggen</button>
+          <div id="err">Vul beide velden in.</div>
+        </form>
+
         <script>
-        (function() {
-            var doc = window.parent.document;
+        document.getElementById("mvvForm").addEventListener("submit", function(e) {
+            e.preventDefault();
 
-            function applyAttrs() {
-                var form = doc.querySelector('form[data-testid="stForm"]');
-                if (!form) return;
+            var emailVal = document.getElementById("mvv_email").value.trim();
+            var pwVal    = document.getElementById("mvv_pw").value;
 
-                var emailInput = null;
-                var pwInput = null;
-                form.querySelectorAll('input').forEach(function(inp) {
-                    if (inp.type === 'password') {
-                        pwInput = inp;
-                    } else if (!emailInput && inp.type !== 'hidden' && inp.type !== 'submit') {
-                        emailInput = inp;
-                    }
-                });
-
-                if (emailInput) {
-                    emailInput.setAttribute('autocomplete', 'username');
-                    emailInput.setAttribute('name',         'username');
-                    emailInput.setAttribute('inputmode',    'email');
-                }
-                if (pwInput) {
-                    pwInput.setAttribute('autocomplete', 'current-password');
-                    pwInput.setAttribute('name',         'password');
-                }
-                if (form) {
-                    form.setAttribute('autocomplete', 'on');
-                }
+            if (!emailVal || !pwVal) {
+                document.getElementById("err").style.display = "block";
+                return;
             }
+            document.getElementById("err").style.display = "none";
 
-            // Direct uitvoeren
-            applyAttrs();
+            try {
+                var parentDoc = window.parent.document;
 
-            // MutationObserver op de PARENT document — herplaatst na elke rerender
-            var observer = new window.parent.MutationObserver(function(mutations) {
-                var relevant = mutations.some(function(m) {
-                    return Array.from(m.addedNodes).some(function(n) {
-                        return n.nodeType === 1 && (
-                            n.tagName === 'INPUT' || n.tagName === 'FORM' ||
-                            (n.querySelector && n.querySelector('input'))
-                        );
-                    });
+                // React synthetic events vereisen de native HTMLInputElement value setter.
+                // Zonder dit negeert React de waarde-wijziging.
+                function setReactVal(el, val) {
+                    var setter = Object.getOwnPropertyDescriptor(
+                        window.parent.HTMLInputElement.prototype, "value"
+                    ).set;
+                    setter.call(el, val);
+                    el.dispatchEvent(new Event("input",  { bubbles: true }));
+                    el.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+
+                var form = parentDoc.querySelector("form[data-testid=\"stForm\"]");
+                if (!form) { fallback(emailVal, pwVal); return; }
+
+                var emailInp = null, pwInp = null;
+                form.querySelectorAll("input").forEach(function(inp) {
+                    if (inp.type === "password") { pwInp = inp; }
+                    else if (!emailInp && inp.type !== "hidden") { emailInp = inp; }
                 });
-                if (relevant) applyAttrs();
-            });
-            observer.observe(doc.body, { childList: true, subtree: true });
-        })();
+
+                if (emailInp) setReactVal(emailInp, emailVal);
+                if (pwInp)    setReactVal(pwInp,    pwVal);
+
+                // Kleine delay zodat React de waarden verwerkt voor submit
+                setTimeout(function() {
+                    var btn = form.querySelector("button[kind=\"primaryFormSubmit\"], button[data-testid=\"baseButton-primaryFormSubmit\"], button[type=\"submit\"]");
+                    if (btn) { btn.click(); }
+                    else { fallback(emailVal, pwVal); }
+                }, 80);
+
+            } catch(err) {
+                fallback(emailVal, pwVal);
+            }
+        });
+
+        // Fallback: stuur via query param als window.parent geblokkeerd is
+        function fallback(email, pw) {
+            // Encode zodat bijzondere tekens werken; base64 is geen echte beveiliging
+            // maar Streamlit Cloud gebruikt HTTPS, dus transport is veilig
+            window.parent.location.href =
+                window.parent.location.pathname +
+                "?_li=" + encodeURIComponent(btoa(unescape(encodeURIComponent(email + "\x00" + pw))));
+        }
         </script>
-        """, height=0)
+        """, height=220)
 
     if not submitted:
-        return
+        # Fallback voor query-param route (als window.parent geblokkeerd was)
+        li_param = st.query_params.get("_li", "")
+        if li_param:
+            try:
+                import base64 as _b64
+                decoded = _b64.b64decode(li_param.encode()).decode("utf-8")
+                parts   = decoded.split("\x00", 1)
+                if len(parts) == 2:
+                    st.query_params.clear()
+                    # Tijdelijk opslaan voor de login-logica hieronder
+                    st.session_state["_li_email"] = parts[0]
+                    st.session_state["_li_pw"]    = parts[1]
+                    st.rerun()
+            except Exception:
+                pass
+
+        # Haal eventueel via fallback-route binnengekomen credentials op
+        if "_li_email" in st.session_state:
+            email    = st.session_state.pop("_li_email")
+            password = st.session_state.pop("_li_pw", "")
+        else:
+            return
 
     try:
         res = sb.auth.sign_in_with_password({"email": email, "password": password})
