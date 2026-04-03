@@ -37,6 +37,7 @@ METRIC_ALIASES = {
     "high_sprint_distance": [
         "high_sprint_distance", "high sprint distance", "highsprintdistance",
         "high sprint", "high_speed_running_distance", "high speed running distance",
+        "high_sprint",
     ],
     "playerload2d": [
         "playerload2d", "player_load2d", "player load2d", "playerload 2d",
@@ -75,6 +76,22 @@ SESSION_TYPE_CANDIDATES = [
 ]
 
 
+TOP3_METRIC_KEYS = [
+    "total_distance",
+    "sprint_distance",
+    "high_sprint_distance",
+    "playerload2d",
+]
+
+WEEKLY_METRIC_KEYS = [
+    "duration",
+    "total_distance",
+    "sprint_distance",
+    "high_sprint_distance",
+    "playerload2d",
+]
+
+
 def _norm(s: str) -> str:
     return str(s).strip().lower().replace("_", " ")
 
@@ -92,6 +109,10 @@ def _find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
             if a in nc:
                 return original
     return None
+
+
+def _display_name(mapping: dict[str, str], metric_key: str, fallback: str | None = None) -> str:
+    return mapping.get(metric_key, fallback or metric_key)
 
 
 def _ensure_numeric(series: pd.Series) -> pd.Series:
@@ -112,10 +133,25 @@ def _duration_to_minutes(series: pd.Series) -> pd.Series:
     if s.dropna().empty:
         return s
     median_value = float(s.dropna().median())
-    # If duration looks like seconds instead of minutes, convert to minutes.
     if median_value > 200:
         return s / 60.0
     return s
+
+
+def _valid_min_from_threshold(series: pd.Series, pct_of_max: float = 0.10):
+    s = _ensure_numeric(series).dropna()
+    if s.empty:
+        return pd.NA
+    max_value = s.max()
+    if pd.isna(max_value):
+        return pd.NA
+    if max_value <= 0:
+        return s.min()
+    threshold = max_value * pct_of_max
+    valid = s[s >= threshold]
+    if valid.empty:
+        return s.max()
+    return valid.min()
 
 
 def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -130,7 +166,6 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
 
     work = df.copy()
 
-    # Basic required identifiers
     required = ["player_name", "date", "event"]
     missing_required = [k for k in required if k not in mapping]
     if missing_required:
@@ -138,12 +173,10 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
             "Scouting export mist verplichte kolommen: " + ", ".join(missing_required)
         )
 
-    # Standardize identifiers
     work["_player_name"] = work[mapping["player_name"]].astype(str).str.strip()
     work["_date"] = pd.to_datetime(work[mapping["date"]], errors="coerce").dt.date
     work["_event"] = work[mapping["event"]].astype(str).str.strip()
 
-    # Metrics
     for metric in [
         "total_distance", "sprint_distance", "high_sprint_distance",
         "playerload2d", "max_speed",
@@ -158,7 +191,6 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
     else:
         work["_duration_minutes"] = pd.NA
 
-    # Week
     if "week" in mapping:
         week_raw = work[mapping["week"]]
         work["_week"] = week_raw.astype(str).str.strip()
@@ -171,7 +203,6 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
         iso = pd.to_datetime(work["_date"], errors="coerce").dt.isocalendar()
         work["_week"] = iso.year.astype(str) + "-W" + iso.week.astype(str).str.zfill(2)
 
-    # Match key for combining first and second half into one match
     match_parts = [work["_date"].astype(str)]
     used_extra = False
     for candidate in MATCH_KEY_CANDIDATES:
@@ -180,13 +211,11 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
             used_extra = True
             break
     if not used_extra:
-        # Fallback: only date, which is acceptable if there is max one match per player/day.
         match_parts.append(work["_player_name"])
     work["_match_key"] = pd.Series(match_parts[0], index=work.index)
     for part in match_parts[1:]:
         work["_match_key"] = work["_match_key"] + " | " + part
 
-    # Session type inference used for weekly counts
     text_cols = [c for c in SESSION_TYPE_CANDIDATES if c in work.columns]
     if text_cols:
         session_text = work[text_cols[0]].astype(str).str.lower().fillna("")
@@ -249,7 +278,10 @@ def _fetch_selected_players_df(
     return pd.concat(frames, ignore_index=True)
 
 
-def _build_top3_match_export(prepared_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_top3_match_export(
+    prepared_df: pd.DataFrame,
+    mapping: dict[str, str],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     half_df = prepared_df[_mask_half_events(prepared_df["_event"])].copy()
     half_df = half_df.dropna(subset=["_player_name", "_date"])
 
@@ -282,106 +314,130 @@ def _build_top3_match_export(prepared_df: pd.DataFrame) -> tuple[pd.DataFrame, p
     if match_df.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    for metric in ["total_distance", "sprint_distance", "high_sprint_distance", "playerload2d"]:
-        match_df[f"{metric}_90"] = (match_df[metric] / match_df["duration_minutes"]) * 90.0
+    metric_90_map = {}
+    for metric_key in TOP3_METRIC_KEYS:
+        metric_90 = f"{metric_key}_90"
+        match_df[metric_90] = (match_df[metric_key] / match_df["duration_minutes"]) * 90.0
+        metric_90_map[metric_key] = metric_90
 
-    # Top 3 per metric per player
     player_summaries = []
-    metric_cols_90 = [
-        "total_distance_90",
-        "sprint_distance_90",
-        "high_sprint_distance_90",
-        "playerload2d_90",
-    ]
-
     for player, g in match_df.groupby("player_name", dropna=False):
-        row: dict[str, object] = {"player_name": player, "qualified_matches_30_plus": len(g)}
+        row: dict[str, object] = {
+            "player_name": player,
+            "Qualified Matches": len(g),
+        }
 
         valid_speed = g.loc[g["max_speed"].notna() & (g["max_speed"] <= 37), "max_speed"]
-        row["max_speed_threshold_37"] = valid_speed.max() if not valid_speed.empty else pd.NA
+        row[_display_name(mapping, "max_speed")] = valid_speed.max() if not valid_speed.empty else pd.NA
 
-        for metric in metric_cols_90:
-            top3 = g.nlargest(3, metric)[metric].dropna()
-            row[f"avg_top3_{metric}"] = top3.mean() if not top3.empty else pd.NA
-            row[f"n_used_{metric}"] = int(top3.shape[0])
+        for metric_key in TOP3_METRIC_KEYS:
+            metric_90 = metric_90_map[metric_key]
+            top3 = g.nlargest(3, metric_90)[metric_90].dropna()
+            row[_display_name(mapping, metric_key)] = top3.mean() if not top3.empty else pd.NA
 
         player_summaries.append(row)
 
     summary_df = pd.DataFrame(player_summaries).sort_values("player_name").reset_index(drop=True)
+    summary_order = [
+        "player_name",
+        "Qualified Matches",
+        _display_name(mapping, "total_distance"),
+        _display_name(mapping, "sprint_distance"),
+        _display_name(mapping, "high_sprint_distance"),
+        _display_name(mapping, "playerload2d"),
+        _display_name(mapping, "max_speed"),
+    ]
+    summary_order = [c for c in summary_order if c in summary_df.columns]
+    summary_df = summary_df[summary_order]
 
-    # Helpful detailed sheet with source matches
     detail_frames = []
-    for metric in metric_cols_90:
+    for metric_key in TOP3_METRIC_KEYS:
+        metric_90 = metric_90_map[metric_key]
         tmp = (
-            match_df.sort_values(["player_name", metric], ascending=[True, False])
+            match_df.sort_values(["player_name", metric_90], ascending=[True, False])
             .groupby("player_name", as_index=False, group_keys=False)
             .head(3)
             .copy()
         )
-        tmp.insert(1, "ranking_metric", metric)
+        tmp.insert(1, "ranking_metric", _display_name(mapping, metric_key))
         detail_frames.append(tmp)
+
     detail_df = pd.concat(detail_frames, ignore_index=True) if detail_frames else pd.DataFrame()
 
     return summary_df, detail_df
 
 
-def _build_weekly_export(prepared_df: pd.DataFrame) -> pd.DataFrame:
+def _build_weekly_export(prepared_df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
     summary_df = prepared_df[_mask_summary_events(prepared_df["_event"])].copy()
     summary_df = summary_df.dropna(subset=["_player_name", "_date"])
     if summary_df.empty:
         return pd.DataFrame()
 
-    metrics = ["_total_distance", "_sprint_distance", "_high_sprint_distance", "_playerload2d"]
-    group_cols = ["_player_name", "_week"]
+    rows: list[dict[str, object]] = []
+    for (player, week), g in summary_df.groupby(["_player_name", "_week"], dropna=False):
+        row: dict[str, object] = {
+            "player_name": player,
+            "week": week,
+            "sessions_in_week": int(g["_date"].size),
+            "trainings_in_week": int((g["_session_kind"] == "training").sum()),
+            "matches_in_week": int((g["_session_kind"] == "match").sum()),
+        }
 
-    agg_dict: dict[str, list[str]] = {
-        metric: ["sum", "std", "min", "max"] for metric in metrics
-    }
-    weekly = summary_df.groupby(group_cols, dropna=False).agg(agg_dict)
-    weekly.columns = [f"{col[0].replace('_', '', 1)}_{col[1]}" for col in weekly.columns]
-    weekly = weekly.reset_index().rename(columns={
-        "_player_name": "player_name",
-        "_week": "week",
-    })
+        metric_series_map = {
+            "duration": g["_duration_minutes"],
+            "total_distance": g["_total_distance"],
+            "sprint_distance": g["_sprint_distance"],
+            "high_sprint_distance": g["_high_sprint_distance"],
+            "playerload2d": g["_playerload2d"],
+        }
 
-    # Counts per week from summary events
-    counts = (
-        summary_df.groupby(group_cols, dropna=False)
-        .agg(
-            sessions_in_week=("_date", "size"),
-            trainings_in_week=("_session_kind", lambda s: int((s == "training").sum())),
-            matches_in_week=("_session_kind", lambda s: int((s == "match").sum())),
-        )
-        .reset_index()
-        .rename(columns={"_player_name": "player_name", "_week": "week"})
-    )
+        for metric_key in WEEKLY_METRIC_KEYS:
+            metric_name = _display_name(mapping, metric_key)
+            s = _ensure_numeric(metric_series_map[metric_key]).dropna()
 
-    weekly = weekly.merge(counts, on=["player_name", "week"], how="left")
+            row[f"{metric_name}_total"] = s.sum() if not s.empty else pd.NA
+            row[f"{metric_name}_sd"] = s.std(ddof=1) if len(s) > 1 else pd.NA
+            row[f"{metric_name}_min"] = _valid_min_from_threshold(s, pct_of_max=0.10) if not s.empty else pd.NA
+            row[f"{metric_name}_max"] = s.max() if not s.empty else pd.NA
 
-    # Order columns more cleanly
-    ordered_cols = ["player_name", "week", "sessions_in_week", "trainings_in_week", "matches_in_week"]
-    metric_bases = ["totaldistance", "sprintdistance", "highsprintdistance", "playerload2d"]
-    for base in metric_bases:
+        rows.append(row)
+
+    weekly = pd.DataFrame(rows).sort_values(["player_name", "week"]).reset_index(drop=True)
+
+    ordered_cols = [
+        "player_name",
+        "week",
+        "sessions_in_week",
+        "trainings_in_week",
+        "matches_in_week",
+    ]
+    for metric_key in WEEKLY_METRIC_KEYS:
+        metric_name = _display_name(mapping, metric_key)
         ordered_cols.extend([
-            f"{base}_sum",
-            f"{base}_std",
-            f"{base}_min",
-            f"{base}_max",
+            f"{metric_name}_total",
+            f"{metric_name}_sd",
+            f"{metric_name}_min",
+            f"{metric_name}_max",
         ])
+
     ordered_cols = [c for c in ordered_cols if c in weekly.columns]
-    weekly = weekly[ordered_cols].sort_values(["player_name", "week"]).reset_index(drop=True)
-    return weekly
+    return weekly[ordered_cols]
 
 
 def _build_info_sheet(prepared_df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
+    top3_metric_names = ", ".join(_display_name(mapping, k) for k in TOP3_METRIC_KEYS)
+    weekly_metric_names = ", ".join(_display_name(mapping, k) for k in WEEKLY_METRIC_KEYS)
     lines = [
         ["Scouting export", "Top-3 matchgemiddelden + weektotalen"],
         ["Top-3 bron", "Alleen events First Half / Second Half, niet Summary"],
         ["Top-3 drempel", "Alleen wedstrijden met totale duur >= 30 minuten"],
-        ["Normalisatie", "Total Distance, Sprint Distance, High Sprint Distance en PlayerLoad2D genormaliseerd naar 90 minuten"],
+        ["Top-3 output", f"Kolommen tonen parameternamen: {top3_metric_names} + max_speed"],
+        ["Normalisatie Top-3", "Top-3 waarden voor load-metrics zijn genormaliseerd naar 90 minuten"],
         ["Max speed", "Hoogste geldige waarde <= 37; waarden boven 37 worden genegeerd"],
         ["Weekexport bron", "Alle Summary events"],
-        ["Weekstatistieken", "som, standaarddeviatie, minimum en maximum per speler per week"],
+        ["Weekexport output", f"Kolommen voor: {weekly_metric_names}"],
+        ["Week minimum", "Minimum wordt berekend op waarden die minimaal 10% van de week-max zijn"],
+        ["Weekstatistieken", "total, sd, min en max per speler per week"],
         ["Trainings/wedstrijden", "Gebaseerd op tekstherkenning in type/session-kolommen; onbekende sessies vallen buiten beide tellingen"],
         ["Gebruikte kolommen", "; ".join(f"{k} -> {v}" for k, v in sorted(mapping.items()))],
         ["Beschikbare kolommen in export", "; ".join(map(str, prepared_df.columns.tolist()))],
@@ -524,8 +580,8 @@ def tab_export_main(access_token: str, player_options: list[str]) -> None:
                 st.stop()
 
             prepared_df, mapping = _prepare_export_df(raw_df)
-            top3_df, top3_detail_df = _build_top3_match_export(prepared_df)
-            weekly_df = _build_weekly_export(prepared_df)
+            top3_df, top3_detail_df = _build_top3_match_export(prepared_df, mapping)
+            weekly_df = _build_weekly_export(prepared_df, mapping)
             info_df = _build_info_sheet(prepared_df, mapping)
 
             if top3_df.empty and weekly_df.empty:
@@ -537,7 +593,7 @@ def tab_export_main(access_token: str, player_options: list[str]) -> None:
                 if not top3_df.empty:
                     top3_df.to_excel(writer, index=False, sheet_name="Top3_90_Avg")
                 if not top3_detail_df.empty:
-                    top3_detail_df.to_excel(writer, index=False, sheet_name="Top3_Source_Matches")
+                    top3_detail_df.to_excel(writer, index=False, sheet_name="Sources")
                 if not weekly_df.empty:
                     weekly_df.to_excel(writer, index=False, sheet_name="WeekTotals")
                 info_df.to_excel(writer, index=False, sheet_name="Info")
