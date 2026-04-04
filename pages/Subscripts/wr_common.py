@@ -97,6 +97,55 @@ def add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10) -> 
 
 
 # -----------------------------
+# Chart helpers
+# -----------------------------
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    return "#{:02x}{:02x}{:02x}".format(*rgb)
+
+
+def _blend_hex(c1: str, c2: str, t: float) -> str:
+    r1, g1, b1 = _hex_to_rgb(c1)
+    r2, g2, b2 = _hex_to_rgb(c2)
+    r = round(r1 + (r2 - r1) * t)
+    g = round(g1 + (g2 - g1) * t)
+    b = round(b1 + (b2 - b1) * t)
+    return _rgb_to_hex((r, g, b))
+
+
+def _seq_colors(n: int, start_hex: str, end_hex: str) -> list[str]:
+    if n <= 1:
+        return [start_hex]
+    return [_blend_hex(start_hex, end_hex, i / (n - 1)) for i in range(n)]
+
+
+def _zone_bar_colors(values: pd.Series) -> list[str]:
+    colors = []
+    for v in values:
+        if pd.isna(v):
+            colors.append(MVV_COLORS["primary"])
+        elif float(v) < ZONE_GREEN_MAX:
+            colors.append("#00C46A")
+        elif float(v) < ZONE_ORANGE_MAX:
+            colors.append("#F5A623")
+        else:
+            colors.append("#E8213F")
+    return colors
+
+
+def _fmt_bar_label(v: float) -> str:
+    if pd.isna(v):
+        return ""
+    if abs(float(v) - round(float(v))) < 1e-9:
+        return str(int(round(float(v))))
+    return f"{float(v):.1f}"
+
+
+# -----------------------------
 # MVV Styled Charts
 # -----------------------------
 def create_mvv_bar_chart(
@@ -107,68 +156,67 @@ def create_mvv_bar_chart(
     show_zones: bool = False,
     y_range: Optional[Tuple[float, float]] = (0, 10),
 ) -> go.Figure:
+    plot_df = df.copy()
+
+    if plot_df.empty:
+        return go.Figure()
+
+    plot_df[y_col] = pd.to_numeric(plot_df[y_col], errors="coerce")
+    plot_df = plot_df.dropna(subset=[x_col, y_col]).copy()
+
+    if plot_df.empty:
+        return go.Figure()
+
+    n_bars = len(plot_df)
+    dynamic_height = max(460, min(760, 360 + (n_bars * 22)))
+
+    if show_zones:
+        bar_colors = _zone_bar_colors(plot_df[y_col])
+    else:
+        bar_colors = _seq_colors(n_bars, MVV_COLORS["primary"], MVV_COLORS["light"])
+
+    value_labels = [_fmt_bar_label(v) for v in plot_df[y_col]]
+
     fig = go.Figure()
 
-    has_std = "std" in df.columns and not df["std"].isna().all()
+    has_std = "std" in plot_df.columns and not plot_df["std"].isna().all()
 
     bar_kwargs = dict(
-        x=df[x_col],
-        y=df[y_col],
-        marker=dict(
-            color=MVV_COLORS["primary"],
-            line=dict(color=MVV_COLORS["light"], width=2),
+        x=plot_df[x_col],
+        y=plot_df[y_col],
+        text=value_labels,
+        textposition="outside",
+        textfont=dict(
+            family="DM Sans",
+            size=12,
+            color=MVV_COLORS["text_primary"],
         ),
-        opacity=0.9,
+        cliponaxis=False,
+        marker=dict(
+            color=bar_colors,
+            line=dict(color="rgba(255,255,255,0.18)", width=1.5),
+        ),
+        opacity=0.96,
+        hovertemplate="<b>%{x}</b><br>Waarde: <b>%{y:.1f}</b><extra></extra>",
     )
 
     if has_std:
         bar_kwargs["error_y"] = dict(
             type="data",
-            array=df["std"],
-            color=MVV_COLORS["light"],
-            thickness=2,
-            width=6,
+            array=plot_df["std"],
+            color="rgba(255,255,255,0.45)",
+            thickness=1.6,
+            width=4,
         )
 
     fig.add_trace(go.Bar(**bar_kwargs))
 
-    yaxis_cfg = dict(
-        showgrid=True,
-        gridwidth=1,
-        gridcolor=MVV_COLORS["grid"],
-        tickfont=dict(color=MVV_COLORS["text_primary"]),
-        title_font=dict(color=MVV_COLORS["text_primary"]),
-    )
-    if y_range is not None:
-        yaxis_cfg["range"] = list(y_range)
-
-    fig.update_layout(
-        title=dict(
-            text=title,
-            font=dict(family="DM Sans", size=16, color=MVV_COLORS["text_primary"]),
-            x=0.5,
-        ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=MVV_COLORS["background"],
-        font=dict(family="DM Sans", size=12, color=MVV_COLORS["text_primary"]),
-        xaxis=dict(
-            showgrid=False,
-            tickfont=dict(color=MVV_COLORS["text_primary"]),
-            title_font=dict(color=MVV_COLORS["text_primary"]),
-        ),
-        yaxis=yaxis_cfg,
-        bargap=0.3,
-        margin=dict(l=50, r=30, t=50, b=50),
-        showlegend=False,
-        height=CHART_H,
-    )
-
     if show_zones:
-        zone_top = y_range[1] if y_range is not None else 10
+        zone_top = y_range[1] if y_range is not None else max(10, float(plot_df[y_col].max()) + 1)
         zones = [
-            (0, ZONE_GREEN_MAX, MVV_COLORS["zone_green"]),
-            (ZONE_GREEN_MAX, ZONE_ORANGE_MAX, MVV_COLORS["zone_orange"]),
-            (ZONE_ORANGE_MAX, zone_top, MVV_COLORS["zone_red"]),
+            (0, ZONE_GREEN_MAX, "rgba(0, 196, 106, 0.10)"),
+            (ZONE_GREEN_MAX, ZONE_ORANGE_MAX, "rgba(245, 166, 35, 0.11)"),
+            (ZONE_ORANGE_MAX, zone_top, "rgba(232, 33, 63, 0.11)"),
         ]
         for y0, y1, color in zones:
             fig.add_shape(
@@ -184,6 +232,68 @@ def create_mvv_bar_chart(
                 layer="below",
             )
 
+    mean_val = float(plot_df[y_col].mean())
+    fig.add_hline(
+        y=mean_val,
+        line_width=1.5,
+        line_dash="dash",
+        line_color="rgba(255,255,255,0.45)",
+        annotation_text=f"Team avg: {mean_val:.1f}",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color="rgba(255,255,255,0.70)"),
+    )
+
+    yaxis_cfg = dict(
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="rgba(255,255,255,0.07)",
+        zeroline=False,
+        tickfont=dict(color=MVV_COLORS["text_primary"], size=11),
+        title_font=dict(color=MVV_COLORS["text_primary"]),
+        fixedrange=True,
+    )
+
+    if y_range is not None:
+        yaxis_cfg["range"] = list(y_range)
+    else:
+        y_max = float(plot_df[y_col].max()) if not plot_df.empty else 10
+        yaxis_cfg["range"] = [0, y_max * 1.22 if y_max > 0 else 10]
+
+    fig.update_layout(
+        title=dict(
+            text=title,
+            font=dict(
+                family="DM Sans",
+                size=20,
+                color=MVV_COLORS["text_primary"],
+            ),
+            x=0.02,
+            xanchor="left",
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.015)",
+        font=dict(
+            family="DM Sans",
+            size=12,
+            color=MVV_COLORS["text_primary"],
+        ),
+        xaxis=dict(
+            showgrid=False,
+            tickangle=-35,
+            tickfont=dict(color=MVV_COLORS["text_primary"], size=11),
+            automargin=True,
+            fixedrange=True,
+        ),
+        yaxis=yaxis_cfg,
+        bargap=0.22,
+        margin=dict(l=40, r=20, t=80, b=130),
+        showlegend=False,
+        height=dynamic_height,
+        hovermode="closest",
+        uniformtext_minsize=10,
+        uniformtext_mode="hide",
+    )
+
     return fig
 
 
@@ -192,11 +302,6 @@ def create_mvv_bar_chart(
 # -----------------------------
 @st.cache_data(show_spinner=False, ttl=60)
 def fetch_active_players_cached(sb_url_key: str, _sb, ttl_salt: str = "") -> pd.DataFrame:
-    """
-    Robust ophalen van actieve spelers.
-    Probeert meerdere query-varianten zodat de app niet meteen crasht
-    als 'is_active' of een specifieke kolomnaam ontbreekt.
-    """
     attempts = [
         lambda: (
             _sb.table("players")
@@ -249,9 +354,7 @@ def fetch_active_players_cached(sb_url_key: str, _sb, ttl_salt: str = "") -> pd.
     name_col = _first_existing_col(result_df, ["full_name", "name", "player_name"])
 
     if id_col is None or name_col is None:
-        raise RuntimeError(
-            f"Onverwachte kolommen in players-tabel: {list(result_df.columns)}"
-        )
+        raise RuntimeError(f"Onverwachte kolommen in players-tabel: {list(result_df.columns)}")
 
     df = result_df.rename(columns={id_col: "player_id", name_col: "full_name"}).copy()
 
@@ -482,7 +585,7 @@ def plot_day_bars(df: pd.DataFrame, x_col: str, y_col: str, y_title: str, zone_0
         show_zones=zone_0_10,
         y_range=(0, 10) if zone_0_10 else None,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 def plot_week_player_mean_std_bars(
@@ -511,4 +614,4 @@ def plot_week_player_mean_std_bars(
         show_zones=zone_0_10,
         y_range=(0, 10) if zone_0_10 else None,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
