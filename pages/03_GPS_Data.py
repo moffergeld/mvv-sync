@@ -10,19 +10,6 @@
 # - Benchmarks: beschikbaar
 # - Data preview: verwijderd
 # - Kalender (Session Load): all-time tonen via aparte lichte calendar df
-#
-# Database -> Dashboard kolomnamen (belangrijk voor bestaande subscripts):
-# - duration            -> Duration
-# - total_distance      -> Total Distance
-# - running             -> Running
-# - sprint              -> Sprint
-# - high_sprint         -> High Sprint
-# - max_speed           -> Max Speed
-# - playerload2d        -> PlayerLoad2D
-# - total_accelerations -> Total Accelerations
-# - high_accelerations  -> High Accelerations
-# - total_decelerations -> Total Decelerations
-# - high_decelerations  -> High Decelerations
 # ==========================================================
 
 from __future__ import annotations
@@ -155,7 +142,6 @@ GPS_SELECT_COLS = [
     "player_name",
     "type",
     "event",
-    # metrics
     "duration",
     "total_distance",
     "running",
@@ -167,7 +153,6 @@ GPS_SELECT_COLS = [
     "high_accelerations",
     "total_decelerations",
     "high_decelerations",
-    # HR / TRIMP
     "hrzone1",
     "hrzone2",
     "hrzone3",
@@ -313,12 +298,17 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-scope_key = st.selectbox(
-    "Data scope (Summary-only)",
-    options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-    index=0,
-    key="gps_scope",
-)
+# -------------------------
+# Sidebar: datascope
+# -------------------------
+with st.sidebar:
+    st.markdown("### GPS filters")
+    scope_key = st.selectbox(
+        "Data scope (Summary-only)",
+        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+        index=0,
+        key="gps_scope",
+    )
 
 st.divider()
 
@@ -328,6 +318,9 @@ tab_session, tab_acwr, tab_ffp, tab_bench = st.tabs(
     ["Session Load", "ACWR", "FFP", "Benchmarks"]
 )
 
+# --------------------------------------------------
+# Session Load
+# --------------------------------------------------
 with tab_session:
     with st.spinner(f"Summary data laden ({scope_key})..."):
         df_scope = fetch_summary_scope_cached(access_token, scope_key)
@@ -344,6 +337,9 @@ with tab_session:
             fetch_day_fn=_fetch_day,
         )
 
+# --------------------------------------------------
+# ACWR
+# --------------------------------------------------
 with tab_acwr:
     with st.spinner(f"Summary data laden ({scope_key})..."):
         df_scope = fetch_summary_scope_cached(access_token, scope_key)
@@ -353,6 +349,9 @@ with tab_acwr:
     else:
         acwr_pages.acwr_pages_main(df_scope)
 
+# --------------------------------------------------
+# FFP
+# --------------------------------------------------
 with tab_ffp:
     with st.spinner("FFP: Summary data laden (ALLES)..."):
         df_ffp_all = fetch_summary_all_cached(access_token)
@@ -362,6 +361,9 @@ with tab_ffp:
     else:
         ffp_pages.ffp_pages_main(df_ffp_all)
 
+# --------------------------------------------------
+# Benchmarks
+# --------------------------------------------------
 with tab_bench:
     benchmarks_pages.benchmarks_pages_main(
         supabase_url=SUPABASE_URL,
