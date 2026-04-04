@@ -12,6 +12,55 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+
+TEXT = "#F5F7FB"
+TEXT_MUTED = "rgba(245,247,251,0.68)"
+GRID = "rgba(255,255,255,0.08)"
+PLOT_BG = "rgba(255,255,255,0.018)"
+LOAD_BAR = "rgba(232,33,63,0.38)"
+FIT_COLOR = "#00C46A"
+FAT_COLOR = "#FF6B6B"
+PERF_COLOR = "#55A8FF"
+
+def _section_label(title: str, subtitle: str | None = None) -> None:
+    html = f'<div style="margin:0 0 0.8rem 0;"><div style="font-size:0.82rem;letter-spacing:0.16em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{title}</div>'
+    if subtitle:
+        html += f'<div style="font-size:0.95rem;color:{TEXT_MUTED};margin-top:0.32rem;">{subtitle}</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def _metric_card(label: str, value: str) -> None:
+    st.markdown(
+        f"""
+        <div style="
+            border:1px solid rgba(255,255,255,0.08);
+            border-radius:18px;
+            padding:0.8rem 1rem;
+            background:rgba(255,255,255,0.035);
+            min-height:92px;">
+            <div style="font-size:0.78rem;letter-spacing:0.14em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{label}</div>
+            <div style="font-size:1.45rem;color:{TEXT};font-weight:800;margin-top:0.35rem;">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def _style_ffp_figure(fig: go.Figure, title: str, x_title: str, y_left: str, y_right: str) -> go.Figure:
+    fig.update_layout(
+        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=TEXT)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=PLOT_BG,
+        font=dict(color=TEXT, size=12),
+        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0),
+        margin=dict(l=30, r=20, t=70, b=70),
+        hovermode="x unified",
+        bargap=0.18,
+    )
+    fig.update_xaxes(title_text=x_title, showgrid=False, zeroline=False, tickfont=dict(color=TEXT, size=11))
+    fig.update_yaxes(title_text=y_left, secondary_y=False, showgrid=True, gridcolor=GRID, zeroline=False, tickfont=dict(color=TEXT, size=11))
+    fig.update_yaxes(title_text=y_right, secondary_y=True, showgrid=False, zeroline=False, tickfont=dict(color=TEXT, size=11))
+    return fig
+
 # ------------------------------------------------------------
 # CONFIG: pas hier je standaard parameter aan (default selectie)
 # ------------------------------------------------------------
@@ -287,30 +336,28 @@ def _impulse_response_model(
 
 def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
     x = weekly_df["week_label"].astype(str).to_numpy()
-    load  = weekly_df["load"].to_numpy()
-    fit   = weekly_df["fitness"].to_numpy()
-    fat   = weekly_df["fatigue"].to_numpy()
-    perf  = weekly_df["performance"].to_numpy()
+    load = weekly_df["load"].to_numpy()
+    fit = weekly_df["fitness"].to_numpy()
+    fat = weekly_df["fatigue"].to_numpy()
+    perf = weekly_df["performance"].to_numpy()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    # Load als bar op linker as
     fig.add_trace(
         go.Bar(
             x=x,
             y=load,
             name=f"Load ({metric})",
-            opacity=0.35,
+            marker=dict(color=LOAD_BAR, line=dict(color="rgba(255,255,255,0.12)", width=1.0)),
+            hovertemplate="<b>%{x}</b><br>Load: %{y:.2f}<extra></extra>",
         ),
         secondary_y=False,
     )
-
-    # Fitness / Fatigue / Performance op rechter as
     fig.add_trace(
         go.Scatter(
             x=x, y=fit, name="Fitness",
             mode="lines+markers",
-            line=dict(color="#00FF88", width=2, shape="spline"),
+            line=dict(color=FIT_COLOR, width=2.5, shape="spline"),
+            marker=dict(size=7),
         ),
         secondary_y=True,
     )
@@ -318,7 +365,8 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=x, y=fat, name="Fatigue",
             mode="lines+markers",
-            line=dict(color="#FF5555", width=2, shape="spline"),
+            line=dict(color=FAT_COLOR, width=2.5, shape="spline"),
+            marker=dict(size=7),
         ),
         secondary_y=True,
     )
@@ -326,23 +374,20 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=x, y=perf, name="Performance",
             mode="lines+markers",
-            line=dict(color="#66CCFF", width=3, shape="spline"),
+            line=dict(color=PERF_COLOR, width=3, shape="spline"),
+            marker=dict(size=7),
         ),
         secondary_y=True,
     )
 
-    fig.update_xaxes(title_text="Week")
-    fig.update_yaxes(title_text=f"Load ({metric})", secondary_y=False)
-    fig.update_yaxes(title_text="Fitness / Fatigue / Performance (relatief)", secondary_y=True)
-
-    fig.update_layout(
+    _style_ffp_figure(
+        fig,
         title=f"FFP – {player}",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
-        margin=dict(l=10, r=10, t=50, b=10),
-        bargap=0.15,
+        x_title="Week",
+        y_left=f"Load ({metric})",
+        y_right="Fitness / Fatigue / Performance",
     )
-
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 # ------------------------------------------------------------
@@ -351,28 +396,28 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
 
 def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
     dates = daily_df["date"].to_numpy()
-    load  = daily_df["load"].to_numpy()
-    fit   = daily_df["fitness"].to_numpy()
-    fat   = daily_df["fatigue"].to_numpy()
-    perf  = daily_df["performance"].to_numpy()
+    load = daily_df["load"].to_numpy()
+    fit = daily_df["fitness"].to_numpy()
+    fat = daily_df["fatigue"].to_numpy()
+    perf = daily_df["performance"].to_numpy()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-
     fig.add_trace(
         go.Bar(
             x=dates,
             y=load,
             name=f"Load ({metric})",
-            opacity=0.35,
+            marker=dict(color=LOAD_BAR, line=dict(color="rgba(255,255,255,0.12)", width=1.0)),
+            hovertemplate="<b>%{x}</b><br>Load: %{y:.2f}<extra></extra>",
         ),
         secondary_y=False,
     )
-
     fig.add_trace(
         go.Scatter(
             x=dates, y=fit, name="Fitness",
             mode="lines+markers",
-            line=dict(color="#00FF88", width=2, shape="spline"),
+            line=dict(color=FIT_COLOR, width=2.5, shape="spline"),
+            marker=dict(size=6),
         ),
         secondary_y=True,
     )
@@ -380,7 +425,8 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=dates, y=fat, name="Fatigue",
             mode="lines+markers",
-            line=dict(color="#FF5555", width=2, shape="spline"),
+            line=dict(color=FAT_COLOR, width=2.5, shape="spline"),
+            marker=dict(size=6),
         ),
         secondary_y=True,
     )
@@ -388,23 +434,20 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=dates, y=perf, name="Performance",
             mode="lines+markers",
-            line=dict(color="#66CCFF", width=3, shape="spline"),
+            line=dict(color=PERF_COLOR, width=3, shape="spline"),
+            marker=dict(size=6),
         ),
         secondary_y=True,
     )
 
-    fig.update_xaxes(title_text="Datum")
-    fig.update_yaxes(title_text=f"Load ({metric})", secondary_y=False)
-    fig.update_yaxes(title_text="Fitness / Fatigue / Performance (relatief)", secondary_y=True)
-
-    fig.update_layout(
+    _style_ffp_figure(
+        fig,
         title=f"FFP – {player}",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
-        margin=dict(l=10, r=10, t=50, b=10),
-        bargap=0.15,
+        x_title="Datum",
+        y_left=f"Load ({metric})",
+        y_right="Fitness / Fatigue / Performance",
     )
-
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 # ------------------------------------------------------------
@@ -416,7 +459,7 @@ def ffp_pages_main(df_gps: pd.DataFrame):
     Hoofdpagina Fitness/Fatigue in de app.
     Verwacht de ruwe GPS-sheet als input.
     """
-    st.header("Fitness–Fatigue–Performance")
+    _section_label("Fitness–Fatigue–Performance", "Banister-achtig model met week- of dagmodus op basis van Summary-data.")
 
     required_cols = {COL_PLAYER}
     missing = required_cols - set(df_gps.columns)
@@ -465,6 +508,14 @@ def ffp_pages_main(df_gps: pd.DataFrame):
             index=0,
             help="Kies of je het model per week of per dag wilt bekijken.",
         )
+
+    c_stat1, c_stat2, c_stat3 = st.columns(3)
+    with c_stat1:
+        _metric_card("Speler", player)
+    with c_stat2:
+        _metric_card("Parameter", metric)
+    with c_stat3:
+        _metric_card("Modus", x_mode)
 
     # -----------------------------
     # Modelinstellingen
@@ -529,7 +580,7 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         _plot_ffp_week(time_df, metric, player)
 
         with st.expander("Data – wekelijkse waarden", expanded=False):
-            st.dataframe(time_df, width="stretch")
+            st.dataframe(time_df, use_container_width=True, hide_index=True)
 
     else:  # Dag
         time_df = _daily_load_for_player(df_summary, player, metric)
@@ -553,4 +604,4 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         _plot_ffp_day(time_df, metric, player)
 
         with st.expander("Data – dagelijkse waarden", expanded=False):
-            st.dataframe(time_df, width="stretch")
+            st.dataframe(time_df, use_container_width=True, hide_index=True)
