@@ -1,4 +1,3 @@
-# pages/Subscripts/wr_tab_checklist.py
 from __future__ import annotations
 
 from datetime import date
@@ -32,6 +31,7 @@ def render_wellness_rpe_tab_checklist(sb, sb_url_key: str, pid_to_name: Dict[str
         "player_id": list(pid_to_name.keys()),
         "Player": list(pid_to_name.values()),
     })
+
     if players_df.empty:
         st.info("Geen spelers.")
         return
@@ -48,7 +48,7 @@ def render_wellness_rpe_tab_checklist(sb, sb_url_key: str, pid_to_name: Dict[str
     wellness_show["Filled"] = wellness_show["Filled"].map({True: "✅", False: "❌"})
 
     st.markdown("### Wellness (ASRM)")
-    st.dataframe(wellness_show, width="stretch", hide_index=True)
+    st.dataframe(wellness_show, use_container_width=True, hide_index=True)
 
     headers = fetch_rpe_headers_range_cached(sb_url_key, sb, d.isoformat(), d.isoformat())
     rpe_pids = set(headers["player_id"].astype(str).tolist()) if not headers.empty else set()
@@ -62,7 +62,7 @@ def render_wellness_rpe_tab_checklist(sb, sb_url_key: str, pid_to_name: Dict[str
     rpe_show["Filled"] = rpe_show["Filled"].map({True: "✅", False: "❌"})
 
     st.markdown("### RPE")
-    st.dataframe(rpe_show, width="stretch", hide_index=True)
+    st.dataframe(rpe_show, use_container_width=True, hide_index=True)
 
     miss_w = int(wellness_tbl["Missing"].sum())
     miss_r = int(rpe_tbl["Missing"].sum())
