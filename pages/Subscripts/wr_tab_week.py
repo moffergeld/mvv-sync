@@ -79,7 +79,11 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
             show_zones=True,
             y_range=(0, 10),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"displayModeBar": False, "responsive": True},
+        )
 
         show = stats[["Player", "mean", "std", "n"]].copy()
         show = show.rename(columns={"mean": "Gemiddelde", "std": "SD", "n": "N"})
@@ -118,7 +122,11 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
             show_zones=zone_chart,
             y_range=(0, 10) if zone_chart else None,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"displayModeBar": False, "responsive": True},
+        )
 
         show = stats[["Player", "mean", "std", "n"]].copy()
         show = show.rename(columns={"mean": "Gemiddelde", "std": "SD", "n": "N"})
