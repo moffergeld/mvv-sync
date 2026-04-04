@@ -1,22 +1,5 @@
+# pages/Subscripts/wr_tab_injury.py (aangepast met MVV styling)
 # pages/Subscripts/wr_tab_injury.py
-# ============================================================
-# Injury tab (Team / Staff)
-#
-# Doel
-# - Toon alle relevante "injury signals" vanuit public.rpe_entries
-# - Relevantie = injury=True OF notes gevuld OF pain>0
-# - Entries die volledig leeg zijn (injury=False AND notes leeg AND pain<=0) worden altijd weggelaten
-#
-# UI
-# - Periode (dagen terug)
-# - Min. pain filter
-# - Toggle: Alleen injury=True  (uitgebreid: injury OR notes OR pain)
-#
-# Output
-# - Tabel met Severity (emoji), Date, Player, Type, Pain, Notes, Attachment
-# - Samenvatting onderaan
-# ============================================================
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -27,9 +10,8 @@ import streamlit as st
 
 from pages.Subscripts.wr_common import fetch_rpe_injuries_range_cached
 
-
 def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, str]) -> None:
-    st.subheader("Injuries (RPE)")
+    st.markdown('<div class="mvv-section-label">Injuries (RPE)</div>', unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1.1, 1.1, 1.0])
     with c1:
@@ -50,9 +32,13 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
     d0 = d1 - timedelta(days=int(days_back) - 1)
     st.caption(f"Periode: {d0.isoformat()} t/m {d1.isoformat()}")
 
+    # Wrap content in glass card
+    st.markdown('<div class="mvv-card">', unsafe_allow_html=True)
+
     df = fetch_rpe_injuries_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
     if df.empty:
         st.info("Geen entries gevonden in deze periode.")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
 
     # --------------------------------------------------------
@@ -86,6 +72,7 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
 
     if df.empty:
         st.info("Geen injuries voor deze selectie.")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
 
     # --------------------------------------------------------
@@ -153,3 +140,5 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
     # cleanup (not shown, but keeps df clean if reused)
     # (no effect after this function ends, but harmless)
     df.drop(columns=["_has_notes"], inplace=True, errors="ignore")
+    
+    st.markdown('</div>', unsafe_allow_html=True)
