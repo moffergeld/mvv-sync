@@ -145,6 +145,32 @@ def inject_gps_page_css() -> None:
             padding: 0.2rem 0.8rem 0.45rem 0.8rem;
             background: rgba(255,255,255,0.03);
         }}
+        section[data-testid="stSidebar"] .gps-sidebar-card {{
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            background: rgba(255,255,255,0.035);
+            padding: 0.9rem 0.95rem;
+            margin: 0.35rem 0 0.9rem 0;
+        }}
+        section[data-testid="stSidebar"] .gps-sidebar-kicker {{
+            font-size: 0.72rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(245,247,251,0.56);
+            margin-bottom: 0.25rem;
+            font-weight: 700;
+        }}
+        section[data-testid="stSidebar"] .gps-sidebar-title {{
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #F5F7FB;
+            margin-bottom: 0.2rem;
+        }}
+        section[data-testid="stSidebar"] .gps-sidebar-sub {{
+            font-size: 0.82rem;
+            color: rgba(245,247,251,0.66);
+            line-height: 1.45;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -171,19 +197,39 @@ def render_page_hero() -> None:
         unsafe_allow_html=True,
     )
 
-def render_controls_header(scope_key: str, sub_page: str) -> None:
-    st.markdown(
-        f"""
-        <div class="gps-card">
-            <h4>Actieve selectie</h4>
-            <div class="gps-pill-row">
-                <div class="gps-pill">Scope: {scope_key}</div>
-                <div class="gps-pill">Module: {sub_page}</div>
+def render_sidebar_controls() -> tuple[str, str]:
+    with st.sidebar:
+        st.markdown(
+            """
+            <div class="gps-sidebar-card">
+                <div class="gps-sidebar-kicker">GPS module</div>
+                <div class="gps-sidebar-title">Filters & navigatie</div>
+                <div class="gps-sidebar-sub">
+                    Alle data-inleeslogica blijft gelijk. Alleen de bediening staat nu in de sidebar.
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
+
+        scope_key = st.selectbox(
+            "Data scope (Summary-only)",
+            options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+            index=0,
+            key="gps_scope",
+        )
+
+        sub_page = st.radio(
+            "Subpagina",
+            options=["Session Load", "ACWR", "FFP"],
+            key="gpsdata_subpage",
+        )
+
+        st.markdown("##### Actieve selectie")
+        st.caption(f"Scope: {scope_key}")
+        st.caption(f"Module: {sub_page}")
+
+    return scope_key, sub_page
 
 
 # -------------------------
@@ -447,7 +493,6 @@ def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
 # UI
 # -------------------------
 inject_gps_page_css()
-render_page_hero()
 
 access_token = get_access_token()
 if not access_token:
@@ -457,24 +502,9 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-control_col1, control_col2 = st.columns([1.1, 1.4], vertical_alignment="bottom")
-with control_col1:
-    scope_key = st.selectbox(
-        "Data scope (Summary-only)",
-        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-        index=0,
-        key="gps_scope",
-    )
+scope_key, sub_page = render_sidebar_controls()
 
-with control_col2:
-    sub_page = st.radio(
-        "Subpagina",
-        options=["Session Load", "ACWR", "FFP"],
-        horizontal=True,
-        key="gpsdata_subpage",
-    )
-
-render_controls_header(scope_key, sub_page)
+render_page_hero()
 st.divider()
 
 calendar_df_all = fetch_calendar_dates_all_cached(access_token)
