@@ -68,6 +68,39 @@ EXCLUDE_SUFFIXES = ("/min",)
 DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerload2D"]
 
 
+
+TEXT = "#F5F7FB"
+TEXT_MUTED = "rgba(245,247,251,0.68)"
+GRID = "rgba(255,255,255,0.08)"
+PLOT_BG = "rgba(255,255,255,0.018)"
+MVV_RED = "#C8102E"
+MVV_RED_LIGHT = "#E8213F"
+MVV_GREEN = "#00C46A"
+MVV_ORANGE = "#F5A623"
+MVV_BLUE = "#55A8FF"
+
+def _section_label(title: str, subtitle: str | None = None) -> None:
+    html = f'<div style="margin:0 0 0.8rem 0;"><div style="font-size:0.82rem;letter-spacing:0.16em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{title}</div>'
+    if subtitle:
+        html += f'<div style="font-size:0.95rem;color:{TEXT_MUTED};margin-top:0.32rem;">{subtitle}</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def _style_acwr_fig(fig: go.Figure, title: str, y_title: str) -> go.Figure:
+    fig.update_layout(
+        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=TEXT)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=PLOT_BG,
+        font=dict(color=TEXT, size=12),
+        margin=dict(l=30, r=20, t=70, b=70),
+        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0),
+        hovermode="x unified",
+        barmode="stack",
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, tickfont=dict(color=TEXT, size=11), automargin=True)
+    fig.update_yaxes(showgrid=True, gridcolor=GRID, zeroline=False, tickfont=dict(color=TEXT, size=11), title=y_title, title_font=dict(color=TEXT))
+    return fig
+
 # ------------------------------------------------------------
 # SUPABASE
 # ------------------------------------------------------------
@@ -452,7 +485,7 @@ def line_chart_acwr(
     y_vals = df_plot[acwr_col].astype(float).tolist()
 
     max_val = float(np.nanmax(y_vals)) if len(y_vals) else 1.0
-    max_y = max(1.6, max_val * 1.10)
+    max_y = max(1.6, max_val * 1.12)
 
     fig = go.Figure()
     fig.add_trace(
@@ -460,31 +493,28 @@ def line_chart_acwr(
             x=x_labels,
             y=y_vals,
             mode="lines+markers",
-            line=dict(width=2, shape="spline"),
-            marker=dict(size=6),
+            line=dict(color=MVV_RED_LIGHT, width=3, shape="spline"),
+            marker=dict(size=7, color=MVV_RED),
+            fill="tozeroy",
+            fillcolor="rgba(232,33,63,0.10)",
             showlegend=False,
+            hovertemplate="<b>%{x}</b><br>ACWR: %{y:.2f}<extra></extra>",
         )
     )
 
-    fig.add_hrect(y0=0.0, y1=SWEET_SPOT_LOW, line_width=0, fillcolor="#8B0000", opacity=0.25, layer="below")
-    fig.add_hrect(y0=SWEET_SPOT_LOW, y1=SWEET_SPOT_HIGH, line_width=0, fillcolor="#006400", opacity=0.30, layer="below")
-    fig.add_hrect(y0=SWEET_SPOT_HIGH, y1=max_y, line_width=0, fillcolor="#8B0000", opacity=0.25, layer="below")
-    fig.add_hline(y=1.0, line_dash="dot", line_width=1)
+    fig.add_hrect(y0=0.0, y1=SWEET_SPOT_LOW, line_width=0, fillcolor="rgba(232,33,63,0.11)", layer="below")
+    fig.add_hrect(y0=SWEET_SPOT_LOW, y1=SWEET_SPOT_HIGH, line_width=0, fillcolor="rgba(0,196,106,0.12)", layer="below")
+    fig.add_hrect(y0=SWEET_SPOT_HIGH, y1=max_y, line_width=0, fillcolor="rgba(245,166,35,0.12)", layer="below")
+    fig.add_hline(y=1.0, line_dash="dot", line_width=1.5, line_color="rgba(255,255,255,0.45)")
 
     if highlight_week is not None:
         m = df_plot[df_plot[week_col] == highlight_week]
         if not m.empty:
-            fig.add_vline(x=str(m[label_col].iloc[0]), line_dash="dash", line_width=1.5)
+            fig.add_vline(x=str(m[label_col].iloc[0]), line_dash="dash", line_width=1.5, line_color="rgba(255,255,255,0.45)")
 
-    fig.update_layout(
-        title=f"ACWR - {param}" + (f" ({group_label})" if group_label else ""),
-        xaxis_title="Week",
-        yaxis_title="ACWR",
-        yaxis_range=[0.0, max_y],
-        margin=dict(l=10, r=10, t=40, b=10),
-        showlegend=False,
-    )
-    st.plotly_chart(fig, width="stretch")
+    fig.update_yaxes(range=[0.0, max_y])
+    _style_acwr_fig(fig, title=f"ACWR – {param}" + (f" ({group_label})" if group_label else ""), y_title="ACWR")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 # ------------------------------------------------------------
@@ -648,10 +678,10 @@ def _build_target_bar_figure(
     max_total = max(max_total, 1.0)
 
     fig = go.Figure()
-    fig.add_bar(x=players, y=green, name="Load", marker_color="#00CC00")
-    fig.add_bar(x=players, y=red_missing, name="Remaining", marker_color="#CC0000")
+    fig.add_bar(x=players, y=green, name="Load", marker_color=MVV_GREEN)
+    fig.add_bar(x=players, y=red_missing, name="Remaining", marker_color=MVV_RED)
     if np.nanmax(red_excess) > 0:
-        fig.add_bar(x=players, y=red_excess, name="Above target", marker_color="#990000")
+        fig.add_bar(x=players, y=red_excess, name="Above target", marker_color=MVV_ORANGE)
 
     perc_labels = [f"{r*100:.0f}%" if np.isfinite(r) else "–" for r in ratio]
     fig.add_scatter(
@@ -662,21 +692,15 @@ def _build_target_bar_figure(
         textposition="top center",
         showlegend=False,
         hoverinfo="skip",
-        textfont=dict(color="white", size=10),
+        textfont=dict(color=TEXT, size=10),
     )
 
-    # ✅ exact ondergrens (% van max target)
     if min_line is not None and np.isfinite(min_line):
-        fig.add_hline(y=float(min_line), line_width=2, line_dash="dash")
+        fig.add_hline(y=float(min_line), line_width=2, line_dash="dash", line_color="rgba(255,255,255,0.55)")
 
-    fig.update_layout(
-        barmode="stack",
-        title=f"{title_prefix}: {metric} ({week_label})",
-        margin=dict(l=10, r=10, t=40, b=40),
-        showlegend=False,
-    )
-    fig.update_yaxes(title="%", tickformat=".0%", range=[0, max_total * 1.08])
-    fig.update_xaxes(tickangle=-60)
+    fig.update_yaxes(tickformat=".0%", range=[0, max_total * 1.08])
+    fig.update_xaxes(tickangle=-35)
+    _style_acwr_fig(fig, title=f"{title_prefix}: {metric} ({week_label})", y_title="% van target max")
     return fig
 
 
@@ -755,7 +779,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # TAB 1: ACWR Dashboard
     # ========================================================
     with tab_dashboard:
-        st.header("ACWR Dashboard")
+        _section_label("ACWR Dashboard", "Acute:chronic workload ratio per week, met highlight op een gekozen week.")
 
         c1, c2, c3 = st.columns([1.2, 1.2, 1.0])
         with c1:
@@ -804,7 +828,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # Wel: tabel met targets per speler (abs low/high)
     # ========================================================
     with tab_thresholds:
-        st.header("Threshold planner")
+        _section_label("Threshold planner", "Sla ratio-low en ratio-high per team, week en parameter op in Supabase.")
     
         if sb is None:
             st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
@@ -945,7 +969,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                             "Target high": "{:.2f}",
                         }
                     ),
-                    width="stretch",
+                    use_container_width=True,
                     height=520,
                 )
     
@@ -991,7 +1015,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                     "Target high": "{:.2f}",
                 }
             ),
-            width="stretch",
+            use_container_width=True,
             height=520,
         )
     # ========================================================
@@ -1003,7 +1027,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     #   min_line = ratio_low/ratio_high
     # ========================================================
     with tab_targets:
-        st.header("Targets vs Workload")
+        _section_label("Targets vs Workload", "Vergelijk actuele weekload met targets gebaseerd op chronic workload en thresholds.")
 
         if sb is None:
             st.error("Supabase client niet beschikbaar. Controleer secrets + package.")
@@ -1100,7 +1124,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                         title_prefix=f"Week target (ratio {rlow:.2f}–{rhigh:.2f})",
                         min_line=min_line,
                     )
-                    st.plotly_chart(fig, width="stretch")
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
         # -------- tabel ----------
         st.subheader("Absolute waardes t.o.v. targets")
@@ -1125,7 +1149,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 )
                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
             )
-            st.dataframe(styled, width="stretch")
+            st.dataframe(styled, use_container_width=True)
 
 
 
