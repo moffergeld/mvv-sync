@@ -96,7 +96,7 @@ def create_mvv_bar_chart(df: pd.DataFrame, x_col: str, y_col: str, title: str = 
     fig = go.Figure()
     
     # Add bars with error bars if available
-    if 'std' in df.columns:
+    if 'std' in df.columns and 'std' in df.columns:
         fig.add_trace(go.Bar(
             x=df[x_col],
             y=df[y_col],
@@ -153,7 +153,7 @@ def create_mvv_bar_chart(df: pd.DataFrame, x_col: str, y_col: str, title: str = 
     )
     
     # Add zones if requested
-    if show_zones:
+    if show_zones and y_range:
         zones = [
             (0, ZONE_GREEN_MAX, MVV_COLORS['zone_green']),
             (ZONE_GREEN_MAX, ZONE_ORANGE_MAX, MVV_COLORS['zone_orange']),
