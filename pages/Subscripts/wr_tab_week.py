@@ -1,3 +1,4 @@
+# pages/Subscripts/wr_tab_week.py (aangepast met MVV styling)
 from __future__ import annotations
 
 from datetime import date
@@ -14,9 +15,8 @@ from pages.Subscripts.wr_common import (
     fetch_rpe_headers_range_cached,
     build_rpe_player_daily,
     agg_week_player_mean_std,
-    plot_week_player_mean_std_bars,
+    create_mvv_bar_chart,
 )
-
 
 def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str]) -> None:
     today = date.today()
@@ -33,6 +33,9 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
 
     cat = st.radio("Categorie", ["Wellness (ASRM)", "RPE"], horizontal=True, key="wr_week_cat")
 
+    # Wrap content in glass card
+    st.markdown('<div class="mvv-card">', unsafe_allow_html=True)
+
     if cat == "Wellness (ASRM)":
         param_label = st.selectbox("Parameter", [x[0] for x in ASRM_PARAMS], key="wr_week_asrm_param")
         param_key = dict(ASRM_PARAMS)[param_label]
@@ -40,6 +43,7 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
         asrm = fetch_asrm_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
         if asrm.empty:
             st.info("Geen ASRM entries in deze week.")
+            st.markdown('</div>', unsafe_allow_html=True)
             return
 
         asrm[param_key] = pd.to_numeric(asrm[param_key], errors="coerce")
@@ -48,43 +52,30 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
         stats = agg_week_player_mean_std(asrm, value_col=param_key)
         if stats.empty:
             st.info("Geen bruikbare ASRM data in deze week.")
+            st.markdown('</div>', unsafe_allow_html=True)
             return
 
         stats["Player"] = stats["player_id"].map(pid_to_name).fillna(stats["player_id"])
         stats = stats.sort_values("mean", ascending=False)
 
-        plot_week_player_mean_std_bars(
-            df_stats=stats,
-            player_name_col="Player",
-            y_title=f"{param_label} — mean ± std (week)",
-            zone_0_10=True,
+        # Create styled chart
+        fig = create_mvv_bar_chart(
+            df=stats,
+            x_col="Player",
+            y_col="mean",
+            title=f"{param_label} — Gemiddelde ± Standaardafwijking (Week {week})",
+            show_zones=True,
+            y_range=(0, 10)
         )
-        return
-
-    # RPE
-    param_label = st.selectbox("Parameter", [x[0] for x in RPE_PARAMS], key="wr_week_rpe_param")
-    param_key = dict(RPE_PARAMS)[param_label]
-
-    headers = fetch_rpe_headers_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
-    daily = build_rpe_player_daily(sb_url_key, sb, headers)
-    if daily.empty:
-        st.info("Geen RPE entries in deze week.")
-        return
-
-    daily[param_key] = pd.to_numeric(daily[param_key], errors="coerce")
-    daily = daily.dropna(subset=["player_id", "entry_date", param_key])
-
-    stats = agg_week_player_mean_std(daily, value_col=param_key)
-    if stats.empty:
-        st.info("Geen bruikbare RPE data in deze week.")
-        return
-
-    stats["Player"] = stats["player_id"].map(pid_to_name).fillna(stats["player_id"])
-    stats = stats.sort_values("mean", ascending=False)
-
-    plot_week_player_mean_std_bars(
-        df_stats=stats,
-        player_name_col="Player",
-        y_title=f"{param_label} — mean ± std (week)",
-        zone_0_10=(param_key == "avg_rpe"),
-    )
+        
+        # Add standard deviation information to the chart
+        if 'std' in stats.columns:
+            fig.data[0].error_y = dict(
+                type='data',
+                array=stats['std'],
+                color='#E8213F',
+                thickness=2,
+                width=6
+            )
+        
+        st_
