@@ -73,7 +73,11 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
                 show_zones=True,
                 y_range=(0, 10),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False, "responsive": True},
+            )
             st.markdown("---")
 
     else:
@@ -107,7 +111,11 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
                 show_zones=(param_key == "avg_rpe"),
                 y_range=(0, 10) if param_key == "avg_rpe" else None,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False, "responsive": True},
+            )
             st.markdown("---")
 
     st.markdown("</div>", unsafe_allow_html=True)
