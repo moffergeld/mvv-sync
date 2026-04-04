@@ -27,6 +27,33 @@ import requests
 import streamlit as st
 
 
+
+TEXT = "#F5F7FB"
+TEXT_MUTED = "rgba(245,247,251,0.68)"
+
+def _section_label(title: str, subtitle: str | None = None) -> None:
+    html = f'<div style="margin:0 0 0.8rem 0;"><div style="font-size:0.82rem;letter-spacing:0.16em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{title}</div>'
+    if subtitle:
+        html += f'<div style="font-size:0.95rem;color:{TEXT_MUTED};margin-top:0.32rem;">{subtitle}</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+def _metric_card(label: str, value: str) -> None:
+    st.markdown(
+        f"""
+        <div style="
+            border:1px solid rgba(255,255,255,0.08);
+            border-radius:18px;
+            padding:0.8rem 1rem;
+            background:rgba(255,255,255,0.035);
+            min-height:92px;">
+            <div style="font-size:0.78rem;letter-spacing:0.14em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{label}</div>
+            <div style="font-size:1.45rem;color:{TEXT};font-weight:800;margin-top:0.35rem;">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # -------------------------
 # REST helpers (standalone)
 # -------------------------
@@ -354,7 +381,7 @@ def benchmarks_pages_main(
     access_token: str,
     user_id: str,
 ):
-    st.subheader("Gref (per 90min)")
+    _section_label("Benchmarks", "Gref-tabellen op basis van First Half + Second Half match events.")
 
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
@@ -404,8 +431,16 @@ def benchmarks_pages_main(
         st.info("Geen bruikbare matchdata (First+Second Half) gevonden voor deze filters.")
         return
 
+    kc1, kc2, kc3 = st.columns(3)
+    with kc1:
+        _metric_card("Spelers", str(len(df_gref)))
+    with kc2:
+        _metric_card("Minutenfilter", f"{float(min_minutes):.0f}+")
+    with kc3:
+        _metric_card("Top-K matches", str(int(top_k)))
+
     st.markdown("#### Gref")
-    st.dataframe(df_gref, width="stretch", height=420)
+    st.dataframe(df_gref, use_container_width=True, height=420, hide_index=True)
 
     # Table 2: per minute
     df_gref_min = compute_gref_per_min(
@@ -418,4 +453,4 @@ def benchmarks_pages_main(
         return
 
     st.markdown("#### Gref per minuut")
-    st.dataframe(df_gref_min, width="stretch", height=420)
+    st.dataframe(df_gref_min, use_container_width=True, height=420, hide_index=True)
