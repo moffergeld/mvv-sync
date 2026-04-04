@@ -1,15 +1,15 @@
 # pages/03_GPS_Data.py
 # ==========================================================
-# GPS Data (Main) - OPTIMALIZED + MINIMAL METRICS
+# GPS Data (Main) - STYLED + SAME DATAFLOW
 #
 # Afgesproken:
 # - Summary-only data voor analyses
-# - Default scope: laatste 8 weken (keuze: 8w/12w/Seizoen/Alles)
-# - df_all (scope) = Summary-only + behoud Type (Practice/Match splits)
-# - FFP: altijd ALL, maar alleen laden wanneer FFP wordt geopend
-# - Benchmarks: beschikbaar
-# - Data preview: verwijderd
-# - Kalender (Session Load): all-time tonen via aparte lichte calendar df
+# - Data scope in sidebar
+# - Tabs op pagina: Session Load / ACWR / FFP / Benchmarks
+# - Session Load + ACWR gebruiken scope
+# - FFP laadt altijd ALL Summary-data
+# - Benchmarks via v_gps_match_events
+# - Alleen design / page shell aangepast, dataflow gelijk
 # ==========================================================
 
 from __future__ import annotations
@@ -30,9 +30,184 @@ from roles import get_profile, is_staff_user
 
 st.set_page_config(page_title="GPS Data", layout="wide")
 
-# -------------------------
-# Auth restore
-# -------------------------
+
+# ==========================================================
+# PAGE STYLING
+# ==========================================================
+st.markdown(
+    """
+    <style>
+    :root {
+        --mvv-red: #C8102E;
+        --mvv-red-light: #E8213F;
+        --mvv-red-dark: #8B0A1F;
+        --bg-main: #060B16;
+        --bg-card: rgba(255,255,255,0.035);
+        --bg-card-2: rgba(255,255,255,0.02);
+        --line-soft: rgba(255,255,255,0.10);
+        --text-main: #F5F7FB;
+        --text-soft: rgba(245,247,251,0.72);
+        --text-dim: rgba(245,247,251,0.52);
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(200,16,46,0.18) 0%, rgba(200,16,46,0.04) 22%, rgba(0,0,0,0) 45%),
+            radial-gradient(circle at bottom right, rgba(200,16,46,0.16) 0%, rgba(200,16,46,0.04) 18%, rgba(0,0,0,0) 40%),
+            linear-gradient(180deg, #040915 0%, #050A16 100%);
+        color: var(--text-main);
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.025) 100%);
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+
+    [data-testid="stSidebar"] .stMarkdown,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] div {
+        color: var(--text-main);
+    }
+
+    .gps-hero {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 26px;
+        padding: 20px 22px 16px 22px;
+        margin-bottom: 18px;
+        background:
+            radial-gradient(circle at top left, rgba(200,16,46,0.20) 0%, rgba(200,16,46,0.07) 25%, rgba(0,0,0,0) 60%),
+            linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 40%, rgba(255,255,255,0.01) 100%);
+        box-shadow:
+            0 16px 40px rgba(0,0,0,0.22),
+            inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .gps-kicker {
+        font-size: 11px;
+        letter-spacing: 0.24em;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.72);
+        margin-bottom: 8px;
+    }
+
+    .gps-title {
+        font-size: 28px;
+        line-height: 1.05;
+        font-weight: 800;
+        color: #FFFFFF;
+        margin: 0 0 8px 0;
+    }
+
+    .gps-subtitle {
+        max-width: 1100px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: rgba(255,255,255,0.82);
+        margin-bottom: 14px;
+    }
+
+    .gps-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .gps-pill {
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #FFFFFF;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+    }
+
+    .gps-section-card {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 22px;
+        padding: 14px 16px;
+        margin: 10px 0 18px 0;
+        background:
+            linear-gradient(180deg, rgba(255,255,255,0.028) 0%, rgba(255,255,255,0.018) 100%);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+    }
+
+    .gps-section-label {
+        font-size: 11px;
+        letter-spacing: 0.22em;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.72);
+        margin-bottom: 8px;
+    }
+
+    .gps-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .gps-badge {
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .gps-divider {
+        height: 1px;
+        background: linear-gradient(90deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.18) 15%, rgba(255,255,255,0.18) 85%, rgba(255,255,255,0.0) 100%);
+        margin: 18px 0 14px 0;
+    }
+
+    div[data-testid="stTabs"] button {
+        border-radius: 999px !important;
+        padding: 10px 16px !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: rgba(255,255,255,0.02) !important;
+        color: rgba(255,255,255,0.78) !important;
+        font-weight: 700 !important;
+    }
+
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        background: linear-gradient(180deg, rgba(200,16,46,0.30) 0%, rgba(200,16,46,0.16) 100%) !important;
+        color: #FFFFFF !important;
+        border: 1px solid rgba(232,33,63,0.40) !important;
+        box-shadow: 0 8px 18px rgba(200,16,46,0.18);
+    }
+
+    div[data-testid="stTabs"] {
+        margin-top: 6px;
+    }
+
+    div[data-baseweb="select"] > div,
+    .stSelectbox div[data-baseweb="select"] > div {
+        border-radius: 14px !important;
+    }
+
+    .st-emotion-cache-16txtl3, .st-emotion-cache-1kyxreq {
+        color: var(--text-main);
+    }
+
+    .block-container {
+        padding-top: 1.8rem;
+        padding-bottom: 2rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ==========================================================
+# AUTH / ACCESS
+# ==========================================================
 sb = get_sb_client()
 ok, token = ensure_auth_restored(sb)
 
@@ -44,9 +219,6 @@ if not ok or not token:
         pass
     st.stop()
 
-# -------------------------
-# Staff-only gate
-# -------------------------
 profile = get_profile(sb)
 if not is_staff_user(profile):
     st.error("Geen toegang.")
@@ -59,9 +231,9 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     st.stop()
 
 
-# -------------------------
-# Token helpers
-# -------------------------
+# ==========================================================
+# TOKEN HELPERS
+# ==========================================================
 def get_access_token() -> str | None:
     tok = st.session_state.get("access_token")
     if tok:
@@ -93,9 +265,9 @@ def auth_get_user(access_token: str) -> dict:
     return r.json()
 
 
-# -------------------------
-# REST paging
-# -------------------------
+# ==========================================================
+# REST PAGING
+# ==========================================================
 def rest_get_paged(
     access_token: str,
     table: str,
@@ -131,9 +303,9 @@ def rest_get_paged(
     return pd.DataFrame(all_rows)
 
 
-# -------------------------
-# Minimal select columns (db names)
-# -------------------------
+# ==========================================================
+# SELECT COLUMNS
+# ==========================================================
 GPS_SELECT_COLS = [
     "gps_id",
     "datum",
@@ -162,9 +334,9 @@ GPS_SELECT_COLS = [
 ]
 
 
-# -------------------------
-# Transform: Supabase -> Dashboard df
-# -------------------------
+# ==========================================================
+# TRANSFORM
+# ==========================================================
 _DB_TO_DASH = {
     "datum": "Datum",
     "player_name": "Speler",
@@ -226,9 +398,9 @@ def _supabase_to_calendar_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# -------------------------
-# Scope helpers
-# -------------------------
+# ==========================================================
+# SCOPE HELPERS
+# ==========================================================
 def _season_start(today: date) -> date:
     return date(today.year, 7, 1) if today.month >= 7 else date(today.year - 1, 7, 1)
 
@@ -246,9 +418,9 @@ def _scope_to_dates(scope_key: str) -> tuple[date | None, date | None]:
     return today - timedelta(days=56 - 1), today
 
 
-# -------------------------
-# Cached fetchers
-# -------------------------
+# ==========================================================
+# CACHED FETCHERS
+# ==========================================================
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_summary_scope_cached(access_token: str, scope_key: str) -> pd.DataFrame:
     d0, d1 = _scope_to_dates(scope_key)
@@ -285,11 +457,9 @@ def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
     return _supabase_to_dashboard_df(raw)
 
 
-# -------------------------
+# ==========================================================
 # UI
-# -------------------------
-st.title("GPS Data")
-
+# ==========================================================
 access_token = get_access_token()
 if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
@@ -298,9 +468,6 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-# -------------------------
-# Sidebar: datascope
-# -------------------------
 with st.sidebar:
     st.markdown("### GPS filters")
     scope_key = st.selectbox(
@@ -310,7 +477,38 @@ with st.sidebar:
         key="gps_scope",
     )
 
-st.divider()
+st.markdown(
+    f"""
+    <div class="gps-hero">
+        <div class="gps-kicker">MVV Performance Dashboard</div>
+        <div class="gps-title">GPS Data Overview</div>
+        <div class="gps-subtitle">
+            Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
+            De dataflow en caching blijven gelijk; alleen de pagina-opmaak en grafiekstijl zijn vernieuwd.
+        </div>
+        <div class="gps-pill-row">
+            <div class="gps-pill">Summary-only analyses</div>
+            <div class="gps-pill">ACWR thresholds per week</div>
+            <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
+            <div class="gps-pill">Benchmarks uit match events</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"""
+    <div class="gps-section-card">
+        <div class="gps-section-label">Actieve selectie</div>
+        <div class="gps-badge-row">
+            <div class="gps-badge">Scope: {scope_key}</div>
+            <div class="gps-badge">Modules: Session Load, ACWR, FFP, Benchmarks</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 calendar_df_all = fetch_calendar_dates_all_cached(access_token)
 
