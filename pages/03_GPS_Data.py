@@ -41,196 +41,7 @@ import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages
 from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
 
-st.set_page_config(page_title="GPS Data", layout="wide", initial_sidebar_state="expanded")
-
-
-MVV_COLORS = {
-    "primary": "#C8102E",
-    "light": "#E8213F",
-    "dark": "#8B0A1F",
-    "bg": "#0B0E16",
-    "panel": "rgba(255,255,255,0.04)",
-    "panel_border": "rgba(255,255,255,0.08)",
-    "text": "#F5F7FB",
-    "muted": "rgba(245,247,251,0.62)",
-    "grid": "rgba(255,255,255,0.08)",
-}
-
-def inject_gps_page_css() -> None:
-    st.markdown(
-        f"""
-        <style>
-        .stApp {{
-            background:
-                radial-gradient(circle at top left, rgba(200,16,46,0.18), transparent 28%),
-                radial-gradient(circle at bottom right, rgba(200,16,46,0.14), transparent 25%),
-                linear-gradient(135deg, #060810 0%, #0B0E16 55%, #0C0F17 100%);
-        }}
-        .gps-hero {{
-            padding: 1.2rem 1.35rem 1.1rem 1.35rem;
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 22px;
-            background: linear-gradient(135deg, rgba(200,16,46,0.16), rgba(255,255,255,0.03));
-            box-shadow: 0 18px 40px rgba(0,0,0,0.22);
-            margin-bottom: 1rem;
-        }}
-        .gps-kicker {{
-            font-size: 0.75rem;
-            letter-spacing: 0.24em;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.62);
-            margin-bottom: 0.35rem;
-            font-weight: 700;
-        }}
-        .gps-title {{
-            font-size: 2.15rem;
-            font-weight: 800;
-            color: #F5F7FB;
-            line-height: 1.08;
-            margin-bottom: 0.3rem;
-        }}
-        .gps-subtitle {{
-            font-size: 0.96rem;
-            color: rgba(245,247,251,0.68);
-            max-width: 980px;
-        }}
-        .gps-card {{
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            background: rgba(255,255,255,0.035);
-            padding: 0.9rem 1rem 0.35rem 1rem;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.18);
-            margin-bottom: 1rem;
-        }}
-        .gps-card h4 {{
-            margin: 0 0 0.35rem 0;
-            font-size: 0.82rem;
-            letter-spacing: 0.14em;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.60);
-        }}
-        .gps-pill-row {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-top: 0.85rem;
-        }}
-        .gps-pill {{
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.04);
-            border-radius: 999px;
-            padding: 0.45rem 0.8rem;
-            font-size: 0.82rem;
-            color: #F5F7FB;
-        }}
-        .gps-section-title {{
-            margin: 0.2rem 0 0.2rem 0;
-            font-size: 0.86rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            color: rgba(255,255,255,0.62);
-            font-weight: 700;
-        }}
-        div[data-testid="stTabs"] button[role="tab"] {{
-            border-radius: 999px;
-            padding: 0.55rem 1rem;
-        }}
-        div[data-testid="stTabs"] button[aria-selected="true"] {{
-            background: linear-gradient(135deg, rgba(200,16,46,0.35), rgba(232,33,63,0.18));
-            border: 1px solid rgba(255,255,255,0.10);
-        }}
-        div[data-testid="stMetric"] {{
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            padding: 0.2rem 0.8rem 0.45rem 0.8rem;
-            background: rgba(255,255,255,0.03);
-        }}
-        section[data-testid="stSidebar"] .gps-sidebar-card {{
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            background: rgba(255,255,255,0.035);
-            padding: 0.9rem 0.95rem;
-            margin: 0.35rem 0 0.9rem 0;
-        }}
-        section[data-testid="stSidebar"] .gps-sidebar-kicker {{
-            font-size: 0.72rem;
-            letter-spacing: 0.16em;
-            text-transform: uppercase;
-            color: rgba(245,247,251,0.56);
-            margin-bottom: 0.25rem;
-            font-weight: 700;
-        }}
-        section[data-testid="stSidebar"] .gps-sidebar-title {{
-            font-size: 1.05rem;
-            font-weight: 800;
-            color: #F5F7FB;
-            margin-bottom: 0.2rem;
-        }}
-        section[data-testid="stSidebar"] .gps-sidebar-sub {{
-            font-size: 0.82rem;
-            color: rgba(245,247,251,0.66);
-            line-height: 1.45;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def render_page_hero() -> None:
-    st.markdown(
-        """
-        <div class="gps-hero">
-            <div class="gps-kicker">MVV Performance Dashboard</div>
-            <div class="gps-title">GPS Data Overview</div>
-            <div class="gps-subtitle">
-                Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
-                De dataflow en caching blijven gelijk; alleen de pagina-opmaak en grafiekstijl zijn vernieuwd.
-            </div>
-            <div class="gps-pill-row">
-                <div class="gps-pill">Summary-only analyses</div>
-                <div class="gps-pill">ACWR thresholds per week</div>
-                <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
-                <div class="gps-pill">Benchmarks uit match events</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def render_sidebar_controls() -> tuple[str, str]:
-    with st.sidebar:
-        st.markdown(
-            """
-            <div class="gps-sidebar-card">
-                <div class="gps-sidebar-kicker">GPS module</div>
-                <div class="gps-sidebar-title">Filters & navigatie</div>
-                <div class="gps-sidebar-sub">
-                    Alle data-inleeslogica blijft gelijk. Alleen de bediening staat nu in de sidebar.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        scope_key = st.selectbox(
-            "Data scope (Summary-only)",
-            options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-            index=0,
-            key="gps_scope",
-        )
-
-        sub_page = st.radio(
-            "Subpagina",
-            options=["Session Load", "ACWR", "FFP"],
-            key="gpsdata_subpage",
-        )
-
-        st.markdown("##### Actieve selectie")
-        st.caption(f"Scope: {scope_key}")
-        st.caption(f"Module: {sub_page}")
-
-    return scope_key, sub_page
-
+st.set_page_config(page_title="GPS Data", layout="wide")
 
 # -------------------------
 # Auth restore
@@ -356,13 +167,13 @@ GPS_SELECT_COLS = [
     "high_accelerations",
     "total_decelerations",
     "high_decelerations",
-    # HR / TRIMP 
+    # HR / TRIMP
     "hrzone1",
     "hrzone2",
     "hrzone3",
     "hrzone4",
     "hrzone5",
-    "hrtrimp", 
+    "hrtrimp",
 ]
 
 
@@ -492,7 +303,7 @@ def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
 # -------------------------
 # UI
 # -------------------------
-inject_gps_page_css()
+st.title("GPS Data")
 
 access_token = get_access_token()
 if not access_token:
@@ -502,24 +313,28 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-scope_key, sub_page = render_sidebar_controls()
+scope_key = st.selectbox(
+    "Data scope (Summary-only)",
+    options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+    index=0,
+    key="gps_scope",
+)
 
-render_page_hero()
 st.divider()
 
 calendar_df_all = fetch_calendar_dates_all_cached(access_token)
 
-if sub_page == "Session Load":
-    tab_dash, tab_bench = st.tabs(["Dashboard", "Benchmarks"])
+tab_session, tab_acwr, tab_ffp, tab_bench = st.tabs(
+    ["Session Load", "ACWR", "FFP", "Benchmarks"]
+)
 
-    with tab_dash:
-        with st.spinner(f"Summary data laden ({scope_key})..."):
-            df_scope = fetch_summary_scope_cached(access_token, scope_key)
+with tab_session:
+    with st.spinner(f"Summary data laden ({scope_key})..."):
+        df_scope = fetch_summary_scope_cached(access_token, scope_key)
 
-        if df_scope.empty:
-            st.info("Geen Summary GPS data gevonden in deze scope.")
-            st.stop()
-
+    if df_scope.empty:
+        st.info("Geen Summary GPS data gevonden in deze scope.")
+    else:
         def _fetch_day(day_iso: str) -> pd.DataFrame:
             return fetch_summary_day_cached(access_token, day_iso)
 
@@ -529,52 +344,28 @@ if sub_page == "Session Load":
             fetch_day_fn=_fetch_day,
         )
 
-    with tab_bench:
-        benchmarks_pages.benchmarks_pages_main(
-            supabase_url=SUPABASE_URL,
-            supabase_anon_key=SUPABASE_ANON_KEY,
-            access_token=access_token,
-            user_id=st.session_state.get("user_id", ""),
-        )
+with tab_acwr:
+    with st.spinner(f"Summary data laden ({scope_key})..."):
+        df_scope = fetch_summary_scope_cached(access_token, scope_key)
 
-elif sub_page == "ACWR":
-    tab_acwr, tab_bench = st.tabs(["ACWR module", "Benchmarks"])
-
-    with tab_acwr:
-        with st.spinner(f"Summary data laden ({scope_key})..."):
-            df_scope = fetch_summary_scope_cached(access_token, scope_key)
-
-        if df_scope.empty:
-            st.info("Geen Summary GPS data gevonden in deze scope.")
-            st.stop()
-
+    if df_scope.empty:
+        st.info("Geen Summary GPS data gevonden in deze scope.")
+    else:
         acwr_pages.acwr_pages_main(df_scope)
 
-    with tab_bench:
-        benchmarks_pages.benchmarks_pages_main(
-            supabase_url=SUPABASE_URL,
-            supabase_anon_key=SUPABASE_ANON_KEY,
-            access_token=access_token,
-            user_id=st.session_state.get("user_id", ""),
-        )
+with tab_ffp:
+    with st.spinner("FFP: Summary data laden (ALLES)..."):
+        df_ffp_all = fetch_summary_all_cached(access_token)
 
-elif sub_page == "FFP":
-    tab_ffp, tab_bench = st.tabs(["FFP module", "Benchmarks"])
-
-    with tab_ffp:
-        with st.spinner("FFP: Summary data laden (ALLES)..."):
-            df_ffp_all = fetch_summary_all_cached(access_token)
-
-        if df_ffp_all.empty:
-            st.info("Geen Summary GPS data gevonden.")
-            st.stop()
-
+    if df_ffp_all.empty:
+        st.info("Geen Summary GPS data gevonden.")
+    else:
         ffp_pages.ffp_pages_main(df_ffp_all)
 
-    with tab_bench:
-        benchmarks_pages.benchmarks_pages_main(
-            supabase_url=SUPABASE_URL,
-            supabase_anon_key=SUPABASE_ANON_KEY,
-            access_token=access_token,
-            user_id=st.session_state.get("user_id", ""),
-        )
+with tab_bench:
+    benchmarks_pages.benchmarks_pages_main(
+        supabase_url=SUPABASE_URL,
+        supabase_anon_key=SUPABASE_ANON_KEY,
+        access_token=access_token,
+        user_id=st.session_state.get("user_id", ""),
+    )
