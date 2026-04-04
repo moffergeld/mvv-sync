@@ -1,5 +1,3 @@
-# pages/Subscripts/wr_tab_injury.py (aangepast met MVV styling)
-# pages/Subscripts/wr_tab_injury.py
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -9,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from pages.Subscripts.wr_common import fetch_rpe_injuries_range_cached
+
 
 def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, str]) -> None:
     st.markdown('<div class="mvv-section-label">Injuries (RPE)</div>', unsafe_allow_html=True)
@@ -32,52 +31,35 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
     d0 = d1 - timedelta(days=int(days_back) - 1)
     st.caption(f"Periode: {d0.isoformat()} t/m {d1.isoformat()}")
 
-    # Wrap content in glass card
     st.markdown('<div class="mvv-card">', unsafe_allow_html=True)
 
     df = fetch_rpe_injuries_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
     if df.empty:
         st.info("Geen entries gevonden in deze periode.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    # --------------------------------------------------------
-    # Normaliseren
-    # --------------------------------------------------------
     df["Player"] = df["player_id"].map(pid_to_name).fillna(df["player_id"]).astype(str)
-
-    df["injury"] = df["injury"].astype(bool)
+    df["injury"] = df["injury"].fillna(False).astype(bool)
     df["injury_pain"] = pd.to_numeric(df["injury_pain"], errors="coerce").fillna(0)
     df["notes"] = df["notes"].fillna("").astype(str)
+    df["injury_type"] = df["injury_type"].fillna("").astype(str)
+    df["attachment_url"] = df["attachment_url"].fillna("").astype(str)
     df["_has_notes"] = df["notes"].str.strip().ne("")
 
-    # --------------------------------------------------------
-    # Basisregel: drop "lege" rijen
-    # leeg = injury=False AND notes leeg AND pain<=0
-    # --------------------------------------------------------
     df = df[~((df["injury"] == False) & (~df["_has_notes"]) & (df["injury_pain"] <= 0))]  # noqa: E712
 
-    # --------------------------------------------------------
-    # Toggle logica: "Alleen injury=True" betekent:
-    # toon injury=True OF notes gevuld OF pain>0
-    # --------------------------------------------------------
     if only_open:
         df = df[(df["injury"] == True) | (df["_has_notes"]) | (df["injury_pain"] > 0)]  # noqa: E712
 
-    # --------------------------------------------------------
-    # Min pain filter (na bovenstaande)
-    # --------------------------------------------------------
     if int(min_pain) > 0:
         df = df[df["injury_pain"] >= int(min_pain)]
 
     if df.empty:
         st.info("Geen injuries voor deze selectie.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    # --------------------------------------------------------
-    # Severity label
-    # --------------------------------------------------------
     def _sev(p):
         try:
             p = float(p)
@@ -89,17 +71,11 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
             return "🟠"
         if p > 0:
             return "🟢"
-        # pain==0 maar notes/injury kan nog relevant zijn
         return "⚪"
 
     df["Severity"] = df["injury_pain"].apply(_sev)
-
-    # sort: pain desc, date desc, player
     df = df.sort_values(["injury_pain", "entry_date", "Player"], ascending=[False, False, True])
 
-    # --------------------------------------------------------
-    # Tabel output
-    # --------------------------------------------------------
     show_cols = [
         "Severity",
         "entry_date",
@@ -120,11 +96,8 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
         }
     )
 
-    st.dataframe(show, width="stretch", hide_index=True)
+    st.dataframe(show, use_container_width=True, hide_index=True)
 
-    # --------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------
     pain = df["injury_pain"].fillna(0)
     n = int(len(df))
     n_red = int((pain >= 8).sum())
@@ -134,11 +107,9 @@ def render_wellness_rpe_tab_injury(sb, sb_url_key: str, pid_to_name: Dict[str, s
     n_injury_flag = int((df["injury"] == True).sum())  # noqa: E712
 
     st.caption(
-        f"Totaal: {n} | injury=True: {n_injury_flag} | 🔴≥8: {n_red} | 🟠5–7: {n_orange} | 🟢1–4: {n_green} | ⚪ notes/pain0: {n_notes_only}"
+        f"Totaal: {n} | injury=True: {n_injury_flag} | 🔴≥8: {n_red} | "
+        f"🟠5–7: {n_orange} | 🟢1–4: {n_green} | ⚪ notes/pain0: {n_notes_only}"
     )
 
-    # cleanup (not shown, but keeps df clean if reused)
-    # (no effect after this function ends, but harmless)
     df.drop(columns=["_has_notes"], inplace=True, errors="ignore")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
