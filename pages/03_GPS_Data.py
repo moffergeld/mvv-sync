@@ -41,7 +41,150 @@ import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages
 from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
 
-st.set_page_config(page_title="GPS Data", layout="wide")
+st.set_page_config(page_title="GPS Data", layout="wide", initial_sidebar_state="expanded")
+
+
+MVV_COLORS = {
+    "primary": "#C8102E",
+    "light": "#E8213F",
+    "dark": "#8B0A1F",
+    "bg": "#0B0E16",
+    "panel": "rgba(255,255,255,0.04)",
+    "panel_border": "rgba(255,255,255,0.08)",
+    "text": "#F5F7FB",
+    "muted": "rgba(245,247,251,0.62)",
+    "grid": "rgba(255,255,255,0.08)",
+}
+
+def inject_gps_page_css() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background:
+                radial-gradient(circle at top left, rgba(200,16,46,0.18), transparent 28%),
+                radial-gradient(circle at bottom right, rgba(200,16,46,0.14), transparent 25%),
+                linear-gradient(135deg, #060810 0%, #0B0E16 55%, #0C0F17 100%);
+        }}
+        .gps-hero {{
+            padding: 1.2rem 1.35rem 1.1rem 1.35rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 22px;
+            background: linear-gradient(135deg, rgba(200,16,46,0.16), rgba(255,255,255,0.03));
+            box-shadow: 0 18px 40px rgba(0,0,0,0.22);
+            margin-bottom: 1rem;
+        }}
+        .gps-kicker {{
+            font-size: 0.75rem;
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.62);
+            margin-bottom: 0.35rem;
+            font-weight: 700;
+        }}
+        .gps-title {{
+            font-size: 2.15rem;
+            font-weight: 800;
+            color: #F5F7FB;
+            line-height: 1.08;
+            margin-bottom: 0.3rem;
+        }}
+        .gps-subtitle {{
+            font-size: 0.96rem;
+            color: rgba(245,247,251,0.68);
+            max-width: 980px;
+        }}
+        .gps-card {{
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            background: rgba(255,255,255,0.035);
+            padding: 0.9rem 1rem 0.35rem 1rem;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+            margin-bottom: 1rem;
+        }}
+        .gps-card h4 {{
+            margin: 0 0 0.35rem 0;
+            font-size: 0.82rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.60);
+        }}
+        .gps-pill-row {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.85rem;
+        }}
+        .gps-pill {{
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.04);
+            border-radius: 999px;
+            padding: 0.45rem 0.8rem;
+            font-size: 0.82rem;
+            color: #F5F7FB;
+        }}
+        .gps-section-title {{
+            margin: 0.2rem 0 0.2rem 0;
+            font-size: 0.86rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.62);
+            font-weight: 700;
+        }}
+        div[data-testid="stTabs"] button[role="tab"] {{
+            border-radius: 999px;
+            padding: 0.55rem 1rem;
+        }}
+        div[data-testid="stTabs"] button[aria-selected="true"] {{
+            background: linear-gradient(135deg, rgba(200,16,46,0.35), rgba(232,33,63,0.18));
+            border: 1px solid rgba(255,255,255,0.10);
+        }}
+        div[data-testid="stMetric"] {{
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            padding: 0.2rem 0.8rem 0.45rem 0.8rem;
+            background: rgba(255,255,255,0.03);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_page_hero() -> None:
+    st.markdown(
+        """
+        <div class="gps-hero">
+            <div class="gps-kicker">MVV Performance Dashboard</div>
+            <div class="gps-title">GPS Data Overview</div>
+            <div class="gps-subtitle">
+                Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
+                De dataflow en caching blijven gelijk; alleen de pagina-opmaak en grafiekstijl zijn vernieuwd.
+            </div>
+            <div class="gps-pill-row">
+                <div class="gps-pill">Summary-only analyses</div>
+                <div class="gps-pill">ACWR thresholds per week</div>
+                <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
+                <div class="gps-pill">Benchmarks uit match events</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_controls_header(scope_key: str, sub_page: str) -> None:
+    st.markdown(
+        f"""
+        <div class="gps-card">
+            <h4>Actieve selectie</h4>
+            <div class="gps-pill-row">
+                <div class="gps-pill">Scope: {scope_key}</div>
+                <div class="gps-pill">Module: {sub_page}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 # -------------------------
 # Auth restore
@@ -303,7 +446,8 @@ def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
 # -------------------------
 # UI
 # -------------------------
-st.title("GPS Data")
+inject_gps_page_css()
+render_page_hero()
 
 access_token = get_access_token()
 if not access_token:
@@ -313,20 +457,24 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-scope_key = st.selectbox(
-    "Data scope (Summary-only)",
-    options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-    index=0,
-    key="gps_scope",
-)
+control_col1, control_col2 = st.columns([1.1, 1.4], vertical_alignment="bottom")
+with control_col1:
+    scope_key = st.selectbox(
+        "Data scope (Summary-only)",
+        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+        index=0,
+        key="gps_scope",
+    )
 
-sub_page = st.radio(
-    "Subpagina",
-    options=["Session Load", "ACWR", "FFP"],
-    horizontal=True,
-    key="gpsdata_subpage",
-)
+with control_col2:
+    sub_page = st.radio(
+        "Subpagina",
+        options=["Session Load", "ACWR", "FFP"],
+        horizontal=True,
+        key="gpsdata_subpage",
+    )
 
+render_controls_header(scope_key, sub_page)
 st.divider()
 
 calendar_df_all = fetch_calendar_dates_all_cached(access_token)
