@@ -1,6 +1,6 @@
 # pages/02_Match_Reports.py
 # ============================================================
-# Match Reports (Streamlit)
+# Match Reports (Streamlit) - Redesigned
 # - Opponent dropdown (A-Z) + Date dropdown (YYYY-MM-DD (H/A))
 # - Header: logos zelfde grootte, horizontaal gecentreerd, wisselen bij Away:
 #     Away  -> opponent links, MVV rechts
@@ -67,14 +67,154 @@ HEADER_HEIGHT = 34
 PAD_HEIGHT = 22
 LOGO_W = 170
 
+MVV_RED = "#C8102E"
+MVV_RED_LIGHT = "#E8213F"
+MVV_RED_DARK = "#8B0A1F"
+MVV_TEXT = "#F5F7FB"
+MVV_TEXT_SOFT = "rgba(245,247,251,0.76)"
+MVV_GRID = "rgba(255,255,255,0.08)"
+
 # -----------------------------
 # Global CSS
 # -----------------------------
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 1.3rem; }
-    [data-testid="stDataFrame"] div { overflow: visible !important; }
+    .block-container {
+        padding-top: 1.2rem;
+        padding-bottom: 2rem;
+    }
+
+    [data-testid="stDataFrame"] div {
+        overflow: visible !important;
+    }
+
+    .mr-kicker {
+        font-size: 11px;
+        letter-spacing: .24em;
+        text-transform: uppercase;
+        font-weight: 800;
+        color: rgba(255,255,255,.72);
+        margin-bottom: 6px;
+    }
+
+    .mr-sub {
+        color: rgba(255,255,255,.80);
+        margin-bottom: 14px;
+        line-height: 1.5;
+    }
+
+    .mr-hero {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 24px;
+        padding: 18px 20px 14px 20px;
+        margin-bottom: 18px;
+        background:
+            radial-gradient(circle at top left, rgba(200,16,46,0.20) 0%, rgba(200,16,46,0.07) 24%, rgba(0,0,0,0) 58%),
+            linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 45%, rgba(255,255,255,0.015) 100%);
+        box-shadow:
+            0 16px 40px rgba(0,0,0,0.22),
+            inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .mr-panel {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 20px;
+        padding: 14px 16px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.018) 100%);
+        box-shadow: 0 10px 24px rgba(0,0,0,.14);
+    }
+
+    .mr-chip-row {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 8px;
+    }
+
+    .mr-chip {
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(255,255,255,0.04);
+        font-weight: 700;
+        color: white;
+        font-size: 12px;
+    }
+
+    .mr-score {
+        font-weight: 900;
+        font-size: 54px;
+        line-height: 1;
+        margin-bottom: 12px;
+        color: #FFFFFF;
+    }
+
+    .mr-title {
+        font-weight: 850;
+        font-size: 30px;
+        margin-bottom: 10px;
+        color: #FFFFFF;
+    }
+
+    .mr-date {
+        opacity: .84;
+        font-weight: 700;
+        font-size: 14px;
+        margin-bottom: 6px;
+        color: rgba(255,255,255,.82);
+    }
+
+    .mr-kpi-card {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 20px;
+        padding: 14px 16px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.018) 100%);
+        box-shadow: 0 10px 24px rgba(0,0,0,.14);
+        min-height: 96px;
+    }
+
+    .mr-kpi-label {
+        font-size: 11px;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+        font-weight: 800;
+        color: rgba(255,255,255,.62);
+        margin-bottom: 10px;
+    }
+
+    .mr-kpi-value {
+        font-size: 20px;
+        line-height: 1.1;
+        font-weight: 850;
+        color: #FFFFFF;
+    }
+
+    div[data-testid="stTabs"] button {
+        border-radius: 999px !important;
+        padding: 10px 16px !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: rgba(255,255,255,0.02) !important;
+        color: rgba(255,255,255,0.80) !important;
+        font-weight: 700 !important;
+    }
+
+    div[data-testid="stTabs"] button[aria-selected="true"] {
+        background: linear-gradient(180deg, rgba(200,16,46,0.30) 0%, rgba(200,16,46,0.16) 100%) !important;
+        color: #FFFFFF !important;
+        border: 1px solid rgba(232,33,63,0.40) !important;
+        box-shadow: 0 8px 18px rgba(200,16,46,0.18);
+    }
+
+    .mr-section-label {
+        font-size: 11px;
+        letter-spacing: .22em;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: rgba(255,255,255,.72);
+        margin-bottom: 8px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -144,7 +284,7 @@ def _fmt_int0(x: Any) -> str:
     if pd.isna(x):
         return ""
     try:
-        return f"{int(round(float(x), 0)):,}"
+        return f"{int(round(float(x), 0)):,}".replace(",", " ")
     except Exception:
         return ""
 
@@ -185,56 +325,68 @@ def _percentile_color(val: float, q25: float, q50: float, q75: float) -> str:
     return green
 
 
-def _style_table(df: pd.DataFrame, abs_col: str, per_min_col: Optional[str]) -> "pd.io.formats.style.Styler":
-    dff = df.copy()
-
-    abs_vals = _safe_num(dff[abs_col]).replace([np.inf, -np.inf], np.nan).dropna()
-    if len(abs_vals) >= 2:
-        q25, q50, q75 = abs_vals.quantile([0.25, 0.50, 0.75]).tolist()
-    elif len(abs_vals) == 1:
-        q25 = q50 = q75 = float(abs_vals.iloc[0])
-    else:
-        q25 = q50 = q75 = 0.0
-
-    def _bg_abs(s: pd.Series) -> List[str]:
-        out: List[str] = []
-        for v in _safe_num(s).tolist():
-            if v is None or (isinstance(v, float) and np.isnan(v)):
-                out.append("")
-            else:
-                out.append(f"background-color: {_percentile_color(float(v), q25, q50, q75)};")
-        return out
-
-    fmt: Dict[str, Any] = {}
-
-    if abs_col == LABEL_MAX:
-        fmt[abs_col] = _fmt_max_speed2
-    else:
-        fmt[abs_col] = _fmt_int0
-
-    if per_min_col:
-        fmt[per_min_col] = _fmt_min2
-
-    sty = (
-        dff.style.format(fmt)
-        .apply(_bg_abs, subset=[abs_col])
-        .set_properties(subset=[LABEL_PLAYER], **{"text-align": "left"})
+def _kpi_card(label: str, value: str) -> None:
+    st.markdown(
+        f"""
+        <div class="mr-kpi-card">
+            <div class="mr-kpi-label">{label}</div>
+            <div class="mr-kpi-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-
-    numeric_cols = [c for c in dff.columns if c != LABEL_PLAYER]
-    sty = sty.set_properties(subset=numeric_cols, **{"text-align": "center"})
-    sty = sty.set_table_styles(
-        [
-            {"selector": "th", "props": [("text-align", "left"), ("font-weight", "600")]},
-            {"selector": "td", "props": [("border-color", "rgba(255,255,255,0.06)")]},
-        ]
-    )
-    return sty
 
 
 def _ha_tag(x: str) -> str:
     x2 = _norm_text(x)
     return "A" if x2.startswith("a") else "H"
+
+
+def _series_rank_colors(n: int) -> List[str]:
+    palette = [
+        "#FF335C",
+        "#F42B56",
+        "#E1224C",
+        "#CB1A42",
+        "#B7143A",
+        "#A11134",
+        "#8B0F2E",
+    ]
+    if n <= len(palette):
+        return palette[:n]
+    return [palette[min(i, len(palette) - 1)] for i in range(n)]
+
+
+def _base_plot_layout(fig: go.Figure, title: str) -> None:
+    fig.update_layout(
+        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=MVV_TEXT)),
+        height=430,
+        margin=dict(l=20, r=20, t=60, b=30),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.015)",
+        font=dict(color=MVV_TEXT, size=12),
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0.0,
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        bargap=0.18,
+    )
+    fig.update_xaxes(
+        tickangle=-35,
+        showgrid=False,
+        tickfont=dict(size=11),
+        automargin=True,
+    )
+    fig.update_yaxes(
+        gridcolor=MVV_GRID,
+        zeroline=False,
+        tickfont=dict(size=11),
+    )
 
 
 # -----------------------------
@@ -345,6 +497,29 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
 
 
 # -----------------------------
+# KPI row
+# -----------------------------
+def render_kpi_row(df_phase: pd.DataFrame) -> None:
+    if df_phase.empty:
+        return
+
+    n_players = len(df_phase)
+    med_td = float(df_phase[COL_TD].median()) if COL_TD in df_phase.columns else 0.0
+    med_spr = float(df_phase[COL_SPR].median()) if COL_SPR in df_phase.columns else 0.0
+    peak_speed = float(df_phase[COL_MAX].max()) if COL_MAX in df_phase.columns else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        _kpi_card("Spelers", str(n_players))
+    with c2:
+        _kpi_card("Mediaan TD", f"{_fmt_int0(med_td)} m")
+    with c3:
+        _kpi_card("Mediaan Sprint", f"{_fmt_int0(med_spr)} m")
+    with c4:
+        _kpi_card("Peak Speed", f"{_fmt_max_speed2(peak_speed)}")
+
+
+# -----------------------------
 # Charts
 # -----------------------------
 def plot_td_bar(df: pd.DataFrame, title: str) -> None:
@@ -352,25 +527,40 @@ def plot_td_bar(df: pd.DataFrame, title: str) -> None:
         st.info("Geen data voor grafiek.")
         return
 
-    dff = df.sort_values(COL_TD, ascending=False).copy()
-    fig = go.Figure(
-        data=[
-            go.Bar(
-                x=dff[COL_PLAYER],
-                y=dff[COL_TD],
-                marker=dict(color="#FF0033"),
-                name="TD",
-            )
-        ]
+    dff = df.sort_values(COL_TD, ascending=False).reset_index(drop=True).copy()
+    colors = _series_rank_colors(len(dff))
+    median_td = float(dff[COL_TD].median())
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=dff[COL_PLAYER],
+            y=dff[COL_TD],
+            marker=dict(
+                color=colors,
+                line=dict(color="rgba(255,255,255,0.18)", width=1.0),
+            ),
+            text=[_fmt_int0(v) for v in dff[COL_TD]],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>Total Distance: <b>%{y:,.0f} m</b><extra></extra>",
+            name="Total Distance",
+        )
     )
-    fig.update_layout(
-        height=330,
-        margin=dict(l=10, r=10, t=40, b=10),
-        title=title,
-        showlegend=False,
+
+    fig.add_hline(
+        y=median_td,
+        line_width=1.5,
+        line_dash="dash",
+        line_color="rgba(255,255,255,0.45)",
+        annotation_text=f"Mediaan: {_fmt_int0(median_td)} m",
+        annotation_position="top left",
+        annotation_font=dict(size=11, color="rgba(255,255,255,0.72)"),
     )
-    fig.update_xaxes(tickangle=90)
-    st.plotly_chart(fig, width="stretch")
+
+    _base_plot_layout(fig, title)
+    fig.update_yaxes(title_text="Meters")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
@@ -378,38 +568,126 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
         st.info("Geen data voor grafiek.")
         return
 
-    dff = df.sort_values(COL_SPR, ascending=False).copy()
+    dff = df.sort_values(COL_SPR, ascending=False).reset_index(drop=True).copy()
+    sprint_med = float(dff[COL_SPR].median())
+    hs_med = float(dff[COL_HSPR].median())
+
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=dff[COL_PLAYER],
             y=dff[COL_SPR],
-            name="sprint",
-            marker=dict(color="rgba(255,0,51,0.85)"),
+            name="Sprint",
+            marker=dict(
+                color="rgba(232,33,63,0.92)",
+                line=dict(color="rgba(255,255,255,0.14)", width=1),
+            ),
+            hovertemplate="<b>%{x}</b><br>Sprint: <b>%{y:,.0f} m</b><extra></extra>",
         )
     )
     fig.add_trace(
         go.Bar(
             x=dff[COL_PLAYER],
             y=dff[COL_HSPR],
-            name="high_sprint",
-            marker=dict(color="rgba(255,0,51,0.45)"),
+            name="High Sprint",
+            marker=dict(
+                color="rgba(255,110,130,0.60)",
+                line=dict(color="rgba(255,255,255,0.12)", width=1),
+            ),
+            hovertemplate="<b>%{x}</b><br>High Sprint: <b>%{y:,.0f} m</b><extra></extra>",
         )
     )
-    fig.update_layout(
-        barmode="group",
-        height=330,
-        margin=dict(l=10, r=10, t=40, b=10),
-        title=title,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+
+    fig.add_hline(
+        y=sprint_med,
+        line_width=1.2,
+        line_dash="dot",
+        line_color="rgba(255,255,255,0.36)",
+        annotation_text=f"Mediaan Sprint: {_fmt_int0(sprint_med)} m",
+        annotation_position="top left",
+        annotation_font=dict(size=10, color="rgba(255,255,255,0.68)"),
     )
-    fig.update_xaxes(tickangle=90)
-    st.plotly_chart(fig, width="stretch")
+    fig.add_hline(
+        y=hs_med,
+        line_width=1.2,
+        line_dash="dash",
+        line_color="rgba(255,180,190,0.40)",
+        annotation_text=f"Mediaan High Sprint: {_fmt_int0(hs_med)} m",
+        annotation_position="top right",
+        annotation_font=dict(size=10, color="rgba(255,255,255,0.68)"),
+    )
+
+    _base_plot_layout(fig, title)
+    fig.update_layout(barmode="group")
+    fig.update_yaxes(title_text="Meters")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
 
 # -----------------------------
-# Tables row
+# Tables
 # -----------------------------
+def _style_table(df: pd.DataFrame, abs_col: str, per_min_col: Optional[str]) -> "pd.io.formats.style.Styler":
+    dff = df.copy()
+
+    abs_vals = _safe_num(dff[abs_col]).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(abs_vals) >= 2:
+        q25, q50, q75 = abs_vals.quantile([0.25, 0.50, 0.75]).tolist()
+    elif len(abs_vals) == 1:
+        q25 = q50 = q75 = float(abs_vals.iloc[0])
+    else:
+        q25 = q50 = q75 = 0.0
+
+    def _bg_abs(s: pd.Series) -> List[str]:
+        out: List[str] = []
+        for v in _safe_num(s).tolist():
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                out.append("")
+            else:
+                out.append(f"background-color: {_percentile_color(float(v), q25, q50, q75)};")
+        return out
+
+    fmt: Dict[str, Any] = {}
+
+    if abs_col == LABEL_MAX:
+        fmt[abs_col] = _fmt_max_speed2
+    else:
+        fmt[abs_col] = _fmt_int0
+
+    if per_min_col:
+        fmt[per_min_col] = _fmt_min2
+
+    sty = (
+        dff.style.format(fmt)
+        .apply(_bg_abs, subset=[abs_col])
+        .set_properties(subset=[LABEL_PLAYER], **{"text-align": "left"})
+    )
+
+    numeric_cols = [c for c in dff.columns if c != LABEL_PLAYER]
+    sty = sty.set_properties(subset=numeric_cols, **{"text-align": "center"})
+    sty = sty.set_table_styles(
+        [
+            {
+                "selector": "th",
+                "props": [
+                    ("text-align", "left"),
+                    ("font-weight", "700"),
+                    ("background-color", "rgba(255,255,255,0.04)"),
+                    ("color", "#F5F7FB"),
+                    ("border-color", "rgba(255,255,255,0.08)"),
+                ],
+            },
+            {
+                "selector": "td",
+                "props": [
+                    ("border-color", "rgba(255,255,255,0.06)"),
+                    ("color", "#F5F7FB"),
+                ],
+            },
+        ]
+    )
+    return sty
+
+
 def render_tables_row(df_phase: pd.DataFrame) -> None:
     if df_phase.empty:
         st.info("Geen data voor tabellen.")
@@ -461,24 +739,45 @@ def render_tables_row(df_phase: pd.DataFrame) -> None:
     t5, abs5, per5 = _make_tbl(COL_MAX, None, LABEL_MAX)
     t5 = t5.sort_values(LABEL_MAX, ascending=False)
 
-    tables = [
-        (t1, abs1, per1),
-        (t2, abs2, per2),
-        (t3, abs3, per3),
-        (t4, abs4, per4),
-        (t5, abs5, per5),
-    ]
+    tab_td, tab_run, tab_spr, tab_hspr, tab_max = st.tabs(
+        ["TD", "Running", "Sprint", "High Sprint", "Max Speed"]
+    )
 
-    cols = st.columns(5, gap="large")
-    for i, (tbl, abs_label, per_label) in enumerate(tables):
-        with cols[i]:
-            sty = _style_table(tbl, abs_col=abs_label, per_min_col=per_label)
-            st.dataframe(
-                sty,
-                width="stretch",
-                hide_index=True,
-                height=_calc_height(len(tbl)),
-            )
+    with tab_td:
+        st.dataframe(
+            _style_table(t1, abs_col=abs1, per_min_col=per1),
+            use_container_width=True,
+            hide_index=True,
+            height=_calc_height(len(t1)),
+        )
+    with tab_run:
+        st.dataframe(
+            _style_table(t2, abs_col=abs2, per_min_col=per2),
+            use_container_width=True,
+            hide_index=True,
+            height=_calc_height(len(t2)),
+        )
+    with tab_spr:
+        st.dataframe(
+            _style_table(t3, abs_col=abs3, per_min_col=per3),
+            use_container_width=True,
+            hide_index=True,
+            height=_calc_height(len(t3)),
+        )
+    with tab_hspr:
+        st.dataframe(
+            _style_table(t4, abs_col=abs4, per_min_col=per4),
+            use_container_width=True,
+            hide_index=True,
+            height=_calc_height(len(t4)),
+        )
+    with tab_max:
+        st.dataframe(
+            _style_table(t5, abs_col=abs5, per_min_col=per5),
+            use_container_width=True,
+            hide_index=True,
+            height=_calc_height(len(t5)),
+        )
 
 
 # -----------------------------
@@ -520,7 +819,9 @@ def render_match_header(match_row: pd.Series) -> None:
 
     title_line = fixture or f"{left_team} - {right_team}"
 
-    c1, c2, c3 = st.columns([1.2, 2.2, 1.2], vertical_alignment="center")
+    st.markdown('<div class="mr-hero">', unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns([1.1, 2.2, 1.1], vertical_alignment="center")
 
     with c1:
         if left_logo and left_logo.exists():
@@ -530,20 +831,13 @@ def render_match_header(match_row: pd.Series) -> None:
         st.markdown(
             f"""
             <div style="text-align:center;">
-              <div style="opacity:.85; font-weight:650; font-size:14px; margin-bottom:6px;">
-                {match_date.isoformat()}
-              </div>
-              <div style="font-weight:850; font-size:28px; margin-bottom:10px;">
-                {title_line}
-              </div>
-              <div style="font-weight:900; font-size:52px; line-height:1; margin-bottom:14px;">
-                {score_txt}
-              </div>
-
-              <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:6px;">
-                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:650;">{home_away}</span>
-                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:650;">{match_type}</span>
-                <span style="padding:6px 12px; border-radius:999px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); font-weight:650;">{season}</span>
+              <div class="mr-date">{match_date.isoformat()}</div>
+              <div class="mr-title">{title_line}</div>
+              <div class="mr-score">{score_txt}</div>
+              <div class="mr-chip-row">
+                <span class="mr-chip">{home_away}</span>
+                <span class="mr-chip">{match_type}</span>
+                <span class="mr-chip">{season}</span>
               </div>
             </div>
             """,
@@ -553,6 +847,8 @@ def render_match_header(match_row: pd.Series) -> None:
     with c3:
         if right_logo and right_logo.exists():
             st.image(str(right_logo), width=LOGO_W)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # -----------------------------
@@ -568,7 +864,11 @@ def main() -> None:
 
     _ = get_profile(sb)
 
-    st.title("Match Reports")
+    st.markdown('<div class="mr-kicker">Match Reports</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mr-sub">Professionele wedstrijdrapportage met matchheader, grafieken en per-speler tabellen op basis van GPS-match events.</div>',
+        unsafe_allow_html=True,
+    )
 
     matches_df = fetch_matches_rows(limit=1000)
     if matches_df.empty:
@@ -584,9 +884,9 @@ def main() -> None:
         key=lambda x: x.lower(),
     )
 
-    top_l, top_r = st.columns([1.2, 2.0])
+    select_l, select_r = st.columns([1.2, 2.0])
 
-    with top_l:
+    with select_l:
         sel_opp = st.selectbox("Opponent", options=opponents, index=0, key="mr_opp")
 
     df_opp = (
@@ -597,7 +897,7 @@ def main() -> None:
 
     date_options = df_opp["date_label"].tolist()
 
-    with top_r:
+    with select_r:
         sel_date_label = st.selectbox("Date", options=date_options, index=0, key="mr_date")
 
     match_row = df_opp[df_opp["date_label"] == sel_date_label].iloc[0]
@@ -605,13 +905,13 @@ def main() -> None:
 
     render_match_header(match_row)
 
-    st.divider()
-
+    st.markdown('<div class="mr-section-label">Fase</div>', unsafe_allow_html=True)
     phase = st.radio(
-        "Tables",
+        "Fase",
         [EVENT_FULL, EVENT_FIRST, EVENT_SECOND],
         horizontal=True,
         key="mr_phase",
+        label_visibility="collapsed",
     )
 
     df_events = fetch_match_events_for_match(match_id)
@@ -620,14 +920,19 @@ def main() -> None:
         st.stop()
 
     df_phase = build_phase_df(df_events, phase)
+    if df_phase.empty:
+        st.info("Geen data voor deze fase.")
+        st.stop()
 
-    left, right = st.columns(2)
-    with left:
+    render_kpi_row(df_phase)
+
+    chart_l, chart_r = st.columns(2)
+    with chart_l:
         plot_td_bar(df_phase, title=f"Total Distance ({phase})")
-    with right:
+    with chart_r:
         plot_sprint_vs_high(df_phase, title=f"Sprint vs High Sprint ({phase})")
 
-    st.markdown("## Tables")
+    st.markdown("### Tables")
     render_tables_row(df_phase)
 
 
