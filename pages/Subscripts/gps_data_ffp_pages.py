@@ -1,10 +1,17 @@
-# ffp_pages.py
+# pages/Subscripts/gps_data_ffp_pages.py
 # ============================================
 # Fitness–Fatigue–Performance per speler
 # - Week-modus: per week (Year + Week -> correcte sortering over jaarwisseling)
 # - Extra: Dag-modus (per datum)
-# - Alleen Event == 'Summary' (zoals bij Session Load / ACWR)
+# - Alleen Event == 'Summary'
+#
+# Aangepast:
+# - Default metric = playerload2D
+# - gps_id wordt uitgesloten als load-metric
+# - Modelinstellingen staan in de sidebar
 # ============================================
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -12,78 +19,25 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
-TEXT = "#F5F7FB"
-TEXT_MUTED = "rgba(245,247,251,0.68)"
-GRID = "rgba(255,255,255,0.08)"
-PLOT_BG = "rgba(255,255,255,0.018)"
-LOAD_BAR = "rgba(232,33,63,0.38)"
-FIT_COLOR = "#00C46A"
-FAT_COLOR = "#FF6B6B"
-PERF_COLOR = "#55A8FF"
-
-def _section_label(title: str, subtitle: str | None = None) -> None:
-    html = f'<div style="margin:0 0 0.8rem 0;"><div style="font-size:0.82rem;letter-spacing:0.16em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{title}</div>'
-    if subtitle:
-        html += f'<div style="font-size:0.95rem;color:{TEXT_MUTED};margin-top:0.32rem;">{subtitle}</div>'
-    html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
-
-def _metric_card(label: str, value: str) -> None:
-    st.markdown(
-        f"""
-        <div style="
-            border:1px solid rgba(255,255,255,0.08);
-            border-radius:18px;
-            padding:0.8rem 1rem;
-            background:rgba(255,255,255,0.035);
-            min-height:92px;">
-            <div style="font-size:0.78rem;letter-spacing:0.14em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{label}</div>
-            <div style="font-size:1.45rem;color:{TEXT};font-weight:800;margin-top:0.35rem;">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def _style_ffp_figure(fig: go.Figure, title: str, x_title: str, y_left: str, y_right: str) -> go.Figure:
-    fig.update_layout(
-        title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=TEXT)),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=TEXT, size=12),
-        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0),
-        margin=dict(l=30, r=20, t=70, b=70),
-        hovermode="x unified",
-        bargap=0.18,
-    )
-    fig.update_xaxes(title_text=x_title, showgrid=False, zeroline=False, tickfont=dict(color=TEXT, size=11))
-    fig.update_yaxes(title_text=y_left, secondary_y=False, showgrid=True, gridcolor=GRID, zeroline=False, tickfont=dict(color=TEXT, size=11))
-    fig.update_yaxes(title_text=y_right, secondary_y=True, showgrid=False, zeroline=False, tickfont=dict(color=TEXT, size=11))
-    return fig
+# ------------------------------------------------------------
+# CONFIG
+# ------------------------------------------------------------
+DEFAULT_FFP_METRIC = "playerload2D"
 
 # ------------------------------------------------------------
-# CONFIG: pas hier je standaard parameter aan (default selectie)
-# ------------------------------------------------------------
-DEFAULT_FFP_METRIC = "PlayerLoad2D"  # <-- wijzig dit naar jouw gewenste default
-# Voorbeelden die vaak bestaan: "Total Distance", "Sprint Distance", "High Sprint Distance", "PlayerLoad2D"
-
-
-# ------------------------------------------------------------
-# Kolomnamen (database)
+# Kolomnamen
 # ------------------------------------------------------------
 COL_PLAYER = "Speler"
-COL_DATE   = "Datum"
-COL_EVENT  = "Event"
-COL_WEEK   = "Week"
-COL_YEAR   = "Year"
+COL_DATE = "Datum"
+COL_EVENT = "Event"
+COL_WEEK = "Week"
+COL_YEAR = "Year"
 
 
 # ------------------------------------------------------------
-# Helpers om kolommen te vinden
+# Helpers
 # ------------------------------------------------------------
-
 def _find_week_col(df: pd.DataFrame) -> str | None:
-    """Zoek naar een kolom die 'week' heet (case-insensitive)."""
     for c in df.columns:
         if str(c).strip().lower() == "week":
             return c
@@ -91,7 +45,6 @@ def _find_week_col(df: pd.DataFrame) -> str | None:
 
 
 def _find_year_col(df: pd.DataFrame) -> str | None:
-    """Zoek naar een kolom die 'year' heet (case-insensitive)."""
     for c in df.columns:
         if str(c).strip().lower() == "year":
             return c
@@ -108,11 +61,6 @@ def _ensure_datetime(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
 
 
 def _filter_summary_only(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Forceer Summary-only zoals bij Session Load / ACWR:
-    - Als 'Event' bestaat en er komt 'Summary' voor: filter strikt op Summary.
-    - Als 'Event' niet bestaat of Summary komt niet voor: laat df ongemoeid.
-    """
     out = df.copy()
     if COL_EVENT in out.columns:
         ev = out[COL_EVENT].astype(str).str.strip().str.lower()
@@ -122,17 +70,24 @@ def _filter_summary_only(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _detect_load_metrics(df: pd.DataFrame) -> list[str]:
-    """
-    Zoek alle numerieke load-kolommen (zelfde idee als ACWR-filter):
-    - geen ID/metadata kolommen
-    - geen Max/Avg speed/HR
-    - geen /min-kolommen
-    """
     exclude_id = {
-        "Speler", "Hoofdpositie", "Subpositie", "Datum", "Week", "Year",
-        "Type", "Event", "Wedstrijd", "Opponent", "Tegenstander",
-        # afgeleide/extra velden die soms bestaan:
-        "EVENT_NORM", "iso_year", "iso_week", "week_key", "week_label",
+        "gps_id",
+        "Speler",
+        "Hoofdpositie",
+        "Subpositie",
+        "Datum",
+        "Week",
+        "Year",
+        "Type",
+        "Event",
+        "Wedstrijd",
+        "Opponent",
+        "Tegenstander",
+        "EVENT_NORM",
+        "iso_year",
+        "iso_week",
+        "week_key",
+        "week_label",
     }
     exclude_explicit = {"Max Speed", "Avg Speed", "Avg HR", "Max HR"}
 
@@ -151,22 +106,11 @@ def _detect_load_metrics(df: pd.DataFrame) -> list[str]:
 
 
 def _add_week_key_and_label(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    FIX jaarwisseling (ACWR-style):
-    Prefer:
-      week_key = Year*100 + Week  (YYYYWW)
-      week_label = YYYY-WWW
-    Fallback:
-      ISO-year/week uit Datum -> week_key/label
-    Laatste fallback:
-      alleen Week -> week_key = week, week_label = Wxx
-    """
     out = df.copy()
 
     week_col = _find_week_col(out)
     year_col = _find_year_col(out)
 
-    # 1) Prefer: Year + Week
     if year_col is not None and week_col is not None:
         out[year_col] = pd.to_numeric(out[year_col], errors="coerce").astype("Int64")
         out[week_col] = pd.to_numeric(out[week_col], errors="coerce").astype("Int64")
@@ -178,7 +122,6 @@ def _add_week_key_and_label(df: pd.DataFrame) -> pd.DataFrame:
             axis=1,
         )
 
-    # 2) Fallback: ISO-week uit Datum (als week_key grotendeels leeg is)
     if ("week_key" not in out.columns) or (out["week_key"].isna().mean() > 0.50):
         if COL_DATE in out.columns:
             out = _ensure_datetime(out, COL_DATE)
@@ -193,7 +136,6 @@ def _add_week_key_and_label(df: pd.DataFrame) -> pd.DataFrame:
                     axis=1,
                 )
 
-    # 3) Laatste fallback: alleen Week
     if ("week_key" not in out.columns) or (out["week_key"].isna().all()):
         if week_col is None:
             raise ValueError("Geen 'Week'- of 'Datum'-kolom gevonden in GPS-data.")
@@ -205,73 +147,38 @@ def _add_week_key_and_label(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------
-# Weekly load (met jaarwisseling-fix via week_key)
+# Weekly / Daily load
 # ------------------------------------------------------------
-
-def _weekly_load_for_player(
-    df_gps: pd.DataFrame,
-    player: str,
-    metric: str,
-) -> pd.DataFrame:
-    """
-    Aggregeer load per week voor één speler.
-    - Filtert op Event == 'Summary' (als aanwezig).
-    - Gebruikt Year + Week voor correcte sortering over jaarwisseling (week_key).
-    Retourneert: week_key (int), week_label (str), load (float).
-    """
+def _weekly_load_for_player(df_gps: pd.DataFrame, player: str, metric: str) -> pd.DataFrame:
     df = df_gps.copy()
-
-    # Filter op speler
     df = df[df[COL_PLAYER] == player].copy()
     if df.empty:
         return pd.DataFrame(columns=["week_key", "week_label", "load"])
 
-    # Summary-only
     df = _filter_summary_only(df)
-
-    # Week key/label toevoegen
     df = _add_week_key_and_label(df)
 
-    # Metric numeriek maken
     df[metric] = pd.to_numeric(df[metric], errors="coerce").fillna(0.0)
 
     weekly = (
         df.dropna(subset=["week_key"])
-          .groupby(["week_key", "week_label"], as_index=False)[metric]
-          .sum()
-          .rename(columns={metric: "load"})
+        .groupby(["week_key", "week_label"], as_index=False)[metric]
+        .sum()
+        .rename(columns={metric: "load"})
     )
 
     weekly["week_key"] = pd.to_numeric(weekly["week_key"], errors="coerce").astype("Int64")
     weekly = weekly.dropna(subset=["week_key"]).sort_values("week_key").reset_index(drop=True)
     weekly["week_key"] = weekly["week_key"].astype(int)
-
     return weekly
 
 
-# ------------------------------------------------------------
-# Daily load
-# ------------------------------------------------------------
-
-def _daily_load_for_player(
-    df_gps: pd.DataFrame,
-    player: str,
-    metric: str,
-) -> pd.DataFrame:
-    """
-    Aggregeer load per dag voor één speler.
-    - Filtert op Event == 'Summary' (als aanwezig).
-    - Gebruikt kolom 'Datum' (datetime).
-    Retourneert: date (datetime.date), load (float).
-    """
+def _daily_load_for_player(df_gps: pd.DataFrame, player: str, metric: str) -> pd.DataFrame:
     df = df_gps.copy()
-
-    # Filter op speler
     df = df[df[COL_PLAYER] == player].copy()
     if df.empty:
         return pd.DataFrame(columns=["date", "load"])
 
-    # Summary-only
     df = _filter_summary_only(df)
 
     if COL_DATE not in df.columns:
@@ -279,23 +186,21 @@ def _daily_load_for_player(
     df = _ensure_datetime(df, COL_DATE)
     df = df[df[COL_DATE].notna()].copy()
 
-    # Metric numeriek maken
     df[metric] = pd.to_numeric(df[metric], errors="coerce").fillna(0.0)
 
     df["_DATE_ONLY"] = df[COL_DATE].dt.date
     daily = (
         df.groupby("_DATE_ONLY", as_index=False)[metric]
-          .sum()
-          .rename(columns={"_DATE_ONLY": "date", metric: "load"})
+        .sum()
+        .rename(columns={"_DATE_ONLY": "date", metric: "load"})
     )
     daily = daily.sort_values("date").reset_index(drop=True)
     return daily
 
 
 # ------------------------------------------------------------
-# Banister-achtig Fitness–Fatigue model
+# Banister model
 # ------------------------------------------------------------
-
 def _impulse_response_model(
     load: np.ndarray,
     tau_fit: float = 4.0,
@@ -303,20 +208,13 @@ def _impulse_response_model(
     k_fit: float = 1.0,
     k_fat: float = 2.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Eenvoudig Fitness–Fatigue model met één stap per tijdseenheid
-    (week of dag, afhankelijk van de input-load).
-    F_t = F_{t-1} * exp(-1/tau_fit) + k_fit * load_t
-    D_t = D_{t-1} * exp(-1/tau_fat) + k_fat * load_t
-    Performance_t = F_t - D_t
-    """
     load = np.asarray(load, dtype=float)
     n = load.size
     F = np.zeros(n, dtype=float)
     D = np.zeros(n, dtype=float)
 
     alpha = np.exp(-1.0 / tau_fit)
-    beta  = np.exp(-1.0 / tau_fat)
+    beta = np.exp(-1.0 / tau_fat)
 
     for t in range(n):
         if t == 0:
@@ -324,16 +222,15 @@ def _impulse_response_model(
             D[t] = k_fat * load[t]
         else:
             F[t] = F[t - 1] * alpha + k_fit * load[t]
-            D[t] = D[t - 1] * beta  + k_fat * load[t]
+            D[t] = D[t - 1] * beta + k_fat * load[t]
 
     P = F - D
     return F, D, P
 
 
 # ------------------------------------------------------------
-# Plot: week-modus (x = week_label, sortering via week_key in data)
+# Plots
 # ------------------------------------------------------------
-
 def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
     x = weekly_df["week_label"].astype(str).to_numpy()
     load = weekly_df["load"].to_numpy()
@@ -342,22 +239,22 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
     perf = weekly_df["performance"].to_numpy()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
+
     fig.add_trace(
         go.Bar(
             x=x,
             y=load,
             name=f"Load ({metric})",
-            marker=dict(color=LOAD_BAR, line=dict(color="rgba(255,255,255,0.12)", width=1.0)),
-            hovertemplate="<b>%{x}</b><br>Load: %{y:.2f}<extra></extra>",
+            opacity=0.35,
         ),
         secondary_y=False,
     )
+
     fig.add_trace(
         go.Scatter(
             x=x, y=fit, name="Fitness",
             mode="lines+markers",
-            line=dict(color=FIT_COLOR, width=2.5, shape="spline"),
-            marker=dict(size=7),
+            line=dict(color="#00FF88", width=2, shape="spline"),
         ),
         secondary_y=True,
     )
@@ -365,8 +262,7 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=x, y=fat, name="Fatigue",
             mode="lines+markers",
-            line=dict(color=FAT_COLOR, width=2.5, shape="spline"),
-            marker=dict(size=7),
+            line=dict(color="#FF5555", width=2, shape="spline"),
         ),
         secondary_y=True,
     )
@@ -374,25 +270,24 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=x, y=perf, name="Performance",
             mode="lines+markers",
-            line=dict(color=PERF_COLOR, width=3, shape="spline"),
-            marker=dict(size=7),
+            line=dict(color="#66CCFF", width=3, shape="spline"),
         ),
         secondary_y=True,
     )
 
-    _style_ffp_figure(
-        fig,
+    fig.update_xaxes(title_text="Week")
+    fig.update_yaxes(title_text=f"Load ({metric})", secondary_y=False)
+    fig.update_yaxes(title_text="Fitness / Fatigue / Performance (relatief)", secondary_y=True)
+
+    fig.update_layout(
         title=f"FFP – {player}",
-        x_title="Week",
-        y_left=f"Load ({metric})",
-        y_right="Fitness / Fatigue / Performance",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+        margin=dict(l=10, r=10, t=50, b=10),
+        bargap=0.15,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
 
+    st.plotly_chart(fig, use_container_width=True)
 
-# ------------------------------------------------------------
-# Plot: dag-modus
-# ------------------------------------------------------------
 
 def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
     dates = daily_df["date"].to_numpy()
@@ -402,22 +297,22 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
     perf = daily_df["performance"].to_numpy()
 
     fig = make_subplots(specs=[[{"secondary_y": True}]])
+
     fig.add_trace(
         go.Bar(
             x=dates,
             y=load,
             name=f"Load ({metric})",
-            marker=dict(color=LOAD_BAR, line=dict(color="rgba(255,255,255,0.12)", width=1.0)),
-            hovertemplate="<b>%{x}</b><br>Load: %{y:.2f}<extra></extra>",
+            opacity=0.35,
         ),
         secondary_y=False,
     )
+
     fig.add_trace(
         go.Scatter(
             x=dates, y=fit, name="Fitness",
             mode="lines+markers",
-            line=dict(color=FIT_COLOR, width=2.5, shape="spline"),
-            marker=dict(size=6),
+            line=dict(color="#00FF88", width=2, shape="spline"),
         ),
         secondary_y=True,
     )
@@ -425,8 +320,7 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=dates, y=fat, name="Fatigue",
             mode="lines+markers",
-            line=dict(color=FAT_COLOR, width=2.5, shape="spline"),
-            marker=dict(size=6),
+            line=dict(color="#FF5555", width=2, shape="spline"),
         ),
         secondary_y=True,
     )
@@ -434,32 +328,30 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
         go.Scatter(
             x=dates, y=perf, name="Performance",
             mode="lines+markers",
-            line=dict(color=PERF_COLOR, width=3, shape="spline"),
-            marker=dict(size=6),
+            line=dict(color="#66CCFF", width=3, shape="spline"),
         ),
         secondary_y=True,
     )
 
-    _style_ffp_figure(
-        fig,
+    fig.update_xaxes(title_text="Datum")
+    fig.update_yaxes(title_text=f"Load ({metric})", secondary_y=False)
+    fig.update_yaxes(title_text="Fitness / Fatigue / Performance (relatief)", secondary_y=True)
+
+    fig.update_layout(
         title=f"FFP – {player}",
-        x_title="Datum",
-        y_left=f"Load ({metric})",
-        y_right="Fitness / Fatigue / Performance",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+        margin=dict(l=10, r=10, t=50, b=10),
+        bargap=0.15,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+
+    st.plotly_chart(fig, use_container_width=True)
 
 
 # ------------------------------------------------------------
-# Hoofdfunctie voor Streamlit
+# Main
 # ------------------------------------------------------------
-
 def ffp_pages_main(df_gps: pd.DataFrame):
-    """
-    Hoofdpagina Fitness/Fatigue in de app.
-    Verwacht de ruwe GPS-sheet als input.
-    """
-    _section_label("Fitness–Fatigue–Performance", "Banister-achtig model met week- of dagmodus op basis van Summary-data.")
+    st.header("Fitness–Fatigue–Performance")
 
     required_cols = {COL_PLAYER}
     missing = required_cols - set(df_gps.columns)
@@ -467,7 +359,6 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         st.error(f"Ontbrekende verplichte kolommen in GPS-sheet: {missing}")
         return
 
-    # Summary-only dataset gebruiken voor metric detectie (consistente lijst)
     df_summary = _filter_summary_only(df_gps)
 
     metrics = _detect_load_metrics(df_summary)
@@ -480,15 +371,8 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen spelers gevonden in Summary-data.")
         return
 
-    # Default metric index: via DEFAULT_FFP_METRIC, anders eerste metric
-    if DEFAULT_FFP_METRIC in metrics:
-        default_metric_idx = metrics.index(DEFAULT_FFP_METRIC)
-    else:
-        default_metric_idx = 0
+    default_metric_idx = metrics.index(DEFAULT_FFP_METRIC) if DEFAULT_FFP_METRIC in metrics else 0
 
-    # -----------------------------
-    # Selecties
-    # -----------------------------
     col_sel1, col_sel2, col_sel3 = st.columns([1.4, 1.4, 1.0])
     with col_sel1:
         player = st.selectbox("Kies speler", players)
@@ -498,7 +382,7 @@ def ffp_pages_main(df_gps: pd.DataFrame):
             "Kies load-parameter",
             metrics,
             index=default_metric_idx,
-            help=f"Default wordt bepaald door DEFAULT_FFP_METRIC = '{DEFAULT_FFP_METRIC}' bovenaan het script.",
+            help=f"Default staat op '{DEFAULT_FFP_METRIC}'.",
         )
 
     with col_sel3:
@@ -509,55 +393,52 @@ def ffp_pages_main(df_gps: pd.DataFrame):
             help="Kies of je het model per week of per dag wilt bekijken.",
         )
 
-    c_stat1, c_stat2, c_stat3 = st.columns(3)
-    with c_stat1:
-        _metric_card("Speler", player)
-    with c_stat2:
-        _metric_card("Parameter", metric)
-    with c_stat3:
-        _metric_card("Modus", x_mode)
+    with st.sidebar:
+        with st.expander("FFP modelinstellingen", expanded=False):
+            if x_mode == "Week":
+                tau_help_unit = "weken"
+                default_tau_fit = 4.0
+                default_tau_fat = 1.5
+            else:
+                tau_help_unit = "dagen"
+                default_tau_fit = 28.0
+                default_tau_fat = 10.5
 
-    # -----------------------------
-    # Modelinstellingen
-    # -----------------------------
-    with st.expander("Modelinstellingen (Fitness/Fatigue)", expanded=False):
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        if x_mode == "Week":
-            tau_help_unit = "weken"
-            default_tau_fit = 4.0
-            default_tau_fat = 1.5
-        else:
-            tau_help_unit = "dagen"
-            default_tau_fit = 28.0
-            default_tau_fat = 10.5
-
-        with col_m1:
             tau_fit = st.number_input(
                 f"Tau fitness ({tau_help_unit})",
-                min_value=0.5, max_value=120.0,
+                min_value=0.5,
+                max_value=120.0,
                 value=float(default_tau_fit),
                 step=0.5,
+                key="ffp_tau_fit_sidebar",
             )
-        with col_m2:
             tau_fat = st.number_input(
                 f"Tau fatigue ({tau_help_unit})",
-                min_value=0.5, max_value=120.0,
+                min_value=0.5,
+                max_value=120.0,
                 value=float(default_tau_fat),
                 step=0.5,
+                key="ffp_tau_fat_sidebar",
             )
-        with col_m3:
-            k_fit = st.number_input("Gain fitness (k_f)", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
-        with col_m4:
-            k_fat = st.number_input("Gain fatigue (k_d)", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
+            k_fit = st.number_input(
+                "Gain fitness (k_f)",
+                min_value=0.1,
+                max_value=10.0,
+                value=1.0,
+                step=0.1,
+                key="ffp_k_fit_sidebar",
+            )
+            k_fat = st.number_input(
+                "Gain fatigue (k_d)",
+                min_value=0.1,
+                max_value=10.0,
+                value=2.0,
+                step=0.1,
+                key="ffp_k_fat_sidebar",
+            )
 
-        st.markdown(
-            "Bij grotere **tau** blijft het effect langer hangen. "
-            "Fatigue heeft meestal een kortere tau en hogere gain dan fitness."
-        )
+            st.caption("Grotere tau = effect blijft langer hangen. Fatigue heeft meestal kortere tau en hogere gain.")
 
-    # -----------------------------
-    # Data en model
-    # -----------------------------
     if x_mode == "Week":
         time_df = _weekly_load_for_player(df_summary, player, metric)
         if time_df.empty:
@@ -573,16 +454,16 @@ def ffp_pages_main(df_gps: pd.DataFrame):
             k_fat=float(k_fat),
         )
 
-        time_df["fitness"]     = F
-        time_df["fatigue"]     = D
+        time_df["fitness"] = F
+        time_df["fatigue"] = D
         time_df["performance"] = P
 
         _plot_ffp_week(time_df, metric, player)
 
         with st.expander("Data – wekelijkse waarden", expanded=False):
-            st.dataframe(time_df, use_container_width=True, hide_index=True)
+            st.dataframe(time_df, use_container_width=True)
 
-    else:  # Dag
+    else:
         time_df = _daily_load_for_player(df_summary, player, metric)
         if time_df.empty:
             st.warning("Geen dagelijkse load gevonden voor deze selectie.")
@@ -597,11 +478,11 @@ def ffp_pages_main(df_gps: pd.DataFrame):
             k_fat=float(k_fat),
         )
 
-        time_df["fitness"]     = F
-        time_df["fatigue"]     = D
+        time_df["fitness"] = F
+        time_df["fatigue"] = D
         time_df["performance"] = P
 
         _plot_ffp_day(time_df, metric, player)
 
         with st.expander("Data – dagelijkse waarden", expanded=False):
-            st.dataframe(time_df, use_container_width=True, hide_index=True)
+            st.dataframe(time_df, use_container_width=True)
