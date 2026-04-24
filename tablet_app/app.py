@@ -367,13 +367,20 @@ st.markdown(
       }
 
       div.stFormSubmitButton > button {
-        background: linear-gradient(135deg, #182033 0%, #0f172a 100%) !important;
-        color: #ffffff !important;
-        border: 1px solid rgba(15, 23, 42, 0.45) !important;
+        background: #ffffff !important;
+        color: var(--mvv-deep) !important;
+        border: 1px solid rgba(200, 16, 46, 0.20) !important;
+        box-shadow: 0 10px 24px rgba(78, 8, 18, 0.06) !important;
+      }
+
+      div.stFormSubmitButton > button:hover {
+        background: #ffffff !important;
+        color: var(--mvv-deep) !important;
+        border: 1px solid rgba(200, 16, 46, 0.32) !important;
       }
 
       div.stFormSubmitButton > button * {
-        color: #ffffff !important;
+        color: var(--mvv-deep) !important;
       }
 
       @media (max-width: 768px) {
