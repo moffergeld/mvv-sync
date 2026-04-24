@@ -119,7 +119,7 @@ st.markdown(
       }
 
       div[data-testid="stMetricValue"] {
-        color: var(--mvv-red);
+        color: var(--mvv-red) !important;
         font-size: 2.15rem;
         font-weight: 900;
       }
@@ -192,7 +192,7 @@ st.markdown(
         font-size: 0.78rem;
         font-weight: 900;
         letter-spacing: 0.16em;
-        color: rgba(255, 255, 255, 0.78);
+        color: rgba(255, 255, 255, 0.78) !important;
       }
 
       .tablet-hero h1 {
@@ -201,13 +201,14 @@ st.markdown(
         font-size: clamp(2.4rem, 5vw, 4.2rem);
         line-height: 0.95;
         letter-spacing: 0.02em;
+        color: #ffffff !important;
       }
 
       .tablet-hero p {
         margin: 0.45rem 0 0 0;
         font-size: 1.02rem;
         font-weight: 600;
-        color: rgba(255, 255, 255, 0.88);
+        color: rgba(255, 255, 255, 0.88) !important;
       }
 
       .mvv-section-card {
@@ -231,6 +232,26 @@ st.markdown(
       [data-testid="stNumberInput"] input,
       textarea {
         border-radius: 14px !important;
+      }
+
+      .stApp [data-testid="stTextInput"] input,
+      .stApp [data-testid="stNumberInput"] input,
+      .stApp [data-baseweb="select"] > div,
+      .stApp textarea {
+        background: #ffffff !important;
+        color: var(--mvv-deep) !important;
+      }
+
+      .stApp [data-baseweb="select"] * {
+        color: var(--mvv-deep) !important;
+      }
+
+      .stApp [data-testid="stTextInput"] input,
+      .stApp [data-testid="stNumberInput"] input,
+      .stApp [data-baseweb="select"] > div,
+      .stApp textarea {
+        border: 1px solid rgba(200, 16, 46, 0.18) !important;
+        box-shadow: none !important;
       }
 
       div[role="radiogroup"] label {
@@ -272,7 +293,7 @@ st.markdown(
 
       .stApp input::placeholder,
       .stApp textarea::placeholder {
-        color: rgba(20, 7, 10, 0.55) !important;
+        color: rgba(20, 7, 10, 0.62) !important;
       }
 
       .mvv-section-card,
@@ -284,11 +305,29 @@ st.markdown(
       .tablet-hero *,
       .mvv-logo-wrap,
       .mvv-logo-wrap * {
-        color: white;
+        color: white !important;
+      }
+
+      .tablet-hero-content,
+      .tablet-hero-content *,
+      .tablet-hero h1,
+      .tablet-hero p,
+      .tablet-hero-kicker {
+        color: #ffffff !important;
       }
 
       .mvv-logo-fallback {
         color: var(--mvv-red) !important;
+      }
+
+      div.stFormSubmitButton > button {
+        background: linear-gradient(135deg, #182033 0%, #0f172a 100%) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(15, 23, 42, 0.45) !important;
+      }
+
+      div.stFormSubmitButton > button * {
+        color: #ffffff !important;
       }
 
       @media (max-width: 768px) {
@@ -648,18 +687,17 @@ def show_flash() -> None:
 
 
 def render_top_actions(show_back: bool = False) -> None:
-    cols = st.columns([1, 1, 4])
+    if not show_back:
+        return
+
+    cols = st.columns([1, 5])
 
     with cols[0]:
-        if show_back and st.button("Spelers", use_container_width=True, key="tablet_back_to_list"):
+        if st.button("Spelers", use_container_width=True, key="tablet_back_to_list"):
             st.session_state.pop("tablet_player_id", None)
             st.session_state.pop("tablet_player_name", None)
             st.session_state.pop("tablet_active_form", None)
             st.rerun()
-
-    with cols[1]:
-        if st.button("Vergrendel", use_container_width=True, key=f"tablet_lock_{show_back}"):
-            lock_tablet()
 
 
 def render_player_picker(sb) -> None:
