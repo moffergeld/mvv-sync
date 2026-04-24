@@ -781,8 +781,6 @@ def render_player_picker(sb) -> None:
         st.info("Geen speler gevonden.")
         return
 
-    st.markdown('<div class="mvv-section-card"><b>Spelerslijst</b><br>Klik op een speler. Als wellness al is ingevuld, opent RPE automatisch.</div>', unsafe_allow_html=True)
-
     cols = st.columns(3)
     for idx, player in enumerate(filtered_players):
         player_id = player["player_id"]
@@ -858,12 +856,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     st.session_state["tablet_active_form"] = active_form
 
     if active_form == "Wellness":
-        st.markdown('<div class="mvv-section-card">', unsafe_allow_html=True)
-        if has_wellness:
-            st.success("Wellness staat al ingevuld voor vandaag.")
-        else:
-            st.info("Wellness staat nog open voor vandaag.")
-
         with st.form(f"tablet_asrm_form_{player_id}", clear_on_submit=False):
             _legend_asrm()
 
@@ -914,15 +906,8 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
-        st.markdown('</div>', unsafe_allow_html=True)
 
     if active_form == "RPE":
-        st.markdown('<div class="mvv-section-card">', unsafe_allow_html=True)
-        if has_rpe:
-            st.success("RPE staat al ingevuld voor vandaag.")
-        else:
-            st.info("RPE staat nog open voor vandaag.")
-
         injury_locations = [
             "None",
             "Foot",
@@ -1058,15 +1043,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.divider()
-
-    if has_wellness and has_rpe:
-        st.success("Alles staat erin voor vandaag.")
-    else:
-        st.info("Sla beide onderdelen op en ga daarna terug naar de spelerslijst.")
-
     if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
         st.session_state.pop("tablet_player_id", None)
         st.session_state.pop("tablet_player_name", None)
