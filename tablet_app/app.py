@@ -382,64 +382,90 @@ st.markdown(
       div.stFormSubmitButton > button * {
         color: var(--mvv-deep) !important;
       }
-
-      .st-key-tablet_nav_wellness_active button,
-      .st-key-tablet_nav_wellness_inactive button,
-      .st-key-tablet_nav_rpe_active button,
-      .st-key-tablet_nav_rpe_inactive button {
+      [class*="st-key-tablet_nav_"] button {
         min-height: 136px !important;
         border-radius: 24px !important;
         padding: 1.1rem 1.35rem !important;
         background: rgba(255, 255, 255, 0.92) !important;
         border: 2px solid rgba(200, 16, 46, 0.14) !important;
         box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08) !important;
+        position: relative !important;
         display: flex !important;
         align-items: center !important;
-        justify-content: flex-start !important;
-        text-align: left !important;
+        justify-content: center !important;
+        text-align: center !important;
+        font-size: 0 !important;
+        color: transparent !important;
       }
 
-      .st-key-tablet_nav_wellness_active button,
-      .st-key-tablet_nav_rpe_active button {
-        border-color: var(--mvv-red) !important;
-        box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.10), 0 12px 30px rgba(78, 8, 18, 0.08) !important;
+      [class*="st-key-tablet_nav_"] button p,
+      [class*="st-key-tablet_nav_"] button span,
+      [class*="st-key-tablet_nav_"] button [data-testid="stMarkdownContainer"] {
+        font-size: 0 !important;
+        color: transparent !important;
+        margin: 0 !important;
       }
 
-      .st-key-tablet_nav_wellness_active button:hover,
-      .st-key-tablet_nav_wellness_inactive button:hover,
-      .st-key-tablet_nav_rpe_active button:hover,
-      .st-key-tablet_nav_rpe_inactive button:hover {
+      [class*="st-key-tablet_nav_"] button::before {
+        position: absolute;
+        top: 22px;
+        left: 0;
+        right: 0;
+        font-size: 0.95rem;
+        line-height: 1.1;
+        font-weight: 700;
+        color: var(--mvv-deep);
+        text-align: center;
+      }
+
+      [class*="st-key-tablet_nav_"] button::after {
+        position: absolute;
+        top: 54px;
+        left: 0;
+        right: 0;
+        font-size: 2.25rem;
+        line-height: 1.05;
+        font-weight: 900;
+        color: var(--mvv-red);
+        text-align: center;
+      }
+
+      [class*="st-key-tablet_nav_"] button:hover {
         border-color: var(--mvv-red) !important;
         background: rgba(255, 255, 255, 0.98) !important;
       }
 
-      .st-key-tablet_nav_wellness_active button [data-testid="stMarkdownContainer"],
-      .st-key-tablet_nav_wellness_inactive button [data-testid="stMarkdownContainer"],
-      .st-key-tablet_nav_rpe_active button [data-testid="stMarkdownContainer"],
-      .st-key-tablet_nav_rpe_inactive button [data-testid="stMarkdownContainer"] {
-        width: 100% !important;
+      [class*="st-key-tablet_nav_"][class*="_active"] button {
+        border-color: var(--mvv-red) !important;
+        box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.10), 0 12px 30px rgba(78, 8, 18, 0.08) !important;
       }
 
-      .st-key-tablet_nav_wellness_active button p,
-      .st-key-tablet_nav_wellness_inactive button p,
-      .st-key-tablet_nav_rpe_active button p,
-      .st-key-tablet_nav_rpe_inactive button p {
-        margin: 0 !important;
-        white-space: pre-line !important;
-        text-align: left !important;
-        font-size: 2.25rem !important;
-        line-height: 1.15 !important;
-        font-weight: 900 !important;
-        color: var(--mvv-red) !important;
+      .st-key-tablet_nav_wellness_ok_active button::before,
+      .st-key-tablet_nav_wellness_ok_inactive button::before,
+      .st-key-tablet_nav_wellness_open_active button::before,
+      .st-key-tablet_nav_wellness_open_inactive button::before {
+        content: "Wellness";
       }
 
-      .st-key-tablet_nav_wellness_active button p::first-line,
-      .st-key-tablet_nav_wellness_inactive button p::first-line,
-      .st-key-tablet_nav_rpe_active button p::first-line,
-      .st-key-tablet_nav_rpe_inactive button p::first-line {
-        font-size: 0.95rem !important;
-        font-weight: 700 !important;
-        color: var(--mvv-deep) !important;
+      .st-key-tablet_nav_rpe_ok_active button::before,
+      .st-key-tablet_nav_rpe_ok_inactive button::before,
+      .st-key-tablet_nav_rpe_open_active button::before,
+      .st-key-tablet_nav_rpe_open_inactive button::before {
+        content: "RPE";
+      }
+
+      .st-key-tablet_nav_wellness_ok_active button::after,
+      .st-key-tablet_nav_wellness_ok_inactive button::after,
+      .st-key-tablet_nav_rpe_ok_active button::after,
+      .st-key-tablet_nav_rpe_ok_inactive button::after {
+        content: "OK";
+      }
+
+      .st-key-tablet_nav_wellness_open_active button::after,
+      .st-key-tablet_nav_wellness_open_inactive button::after,
+      .st-key-tablet_nav_rpe_open_active button::after,
+      .st-key-tablet_nav_rpe_open_inactive button::after {
+        content: "Open";
       }
 
       @media (max-width: 768px) {
@@ -505,19 +531,19 @@ def render_kpi_card(label: str, value: str) -> None:
 
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
-    statuses = {
-        "Wellness": "OK" if has_wellness else "Open",
-        "RPE": "OK" if has_rpe else "Open",
-    }
+    wellness_status = "ok" if has_wellness else "open"
+    rpe_status = "ok" if has_rpe else "open"
 
     cols = st.columns(2)
     with cols[0]:
-        key = "tablet_nav_wellness_active" if active_form == "Wellness" else "tablet_nav_wellness_inactive"
-        if st.button(f"Wellness\n{statuses['Wellness']}", key=key, use_container_width=True):
+        state = "active" if active_form == "Wellness" else "inactive"
+        key = f"tablet_nav_wellness_{wellness_status}_{state}"
+        if st.button("wellness", key=key, use_container_width=True):
             active_form = "Wellness"
     with cols[1]:
-        key = "tablet_nav_rpe_active" if active_form == "RPE" else "tablet_nav_rpe_inactive"
-        if st.button(f"RPE\n{statuses['RPE']}", key=key, use_container_width=True):
+        state = "active" if active_form == "RPE" else "inactive"
+        key = f"tablet_nav_rpe_{rpe_status}_{state}"
+        if st.button("rpe", key=key, use_container_width=True):
             active_form = "RPE"
 
     return active_form
