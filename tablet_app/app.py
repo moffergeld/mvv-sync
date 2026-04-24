@@ -118,10 +118,15 @@ st.markdown(
         box-shadow: 0 10px 26px rgba(78, 8, 18, 0.08);
       }
 
-      div[data-testid="stMetricValue"] {
+      div[data-testid="stMetricValue"],
+      div[data-testid="stMetricValue"] > div,
+      div[data-testid="stMetricValue"] p,
+      div[data-testid="stMetricValue"] span,
+      [data-testid="stMetric"] [data-testid="stMetricValue"],
+      [data-testid="stMetric"] [data-testid="stMetricValue"] * {
         color: var(--mvv-red) !important;
         font-size: 2.15rem;
-        font-weight: 900;
+        font-weight: 900 !important;
       }
 
       div[data-testid="stMetricLabel"] p {
@@ -687,18 +692,8 @@ def show_flash() -> None:
 
 
 def render_top_actions(show_back: bool = False) -> None:
-    if not show_back:
-        return
-
-    cols = st.columns([1, 5])
-
-    with cols[0]:
-        if st.button("Spelers", use_container_width=True, key="tablet_back_to_list"):
-            st.session_state.pop("tablet_player_id", None)
-            st.session_state.pop("tablet_player_name", None)
-            st.session_state.pop("tablet_active_form", None)
-            st.rerun()
-
+    # Geen navigatieknoppen bovenaan de tabletpagina's.
+    return
 
 def render_player_picker(sb) -> None:
     entry_date = amsterdam_today()
