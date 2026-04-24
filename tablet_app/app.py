@@ -539,14 +539,16 @@ def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -
         state = "active" if active_form == "Wellness" else "inactive"
         key = f"tablet_nav_wellness_{wellness_status}_{state}"
         if st.button("wellness", key=key, use_container_width=True):
-            active_form = "Wellness"
+            st.session_state["tablet_active_form"] = "Wellness"
+            st.rerun()
     with cols[1]:
         state = "active" if active_form == "RPE" else "inactive"
         key = f"tablet_nav_rpe_{rpe_status}_{state}"
         if st.button("rpe", key=key, use_container_width=True):
-            active_form = "RPE"
+            st.session_state["tablet_active_form"] = "RPE"
+            st.rerun()
 
-    return active_form
+    return st.session_state.get("tablet_active_form", active_form)
 
 def get_tablet_code() -> str:
     for key in ("TABLET_SHARED_CODE", "TABLET_CODE", "KIOSK_CODE"):
