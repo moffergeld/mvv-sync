@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import html
 import sys
 import time
 from datetime import datetime
@@ -32,6 +34,7 @@ from Subscripts.player_tab_forms import (  # noqa: E402
 
 
 APP_TITLE = "MVV Tablet Check-in"
+CLUB_NAME = "MVV Maastricht"
 ACCESS_COOKIE_NAME = "mvv_tablet_access"
 ACCESS_COOKIE_SECONDS = 60 * 60 * 24 * 30
 
@@ -46,6 +49,18 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;800;900&display=swap');
+
+      :root {
+        --mvv-red: #c8102e;
+        --mvv-dark-red: #8f0b20;
+        --mvv-deep: #14070a;
+        --mvv-cream: #fff7ef;
+        --mvv-soft: #f7e9e7;
+        --mvv-gold: #d6a94a;
+        --mvv-border: rgba(200, 16, 46, 0.20);
+      }
+
       #MainMenu,
       header,
       footer,
@@ -54,41 +69,184 @@ st.markdown(
         display: none !important;
       }
 
+      .stApp {
+        background:
+          radial-gradient(circle at top left, rgba(200, 16, 46, 0.22), transparent 34rem),
+          linear-gradient(135deg, #fff9f5 0%, #f7eeee 48%, #ffffff 100%);
+      }
+
       .block-container {
-        max-width: 1180px;
-        padding-top: 1rem;
+        max-width: 1240px;
+        padding-top: 1.2rem;
         padding-bottom: 2rem;
+        font-family: 'Inter', sans-serif;
+      }
+
+      h1, h2, h3 {
+        letter-spacing: 0.01em;
       }
 
       div.stButton > button {
         min-height: 5.25rem;
-        border-radius: 10px;
+        border-radius: 18px;
+        border: 1px solid var(--mvv-border);
+        background: linear-gradient(145deg, #ffffff 0%, #fff4f1 100%);
+        box-shadow: 0 12px 24px rgba(78, 8, 18, 0.10);
+        color: var(--mvv-deep);
         font-size: 1rem;
-        font-weight: 700;
+        font-weight: 900;
+        line-height: 1.35;
         white-space: pre-line;
+        transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+      }
+
+      div.stButton > button:hover {
+        transform: translateY(-2px);
+        border-color: rgba(200, 16, 46, 0.55);
+        box-shadow: 0 16px 32px rgba(78, 8, 18, 0.16);
+      }
+
+      div.stButton > button:active {
+        transform: translateY(0px);
+      }
+
+      div[data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(200, 16, 46, 0.14);
+        border-radius: 18px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 10px 26px rgba(78, 8, 18, 0.08);
       }
 
       div[data-testid="stMetricValue"] {
-        font-size: 2rem;
+        color: var(--mvv-red);
+        font-size: 2.15rem;
+        font-weight: 900;
+      }
+
+      div[data-testid="stMetricLabel"] p {
+        font-weight: 800;
+        color: rgba(20, 7, 10, 0.72);
       }
 
       .tablet-hero {
-        padding: 1rem 1.1rem;
-        border: 1px solid rgba(49, 51, 63, 0.15);
-        border-radius: 10px;
-        background: rgba(240, 242, 246, 0.6);
-        margin-bottom: 1rem;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        padding: 1.35rem 1.45rem;
+        border: 1px solid rgba(255, 255, 255, 0.42);
+        border-radius: 24px;
+        background:
+          linear-gradient(135deg, rgba(200, 16, 46, 0.96) 0%, rgba(143, 11, 32, 0.96) 54%, rgba(20, 7, 10, 0.96) 100%);
+        color: white;
+        box-shadow: 0 18px 46px rgba(78, 8, 18, 0.24);
+        margin-bottom: 1.1rem;
+      }
+
+      .tablet-hero::after {
+        content: '';
+        position: absolute;
+        right: -5rem;
+        top: -6rem;
+        width: 18rem;
+        height: 18rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.10);
+      }
+
+      .mvv-logo-wrap {
+        z-index: 1;
+        width: 72px;
+        height: 72px;
+        min-width: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4), 0 12px 24px rgba(0,0,0,0.16);
+      }
+
+      .mvv-logo-wrap img {
+        max-width: 58px;
+        max-height: 58px;
+        object-fit: contain;
+      }
+
+      .mvv-logo-fallback {
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 1.65rem;
+        color: var(--mvv-red);
+        letter-spacing: 0.02em;
+      }
+
+      .tablet-hero-content {
+        z-index: 1;
+      }
+
+      .tablet-hero-kicker {
+        margin: 0 0 0.2rem 0;
+        text-transform: uppercase;
+        font-size: 0.78rem;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        color: rgba(255, 255, 255, 0.78);
       }
 
       .tablet-hero h1 {
         margin: 0;
-        font-size: 2rem;
-        line-height: 1.1;
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: clamp(2.4rem, 5vw, 4.2rem);
+        line-height: 0.95;
+        letter-spacing: 0.02em;
       }
 
       .tablet-hero p {
         margin: 0.45rem 0 0 0;
-        font-size: 1rem;
+        font-size: 1.02rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.88);
+      }
+
+      .mvv-section-card {
+        padding: 1rem 1.1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(200, 16, 46, 0.16);
+        background: rgba(255, 255, 255, 0.84);
+        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08);
+        margin: 0.6rem 0 1rem 0;
+      }
+
+      .mvv-note {
+        padding: 0.9rem 1rem;
+        border-radius: 16px;
+        border-left: 6px solid var(--mvv-red);
+        background: rgba(255, 255, 255, 0.80);
+        font-weight: 800;
+      }
+
+      [data-testid="stTextInput"] input,
+      [data-testid="stNumberInput"] input,
+      textarea {
+        border-radius: 14px !important;
+      }
+
+      div[role="radiogroup"] label {
+        background: rgba(255,255,255,0.80);
+        border: 1px solid rgba(200,16,46,0.16);
+        border-radius: 999px;
+        padding: 0.45rem 0.8rem;
+        margin-right: 0.45rem;
+        font-weight: 900;
+      }
+
+      @media (max-width: 768px) {
+        .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
+        .tablet-hero { border-radius: 20px; padding: 1rem; }
+        .mvv-logo-wrap { width: 58px; height: 58px; min-width: 58px; border-radius: 16px; }
+        div.stButton > button { min-height: 4.8rem; }
       }
     </style>
     """,
@@ -106,6 +264,39 @@ def cookie_mgr():
     return st.session_state["_tablet_cookie_mgr"]
 
 
+def logo_html() -> str:
+    """Use an MVV logo file when present; otherwise show a clean MVV fallback mark."""
+    candidates = [
+        ROOT_DIR / "assets" / "mvv-logo.png",
+        ROOT_DIR / "assets" / "mvv_logo.png",
+        ROOT_DIR / "assets" / "mvv.png",
+        THIS_DIR / "assets" / "mvv-logo.png",
+        THIS_DIR / "assets" / "mvv_logo.png",
+        THIS_DIR / "assets" / "mvv.png",
+    ]
+    for path in candidates:
+        if path.exists():
+            encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
+            return f'<img src="data:image/png;base64,{encoded}" alt="MVV Maastricht logo" />'
+    return '<div class="mvv-logo-fallback">MVV</div>'
+
+
+def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
+    st.markdown(
+        f"""
+        <div class="tablet-hero">
+          <div class="mvv-logo-wrap">{logo_html()}</div>
+          <div class="tablet-hero-content">
+            <div class="tablet-hero-kicker">{html.escape(kicker)}</div>
+            <h1>{html.escape(title)}</h1>
+            <p>{html.escape(subtitle)}</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def get_tablet_code() -> str:
     for key in ("TABLET_SHARED_CODE", "TABLET_CODE", "KIOSK_CODE"):
         value = str(st.secrets.get(key, "") or "").strip()
@@ -115,7 +306,7 @@ def get_tablet_code() -> str:
 
 
 def get_service_key() -> str:
-    for key in ("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE"):
+    for key in ("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE"):
         value = str(st.secrets.get(key, "") or "").strip()
         if value:
             return value
@@ -149,6 +340,7 @@ def lock_tablet() -> None:
         "tablet_unlocked",
         "tablet_player_id",
         "tablet_player_name",
+        "tablet_active_form",
         "tablet_flash",
     ):
         st.session_state.pop(key, None)
@@ -177,15 +369,7 @@ def ensure_tablet_access() -> None:
         st.session_state["tablet_unlocked"] = True
         return
 
-    st.markdown(
-        """
-        <div class="tablet-hero">
-          <h1>Tablet toegang</h1>
-          <p>Voer de teamcode in om de check-in pagina te openen.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_hero("Tablet toegang", "Voer de teamcode in om de check-in pagina te openen.")
 
     with st.form("tablet_unlock_form", clear_on_submit=False):
         code_value = st.text_input("Tabletcode", type="password")
@@ -272,6 +456,7 @@ def render_top_actions(show_back: bool = False) -> None:
         if show_back and st.button("Spelers", use_container_width=True, key="tablet_back_to_list"):
             st.session_state.pop("tablet_player_id", None)
             st.session_state.pop("tablet_player_name", None)
+            st.session_state.pop("tablet_active_form", None)
             st.rerun()
 
     with cols[1]:
@@ -293,14 +478,9 @@ def render_player_picker(sb) -> None:
     render_top_actions(show_back=False)
     show_flash()
 
-    st.markdown(
-        f"""
-        <div class="tablet-hero">
-          <h1>{APP_TITLE}</h1>
-          <p>Selecteer een speler voor de invoer van vandaag ({entry_date.strftime("%d-%m-%Y")}).</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        APP_TITLE,
+        f"Selecteer een speler voor de invoer van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
     )
 
     stat_1, stat_2, stat_3 = st.columns(3)
@@ -322,18 +502,27 @@ def render_player_picker(sb) -> None:
         st.info("Geen speler gevonden.")
         return
 
+    st.markdown('<div class="mvv-section-card"><b>Spelerslijst</b><br>Klik op een speler. Als wellness al is ingevuld, opent RPE automatisch.</div>', unsafe_allow_html=True)
+
     cols = st.columns(3)
     for idx, player in enumerate(filtered_players):
         player_id = player["player_id"]
         player_name = player["full_name"]
-        wellness_state = "OK" if player_id in asrm_ids else "--"
-        rpe_state = "OK" if player_id in rpe_ids else "--"
-        label = f"{player_name}\nWellness: {wellness_state} | RPE: {rpe_state}"
+        wellness_done = player_id in asrm_ids
+        rpe_done = player_id in rpe_ids
+        wellness_state = "OK" if wellness_done else "OPEN"
+        rpe_state = "OK" if rpe_done else "OPEN"
+        next_step = "Open RPE" if wellness_done and not rpe_done else "Open wellness"
+        if wellness_done and rpe_done:
+            next_step = "Controleer invoer"
+        label = f"{player_name}\nWellness: {wellness_state} | RPE: {rpe_state}\n{next_step}"
 
         with cols[idx % 3]:
             if st.button(label, use_container_width=True, key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
+                # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
+                st.session_state["tablet_active_form"] = "RPE" if wellness_done else "Wellness"
                 st.rerun()
 
 
@@ -357,17 +546,16 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     has_s2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
     injury_default = bool(rpe_header.get("injury", False))
 
+    if "tablet_active_form" not in st.session_state:
+        st.session_state["tablet_active_form"] = "RPE" if has_wellness else "Wellness"
+
     render_top_actions(show_back=True)
     show_flash()
 
-    st.markdown(
-        f"""
-        <div class="tablet-hero">
-          <h1>{player_name}</h1>
-          <p>Invoer voor vandaag ({entry_date.strftime("%d-%m-%Y")}).</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_hero(
+        player_name,
+        f"Invoer voor vandaag ({entry_date.strftime('%d-%m-%Y')}).",
+        kicker=f"{CLUB_NAME} · speler check-in",
     )
 
     status_1, status_2 = st.columns(2)
@@ -376,9 +564,22 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     with status_2:
         st.metric("RPE", "OK" if has_rpe else "Open")
 
-    tab_asrm, tab_rpe = st.tabs(["Wellness", "RPE"])
+    form_options = ["Wellness", "RPE"]
+    default_form = st.session_state.get("tablet_active_form", "RPE" if has_wellness else "Wellness")
+    if default_form not in form_options:
+        default_form = "Wellness"
 
-    with tab_asrm:
+    active_form = st.radio(
+        "Onderdeel",
+        options=form_options,
+        index=form_options.index(default_form),
+        horizontal=True,
+        key=f"tablet_form_selector_{player_id}",
+    )
+    st.session_state["tablet_active_form"] = active_form
+
+    if active_form == "Wellness":
+        st.markdown('<div class="mvv-section-card">', unsafe_allow_html=True)
         if has_wellness:
             st.success("Wellness staat al ingevuld voor vandaag.")
         else:
@@ -429,12 +630,15 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
             try:
                 save_asrm(sb, player_id, entry_date, ms, fat, sleep, stress, mood)
                 clear_daily_cache()
-                st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}."
+                st.session_state["tablet_active_form"] = "RPE"
+                st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}. RPE is nu geopend."
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with tab_rpe:
+    if active_form == "RPE":
+        st.markdown('<div class="mvv-section-card">', unsafe_allow_html=True)
         if has_rpe:
             st.success("RPE staat al ingevuld voor vandaag.")
         else:
@@ -575,6 +779,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -586,6 +791,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
         st.session_state.pop("tablet_player_id", None)
         st.session_state.pop("tablet_player_name", None)
+        st.session_state.pop("tablet_active_form", None)
         st.rerun()
 
 
