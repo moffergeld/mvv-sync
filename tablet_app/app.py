@@ -1045,6 +1045,5 @@ def main() -> None:
     else:
         render_player_picker(sb)
 
-
 if __name__ == "__main__":
     main()
