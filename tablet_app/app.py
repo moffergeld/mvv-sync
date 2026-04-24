@@ -28,8 +28,8 @@ from Subscripts.player_tab_forms import (  # noqa: E402
     _legend_rpe,
     load_asrm,
     load_rpe,
-    save_asrm,
-    save_rpe,
+    save_asrm as original_save_asrm,
+    save_rpe as original_save_rpe,
 )
 
 
@@ -324,6 +324,140 @@ def get_tablet_sb():
 
     return st.session_state["_tablet_sb_client"]
 
+
+
+
+def get_tablet_created_by(player_id: str = "") -> str:
+    """
+    Tablet/kiosk mode heeft geen ingelogde Supabase-user, terwijl de database
+    created_by verplicht maakt. Zet bij voorkeur TABLET_CREATED_BY_USER_ID in
+    Streamlit secrets met de UUID van een admin/system-user. Zonder die secret
+    gebruikt de app player_id als UUID-fallback.
+    """
+    for key in (
+        "TABLET_CREATED_BY_USER_ID",
+        "TABLET_CREATED_BY",
+        "CHECKIN_CREATED_BY_USER_ID",
+        "DEFAULT_CREATED_BY_USER_ID",
+    ):
+        value = str(st.secrets.get(key, "") or "").strip()
+        if value:
+            return value
+    return str(player_id or "").strip()
+
+
+def _execute_upsert_with_fallback(sb, table_name: str, payload: Dict[str, Any], keys: Dict[str, Any]):
+    try:
+        return sb.table(table_name).upsert(payload, on_conflict=",".join(keys.keys())).execute()
+    except Exception:
+        existing = sb.table(table_name).select("id")
+        for key, value in keys.items():
+            existing = existing.eq(key, value)
+        rows = existing.limit(1).execute().data or []
+        if rows:
+            row_id = rows[0].get("id")
+            update_payload = dict(payload)
+            update_payload.pop("id", None)
+            update_payload.pop("created_by", None)
+            return sb.table(table_name).update(update_payload).eq("id", row_id).execute()
+        return sb.table(table_name).insert(payload).execute()
+
+
+def save_asrm_tablet(sb, player_id, entry_date, muscle_soreness, fatigue, sleep_quality, stress, mood) -> None:
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
+    payload = {
+        "player_id": str(player_id),
+        "entry_date": entry_date_iso,
+        "muscle_soreness": int(muscle_soreness),
+        "fatigue": int(fatigue),
+        "sleep_quality": int(sleep_quality),
+        "stress": int(stress),
+        "mood": int(mood),
+        "created_by": get_tablet_created_by(str(player_id)),
+        "updated_at": now_iso,
+    }
+    _execute_upsert_with_fallback(
+        sb,
+        "asrm_entries",
+        payload,
+        {"player_id": str(player_id), "entry_date": entry_date_iso},
+    )
+
+
+def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: str | None, injury_pain: int | None, notes: str, sessions: List[Dict[str, int]]) -> None:
+    try:
+        original_save_rpe(
+            sb,
+            player_id=player_id,
+            entry_date=entry_date,
+            injury=injury,
+            injury_type=injury_type,
+            injury_pain=injury_pain,
+            notes=notes,
+            sessions=sessions,
+        )
+        return
+    except Exception as exc:
+        if "created_by" not in str(exc):
+            raise
+
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
+    header_payload = {
+        "player_id": str(player_id),
+        "entry_date": entry_date_iso,
+        "injury": bool(injury),
+        "injury_type": injury_type,
+        "injury_pain": injury_pain,
+        "notes": str(notes or ""),
+        "created_by": get_tablet_created_by(str(player_id)),
+        "updated_at": now_iso,
+    }
+
+    existing = (
+        sb.table("rpe_entries")
+        .select("id")
+        .eq("player_id", str(player_id))
+        .eq("entry_date", entry_date_iso)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+
+    if existing:
+        rpe_entry_id = existing[0].get("id")
+        update_payload = dict(header_payload)
+        update_payload.pop("created_by", None)
+        sb.table("rpe_entries").update(update_payload).eq("id", rpe_entry_id).execute()
+    else:
+        inserted = sb.table("rpe_entries").insert(header_payload).execute().data or []
+        rpe_entry_id = inserted[0].get("id") if inserted else None
+
+    if not rpe_entry_id:
+        raise RuntimeError("RPE-header kon niet worden opgeslagen.")
+
+    try:
+        sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
+        session_fk = "rpe_entry_id"
+    except Exception:
+        sb.table("rpe_sessions").delete().eq("rpe_id", rpe_entry_id).execute()
+        session_fk = "rpe_id"
+
+    for session in sessions:
+        duration_min = int(session.get("duration_min", 0) or 0)
+        rpe_value = int(session.get("rpe", 0) or 0)
+        session_payload = {
+            session_fk: rpe_entry_id,
+            "session_index": int(session.get("session_index", 1) or 1),
+            "duration_min": duration_min,
+            "rpe": rpe_value,
+            "training_load": duration_min * rpe_value,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        sb.table("rpe_sessions").insert(session_payload).execute()
 
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
@@ -628,7 +762,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
 
         if asrm_submit:
             try:
-                save_asrm(sb, player_id, entry_date, ms, fat, sleep, stress, mood)
+                save_asrm_tablet(sb, player_id, entry_date, ms, fat, sleep, stress, mood)
                 clear_daily_cache()
                 st.session_state["tablet_active_form"] = "RPE"
                 st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}. RPE is nu geopend."
@@ -764,7 +898,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     injury_type_to_save = None if injury_loc == "None" else injury_loc
                     injury_pain_to_save = int(injury_pain)
 
-                save_rpe(
+                save_rpe_tablet(
                     sb,
                     player_id=player_id,
                     entry_date=entry_date,
