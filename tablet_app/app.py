@@ -200,7 +200,7 @@ st.markdown(
         color: rgba(255, 255, 255, 0.78) !important;
       }
 
-      .tablet-hero h1 {
+      .tablet-hero-title {
         margin: 0;
         font-family: 'Bebas Neue', sans-serif;
         font-size: clamp(2.4rem, 5vw, 4.2rem);
@@ -209,7 +209,7 @@ st.markdown(
         color: #ffffff !important;
       }
 
-      .tablet-hero p {
+      .tablet-hero-subtitle {
         margin: 0.45rem 0 0 0;
         font-size: 1.02rem;
         font-weight: 600;
@@ -223,6 +223,47 @@ st.markdown(
         background: rgba(255, 255, 255, 0.84);
         box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08);
         margin: 0.6rem 0 1rem 0;
+      }
+
+
+      .mvv-kpi-card {
+        padding: 1rem 1.1rem;
+        border-radius: 20px;
+        border: 1px solid rgba(200, 16, 46, 0.12);
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08);
+        min-height: 110px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        margin-bottom: 0.6rem;
+      }
+
+      .mvv-kpi-label {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--mvv-deep) !important;
+        margin-bottom: 0.25rem;
+      }
+
+      .mvv-kpi-value {
+        font-size: 2.25rem;
+        line-height: 1;
+        font-weight: 900;
+        color: var(--mvv-red) !important;
+      }
+
+      .tablet-hero a,
+      .tablet-hero a:visited,
+      .tablet-hero a:hover,
+      .tablet-hero a:active {
+        color: #ffffff !important;
+        text-decoration: none !important;
+      }
+
+      .tablet-hero svg,
+      .tablet-hero [data-testid="stHeaderActionElements"] {
+        display: none !important;
       }
 
       .mvv-note {
@@ -315,8 +356,8 @@ st.markdown(
 
       .tablet-hero-content,
       .tablet-hero-content *,
-      .tablet-hero h1,
-      .tablet-hero p,
+      .tablet-hero-title,
+      .tablet-hero-subtitle,
       .tablet-hero-kicker {
         color: #ffffff !important;
       }
@@ -381,11 +422,18 @@ def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
           <div class="mvv-logo-wrap">{logo_html()}</div>
           <div class="tablet-hero-content">
             <div class="tablet-hero-kicker">{html.escape(kicker)}</div>
-            <h1>{html.escape(title)}</h1>
-            <p>{html.escape(subtitle)}</p>
+            <div class="tablet-hero-title">{html.escape(title)}</div>
+            <div class="tablet-hero-subtitle">{html.escape(subtitle)}</div>
           </div>
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_kpi_card(label: str, value: str) -> None:
+    st.markdown(
+        f'<div class="mvv-kpi-card"><div class="mvv-kpi-label">{html.escape(str(label))}</div><div class="mvv-kpi-value">{html.escape(str(value))}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -716,11 +764,11 @@ def render_player_picker(sb) -> None:
 
     stat_1, stat_2, stat_3 = st.columns(3)
     with stat_1:
-        st.metric("Actieve spelers", len(players))
+        render_kpi_card("Actieve spelers", len(players))
     with stat_2:
-        st.metric("Wellness ingevuld", sum(1 for player in players if player["player_id"] in asrm_ids))
+        render_kpi_card("Wellness ingevuld", sum(1 for player in players if player["player_id"] in asrm_ids))
     with stat_3:
-        st.metric("RPE ingevuld", sum(1 for player in players if player["player_id"] in rpe_ids))
+        render_kpi_card("RPE ingevuld", sum(1 for player in players if player["player_id"] in rpe_ids))
 
     search = st.text_input("Zoek speler", value="", placeholder="Typ een naam")
     search_value = search.strip().lower()
@@ -791,9 +839,9 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
 
     status_1, status_2 = st.columns(2)
     with status_1:
-        st.metric("Wellness", "OK" if has_wellness else "Open")
+        render_kpi_card("Wellness", "OK" if has_wellness else "Open")
     with status_2:
-        st.metric("RPE", "OK" if has_rpe else "Open")
+        render_kpi_card("RPE", "OK" if has_rpe else "Open")
 
     form_options = ["Wellness", "RPE"]
     default_form = st.session_state.get("tablet_active_form", "RPE" if has_wellness else "Wellness")
@@ -1044,6 +1092,7 @@ def main() -> None:
         render_player_forms(sb, selected_player_id, selected_player_name)
     else:
         render_player_picker(sb)
+
 
 if __name__ == "__main__":
     main()
