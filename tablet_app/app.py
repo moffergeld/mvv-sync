@@ -242,6 +242,55 @@ st.markdown(
         font-weight: 900;
       }
 
+
+      /* Force readable text even when Streamlit/account dark mode is enabled */
+      .stApp,
+      .stApp label,
+      .stApp .stMarkdown,
+      .stApp .stMarkdown p,
+      .stApp .stMarkdown li,
+      .stApp .stMarkdown span,
+      .stApp .stMarkdown strong,
+      .stApp [data-testid="stMarkdownContainer"] p,
+      .stApp [data-testid="stMarkdownContainer"] li,
+      .stApp [data-testid="stMetricLabel"] p,
+      .stApp [data-testid="stTextInputRootElement"] label,
+      .stApp [data-testid="stNumberInput"] label,
+      .stApp [data-testid="stSelectbox"] label,
+      .stApp [data-testid="stTextArea"] label,
+      .stApp [data-testid="stSlider"] label,
+      .stApp [data-testid="stRadio"] label,
+      .stApp [data-testid="stToggle"] label,
+      .stApp [data-testid="stWidgetLabel"],
+      .stApp [data-testid="stCaptionContainer"] {
+        color: var(--mvv-deep) !important;
+      }
+
+      .stApp [data-testid="stMetricLabel"] {
+        opacity: 1 !important;
+      }
+
+      .stApp input::placeholder,
+      .stApp textarea::placeholder {
+        color: rgba(20, 7, 10, 0.55) !important;
+      }
+
+      .mvv-section-card,
+      .mvv-note {
+        color: var(--mvv-deep) !important;
+      }
+
+      .tablet-hero,
+      .tablet-hero *,
+      .mvv-logo-wrap,
+      .mvv-logo-wrap * {
+        color: white;
+      }
+
+      .mvv-logo-fallback {
+        color: var(--mvv-red) !important;
+      }
+
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -399,7 +448,10 @@ def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: s
         )
         return
     except Exception as exc:
-        if "created_by" not in str(exc):
+        # De originele save_rpe kan falen in tablet-mode door created_by/auth.uid(),
+        # of doordat oudere code een kolom gebruikt die niet in jouw rpe_sessions schema staat.
+        # In die gevallen slaan we hieronder handmatig op volgens de actuele database-tabellen.
+        if "created_by" not in str(exc) and "training_load" not in str(exc) and "schema cache" not in str(exc):
             raise
 
     entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
@@ -453,11 +505,23 @@ def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: s
             "session_index": int(session.get("session_index", 1) or 1),
             "duration_min": duration_min,
             "rpe": rpe_value,
-            "training_load": duration_min * rpe_value,
             "created_at": now_iso,
             "updated_at": now_iso,
         }
-        sb.table("rpe_sessions").insert(session_payload).execute()
+        try:
+            sb.table("rpe_sessions").insert(session_payload).execute()
+        except Exception as exc:
+            # Sommige rpe_sessions-tabellen hebben geen created_at/updated_at.
+            # Dan opnieuw proberen met alleen de noodzakelijke kolommen.
+            if "schema cache" not in str(exc) and "Could not find" not in str(exc):
+                raise
+            minimal_payload = {
+                session_fk: rpe_entry_id,
+                "session_index": int(session.get("session_index", 1) or 1),
+                "duration_min": duration_min,
+                "rpe": rpe_value,
+            }
+            sb.table("rpe_sessions").insert(minimal_payload).execute()
 
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
