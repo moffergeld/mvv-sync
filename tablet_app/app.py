@@ -382,6 +382,7 @@ st.markdown(
       div.stFormSubmitButton > button * {
         color: var(--mvv-deep) !important;
       }
+
       [class*="st-key-tablet_nav_"] button {
         min-height: 136px !important;
         border-radius: 24px !important;
@@ -426,7 +427,6 @@ st.markdown(
         font-size: 2.25rem;
         line-height: 1.05;
         font-weight: 900;
-        color: var(--mvv-red);
         text-align: center;
       }
 
@@ -459,6 +459,7 @@ st.markdown(
       .st-key-tablet_nav_rpe_ok_active button::after,
       .st-key-tablet_nav_rpe_ok_inactive button::after {
         content: "OK";
+        color: #1f8a3b;
       }
 
       .st-key-tablet_nav_wellness_open_active button::after,
@@ -466,8 +467,94 @@ st.markdown(
       .st-key-tablet_nav_rpe_open_active button::after,
       .st-key-tablet_nav_rpe_open_inactive button::after {
         content: "Open";
+        color: var(--mvv-red);
       }
 
+      .mvv-player-card {
+        min-height: 124px;
+        padding: 1rem 1rem 0.95rem 1rem;
+        border-radius: 22px;
+        border: 1px solid rgba(200, 16, 46, 0.18);
+        background: linear-gradient(145deg, #ffffff 0%, #fff7f5 100%);
+        box-shadow: 0 12px 24px rgba(78, 8, 18, 0.08);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        margin-bottom: 0.2rem;
+      }
+
+      .mvv-player-name {
+        font-size: 1.24rem;
+        line-height: 1.15;
+        font-weight: 900;
+        color: var(--mvv-deep) !important;
+        margin-bottom: 0.45rem;
+      }
+
+      .mvv-player-status {
+        font-size: 0.98rem;
+        line-height: 1.3;
+        font-weight: 700;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-status-open {
+        color: var(--mvv-red) !important;
+        font-weight: 900;
+      }
+
+      .mvv-status-ok {
+        color: #1f8a3b !important;
+        font-weight: 900;
+      }
+
+      .mvv-player-next {
+        margin-top: 0.35rem;
+        font-size: 0.98rem;
+        font-weight: 800;
+      }
+
+      .mvv-player-next-open {
+        color: var(--mvv-red) !important;
+      }
+
+      .mvv-player-next-ok {
+        color: #1f8a3b !important;
+      }
+
+      [class*="st-key-tablet_pick_"] {
+        margin-top: -124px;
+        margin-bottom: 0.35rem;
+        position: relative;
+        z-index: 2;
+      }
+
+      [class*="st-key-tablet_pick_"] button {
+        min-height: 124px !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: transparent !important;
+        font-size: 0 !important;
+      }
+
+      [class*="st-key-tablet_pick_"] button:hover,
+      [class*="st-key-tablet_pick_"] button:active {
+        transform: none !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      [class*="st-key-tablet_pick_"] button p,
+      [class*="st-key-tablet_pick_"] button span,
+      [class*="st-key-tablet_pick_"] button [data-testid="stMarkdownContainer"] {
+        opacity: 0 !important;
+        font-size: 0 !important;
+        margin: 0 !important;
+      }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -529,6 +616,21 @@ def render_kpi_card(label: str, value: str) -> None:
         unsafe_allow_html=True,
     )
 
+
+def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: str, next_step: str) -> None:
+    wellness_class = "mvv-status-ok" if str(wellness_state).upper() == "OK" else "mvv-status-open"
+    rpe_class = "mvv-status-ok" if str(rpe_state).upper() == "OK" else "mvv-status-open"
+    next_class = "mvv-player-next-ok" if str(next_step).lower().startswith("controleer") else "mvv-player-next-open"
+    st.markdown(
+        (
+            f'<div class="mvv-player-card">'
+            f'<div class="mvv-player-name">{html.escape(player_name)}</div>'
+            f'<div class="mvv-player-status">Wellness: <span class="{wellness_class}">{html.escape(wellness_state)}</span> | RPE: <span class="{rpe_class}">{html.escape(rpe_state)}</span></div>'
+            f'<div class="mvv-player-next {next_class}">{html.escape(next_step)}</div>'
+            f'</div>'
+        ),
+        unsafe_allow_html=True,
+    )
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
     wellness_status = "ok" if has_wellness else "open"
@@ -904,10 +1006,9 @@ def render_player_picker(sb) -> None:
         next_step = "Open RPE" if wellness_done and not rpe_done else "Open wellness"
         if wellness_done and rpe_done:
             next_step = "Controleer invoer"
-        label = f"{player_name}\nWellness: {wellness_state} | RPE: {rpe_state}\n{next_step}"
-
         with cols[idx % 3]:
-            if st.button(label, use_container_width=True, key=f"tablet_pick_{player_id}"):
+            render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
+            if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
                 # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
