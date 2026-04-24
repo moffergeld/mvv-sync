@@ -383,6 +383,46 @@ st.markdown(
         color: var(--mvv-deep) !important;
       }
 
+      .st-key-tablet_nav_wellness_active button,
+      .st-key-tablet_nav_wellness_inactive button,
+      .st-key-tablet_nav_rpe_active button,
+      .st-key-tablet_nav_rpe_inactive button {
+        min-height: 8.6rem !important;
+        border-radius: 24px !important;
+        padding: 1rem 1.15rem !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        border: 2px solid rgba(200, 16, 46, 0.14) !important;
+        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08) !important;
+      }
+
+      .st-key-tablet_nav_wellness_active button,
+      .st-key-tablet_nav_rpe_active button {
+        border-color: var(--mvv-red) !important;
+        box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.10), 0 12px 30px rgba(78, 8, 18, 0.08) !important;
+      }
+
+      .st-key-tablet_nav_wellness_active button:hover,
+      .st-key-tablet_nav_wellness_inactive button:hover,
+      .st-key-tablet_nav_rpe_active button:hover,
+      .st-key-tablet_nav_rpe_inactive button:hover {
+        border-color: var(--mvv-red) !important;
+        background: rgba(255, 255, 255, 0.98) !important;
+      }
+
+      .st-key-tablet_nav_wellness_active button p,
+      .st-key-tablet_nav_wellness_inactive button p,
+      .st-key-tablet_nav_rpe_active button p,
+      .st-key-tablet_nav_rpe_inactive button p {
+        white-space: pre-line !important;
+        text-align: left !important;
+        line-height: 1.2 !important;
+        font-size: 1.15rem !important;
+        font-weight: 900 !important;
+        color: var(--mvv-deep) !important;
+      }
+
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -443,6 +483,25 @@ def render_kpi_card(label: str, value: str) -> None:
         f'<div class="mvv-kpi-card"><div class="mvv-kpi-label">{html.escape(str(label))}</div><div class="mvv-kpi-value">{html.escape(str(value))}</div></div>',
         unsafe_allow_html=True,
     )
+
+
+def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
+    statuses = {
+        "Wellness": "OK" if has_wellness else "Open",
+        "RPE": "OK" if has_rpe else "Open",
+    }
+
+    cols = st.columns(2)
+    with cols[0]:
+        key = "tablet_nav_wellness_active" if active_form == "Wellness" else "tablet_nav_wellness_inactive"
+        if st.button(f"Wellness\n{statuses['Wellness']}", key=key, use_container_width=True):
+            active_form = "Wellness"
+    with cols[1]:
+        key = "tablet_nav_rpe_active" if active_form == "RPE" else "tablet_nav_rpe_inactive"
+        if st.button(f"RPE\n{statuses['RPE']}", key=key, use_container_width=True):
+            active_form = "RPE"
+
+    return active_form
 
 
 def get_tablet_code() -> str:
@@ -842,24 +901,11 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         kicker=f"{CLUB_NAME} · speler check-in",
     )
 
-    status_1, status_2 = st.columns(2)
-    with status_1:
-        render_kpi_card("Wellness", "OK" if has_wellness else "Open")
-    with status_2:
-        render_kpi_card("RPE", "OK" if has_rpe else "Open")
-
-    form_options = ["Wellness", "RPE"]
     default_form = st.session_state.get("tablet_active_form", "RPE" if has_wellness else "Wellness")
-    if default_form not in form_options:
+    if default_form not in ["Wellness", "RPE"]:
         default_form = "Wellness"
 
-    active_form = st.radio(
-        "Onderdeel",
-        options=form_options,
-        index=form_options.index(default_form),
-        horizontal=True,
-        key=f"tablet_form_selector_{player_id}",
-    )
+    active_form = render_form_nav_cards(has_wellness, has_rpe, default_form)
     st.session_state["tablet_active_form"] = active_form
 
     if active_form == "Wellness":
