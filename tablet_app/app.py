@@ -383,50 +383,63 @@ st.markdown(
         color: var(--mvv-deep) !important;
       }
 
-      .mvv-nav-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 1rem;
-        margin: 0.35rem 0 1.15rem 0;
+      .st-key-tablet_nav_wellness_active button,
+      .st-key-tablet_nav_wellness_inactive button,
+      .st-key-tablet_nav_rpe_active button,
+      .st-key-tablet_nav_rpe_inactive button {
+        min-height: 136px !important;
+        border-radius: 24px !important;
+        padding: 1.1rem 1.35rem !important;
+        background: rgba(255, 255, 255, 0.92) !important;
+        border: 2px solid rgba(200, 16, 46, 0.14) !important;
+        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
       }
 
-      .mvv-nav-card {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        min-height: 136px;
-        padding: 1.2rem 1.35rem;
-        border-radius: 24px;
-        border: 2px solid rgba(200, 16, 46, 0.14);
-        background: rgba(255, 255, 255, 0.92);
-        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08);
-        text-decoration: none !important;
-        transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+      .st-key-tablet_nav_wellness_active button,
+      .st-key-tablet_nav_rpe_active button {
+        border-color: var(--mvv-red) !important;
+        box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.10), 0 12px 30px rgba(78, 8, 18, 0.08) !important;
       }
 
-      .mvv-nav-card:hover {
-        transform: translateY(-1px);
-        border-color: var(--mvv-red);
-        box-shadow: 0 16px 34px rgba(78, 8, 18, 0.12);
+      .st-key-tablet_nav_wellness_active button:hover,
+      .st-key-tablet_nav_wellness_inactive button:hover,
+      .st-key-tablet_nav_rpe_active button:hover,
+      .st-key-tablet_nav_rpe_inactive button:hover {
+        border-color: var(--mvv-red) !important;
+        background: rgba(255, 255, 255, 0.98) !important;
       }
 
-      .mvv-nav-card.active {
-        border-color: var(--mvv-red);
-        box-shadow: 0 0 0 4px rgba(200, 16, 46, 0.10), 0 12px 30px rgba(78, 8, 18, 0.08);
+      .st-key-tablet_nav_wellness_active button [data-testid="stMarkdownContainer"],
+      .st-key-tablet_nav_wellness_inactive button [data-testid="stMarkdownContainer"],
+      .st-key-tablet_nav_rpe_active button [data-testid="stMarkdownContainer"],
+      .st-key-tablet_nav_rpe_inactive button [data-testid="stMarkdownContainer"] {
+        width: 100% !important;
       }
 
-      .mvv-nav-card-label {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--mvv-deep) !important;
-        margin-bottom: 0.25rem;
-      }
-
-      .mvv-nav-card-value {
-        font-size: 2.25rem;
-        line-height: 1;
-        font-weight: 900;
+      .st-key-tablet_nav_wellness_active button p,
+      .st-key-tablet_nav_wellness_inactive button p,
+      .st-key-tablet_nav_rpe_active button p,
+      .st-key-tablet_nav_rpe_inactive button p {
+        margin: 0 !important;
+        white-space: pre-line !important;
+        text-align: left !important;
+        font-size: 2.25rem !important;
+        line-height: 1.15 !important;
+        font-weight: 900 !important;
         color: var(--mvv-red) !important;
+      }
+
+      .st-key-tablet_nav_wellness_active button p::first-line,
+      .st-key-tablet_nav_wellness_inactive button p::first-line,
+      .st-key-tablet_nav_rpe_active button p::first-line,
+      .st-key-tablet_nav_rpe_inactive button p::first-line {
+        font-size: 0.95rem !important;
+        font-weight: 700 !important;
+        color: var(--mvv-deep) !important;
       }
 
       @media (max-width: 768px) {
@@ -497,25 +510,15 @@ def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -
         "RPE": "OK" if has_rpe else "Open",
     }
 
-    requested_form = st.query_params.get("tablet_tab")
-    if requested_form in ("Wellness", "RPE"):
-        active_form = requested_form
-
-    st.markdown(
-        f"""
-        <div class="mvv-nav-grid">
-          <a class="mvv-nav-card {"active" if active_form == "Wellness" else ""}" href="?tablet_tab=Wellness">
-            <div class="mvv-nav-card-label">Wellness</div>
-            <div class="mvv-nav-card-value">{html.escape(statuses["Wellness"])}</div>
-          </a>
-          <a class="mvv-nav-card {"active" if active_form == "RPE" else ""}" href="?tablet_tab=RPE">
-            <div class="mvv-nav-card-label">RPE</div>
-            <div class="mvv-nav-card-value">{html.escape(statuses["RPE"])}</div>
-          </a>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    cols = st.columns(2)
+    with cols[0]:
+        key = "tablet_nav_wellness_active" if active_form == "Wellness" else "tablet_nav_wellness_inactive"
+        if st.button(f"Wellness\n{statuses['Wellness']}", key=key, use_container_width=True):
+            active_form = "Wellness"
+    with cols[1]:
+        key = "tablet_nav_rpe_active" if active_form == "RPE" else "tablet_nav_rpe_inactive"
+        if st.button(f"RPE\n{statuses['RPE']}", key=key, use_container_width=True):
+            active_form = "RPE"
 
     return active_form
 
@@ -826,7 +829,6 @@ def render_top_actions(show_back: bool = False) -> None:
 
 def render_player_picker(sb) -> None:
     entry_date = amsterdam_today()
-    st.query_params.pop("tablet_tab", None)
     players = fetch_active_players(sb)
     if not players:
         st.warning("Geen actieve spelers gevonden.")
@@ -882,7 +884,6 @@ def render_player_picker(sb) -> None:
                 st.session_state["tablet_player_name"] = player_name
                 # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
                 st.session_state["tablet_active_form"] = "RPE" if wellness_done else "Wellness"
-                st.query_params["tablet_tab"] = st.session_state["tablet_active_form"]
                 st.rerun()
 
 
@@ -972,7 +973,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 save_asrm_tablet(sb, player_id, entry_date, ms, fat, sleep, stress, mood)
                 clear_daily_cache()
                 st.session_state["tablet_active_form"] = "RPE"
-                st.query_params["tablet_tab"] = "RPE"
                 st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}. RPE is nu geopend."
                 st.rerun()
             except Exception as exc:
@@ -1118,7 +1118,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         st.session_state.pop("tablet_player_id", None)
         st.session_state.pop("tablet_player_name", None)
         st.session_state.pop("tablet_active_form", None)
-        st.query_params.pop("tablet_tab", None)
         st.rerun()
 
 
