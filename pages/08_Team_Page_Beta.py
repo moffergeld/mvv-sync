@@ -168,6 +168,15 @@ def initials_for_name(name: str) -> str:
     return (parts[0][0] + parts[-1][0]).upper()
 
 
+def is_valid_image_path(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    path_value = value.strip()
+    if not path_value:
+        return False
+    return Path(path_value).exists()
+
+
 def render_css() -> None:
     st.markdown(
         """
@@ -546,8 +555,9 @@ def render_hero(df: pd.DataFrame) -> None:
 
 
 def render_player_card(player: Dict[str, Any]) -> None:
-    if player.get("photo_path"):
-        st.image(player["photo_path"], use_container_width=True)
+    photo_path = player.get("photo_path")
+    if is_valid_image_path(photo_path):
+        st.image(str(photo_path), use_container_width=True)
     else:
         st.markdown(
             f"<div class='team-initials'>{initials_for_name(player['full_name'])}</div>",
