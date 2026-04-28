@@ -39,7 +39,7 @@ st.set_page_config(page_title="Player Page Beta", layout="wide")
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def fetch_active_players_cached(_sb):
+def fetch_active_players_cached(_sb, cache_scope: str = "default"):
     try:
         rows = (
             _sb.table("players")
@@ -98,8 +98,8 @@ def resolve_player_image(player_name: str) -> Optional[str]:
     return None
 
 
-def pick_active_player_dropdown(sb, key: str = "pp_beta_player_select"):
-    rows = fetch_active_players_cached(sb)
+def pick_active_player_dropdown(sb, cache_scope: str, key: str = "pp_beta_player_select"):
+    rows = fetch_active_players_cached(sb, cache_scope)
     if not rows:
         return None, None
 
@@ -453,6 +453,7 @@ def main() -> None:
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
     my_player_id = profile.get("player_id")
+    cache_scope = f"{role}:{profile.get('user_id', 'anon')}"
 
     if role == "player":
         if not my_player_id:
@@ -470,7 +471,11 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
-        target_player_id, target_player_name = pick_active_player_dropdown(sb, key="pp_beta_player_select")
+        target_player_id, target_player_name = pick_active_player_dropdown(
+            sb,
+            cache_scope=cache_scope,
+            key="pp_beta_player_select",
+        )
         if not target_player_id:
             st.error("Geen speler beschikbaar.")
             st.stop()
