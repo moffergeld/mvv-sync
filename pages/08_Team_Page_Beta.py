@@ -88,7 +88,7 @@ POSITION_GROUP_BY_NAME = {
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def fetch_active_players_cached(_sb) -> List[Dict[str, str]]:
+def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, str]]:
     try:
         rows = (
             _sb.table("players")
@@ -329,7 +329,7 @@ def render_css() -> None:
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_wellness_snapshot(_sb, start_iso: str, end_iso: str) -> pd.DataFrame:
+def fetch_wellness_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
     try:
         rows = (
             _sb.table("asrm_entries")
@@ -356,7 +356,7 @@ def fetch_wellness_snapshot(_sb, start_iso: str, end_iso: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_rpe_snapshot(_sb, start_iso: str, end_iso: str) -> pd.DataFrame:
+def fetch_rpe_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
     try:
         headers = (
             _sb.table("rpe_entries")
@@ -408,7 +408,7 @@ def fetch_rpe_snapshot(_sb, start_iso: str, end_iso: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_gps_snapshot(_sb, start_iso: str, end_iso: str) -> pd.DataFrame:
+def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
     try:
         rows = (
             _sb.table("v_gps_summary")
@@ -455,8 +455,8 @@ def build_snapshot_lookup(df: pd.DataFrame, date_col: str, value_col: str) -> Di
     return out
 
 
-def assemble_team_rows(sb) -> pd.DataFrame:
-    players = fetch_active_players_cached(sb)
+def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
+    players = fetch_active_players_cached(sb, access_scope)
     players_df = pd.DataFrame(players)
     if players_df.empty:
         return players_df
@@ -466,9 +466,9 @@ def assemble_team_rows(sb) -> pd.DataFrame:
     start_rpe = today_value - timedelta(days=6)
     start_gps = today_value - timedelta(days=13)
 
-    wellness_df = fetch_wellness_snapshot(sb, start_wellness.isoformat(), today_value.isoformat())
-    rpe_df = fetch_rpe_snapshot(sb, start_rpe.isoformat(), today_value.isoformat())
-    gps_df = fetch_gps_snapshot(sb, start_gps.isoformat(), today_value.isoformat())
+    wellness_df = fetch_wellness_snapshot(sb, access_scope, start_wellness.isoformat(), today_value.isoformat())
+    rpe_df = fetch_rpe_snapshot(sb, access_scope, start_rpe.isoformat(), today_value.isoformat())
+    gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
 
     wellness_lookup = build_snapshot_lookup(wellness_df, "entry_date", "wellness_avg")
     rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
@@ -622,10 +622,11 @@ def main() -> None:
 
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
+    access_scope = f"{role}:{profile.get('user_id', 'anon')}"
     if role == "player":
         st.info("Deze teamweergave toont alleen spelers waarvoor je app-toegang hebt.")
 
-    squad_df = assemble_team_rows(sb)
+    squad_df = assemble_team_rows(sb, access_scope)
     if squad_df.empty:
         st.warning("Geen actieve spelers gevonden.")
         st.stop()
