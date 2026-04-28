@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
+from PIL import Image, ImageOps
 
 
 THIS_DIR = Path(__file__).resolve().parent
@@ -177,6 +178,19 @@ def is_valid_image_path(value: Any) -> bool:
     return Path(path_value).exists()
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def build_uniform_player_image(path_value: str, target_width: int = 960, target_height: int = 1200):
+    with Image.open(path_value) as image:
+        image = image.convert("RGB")
+        fitted = ImageOps.fit(
+            image,
+            (target_width, target_height),
+            method=Image.Resampling.LANCZOS,
+            centering=(0.5, 0.35),
+        )
+        return fitted
+
+
 def render_css() -> None:
     st.markdown(
         """
@@ -330,6 +344,11 @@ def render_css() -> None:
             font-size: 2rem;
             font-weight: 800;
             border: 1px solid rgba(255,255,255,0.08);
+          }
+
+          [data-testid="stImage"] img {
+            border-radius: 8px;
+            display: block;
           }
         </style>
         """,
@@ -557,7 +576,7 @@ def render_hero(df: pd.DataFrame) -> None:
 def render_player_card(player: Dict[str, Any]) -> None:
     photo_path = player.get("photo_path")
     if is_valid_image_path(photo_path):
-        st.image(str(photo_path), use_container_width=True)
+        st.image(build_uniform_player_image(str(photo_path)), use_container_width=True)
     else:
         st.markdown(
             f"<div class='team-initials'>{initials_for_name(player['full_name'])}</div>",
