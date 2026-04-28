@@ -344,6 +344,7 @@ def render_css() -> None:
             font-size: 2rem;
             font-weight: 800;
             border: 1px solid rgba(255,255,255,0.08);
+            margin-bottom: 0.75rem;
           }
 
           [data-testid="stImage"] img {
