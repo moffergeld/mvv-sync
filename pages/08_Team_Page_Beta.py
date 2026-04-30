@@ -210,6 +210,11 @@ def current_week_context() -> tuple[int, str]:
     return week_key, week_label
 
 
+def display_position_label(position_value: Any, fallback_group: str = "Selectie") -> str:
+    text = str(position_value or "").strip()
+    return text if text else fallback_group
+
+
 def initials_for_name(name: str) -> str:
     parts = [part for part in str(name).split() if part]
     if not parts:
@@ -248,6 +253,37 @@ def render_css() -> None:
     st.markdown(
         """
         <style>
+          :root {
+            --mvv-red: #c8102e;
+            --mvv-red-bright: #ea3351;
+            --mvv-navy: #0b1020;
+            --mvv-panel: #12192a;
+            --mvv-panel-2: #182134;
+            --mvv-line: rgba(234, 51, 81, 0.26);
+            --mvv-text: #f8fafc;
+            --mvv-muted: rgba(226, 232, 240, 0.74);
+            --mvv-soft: rgba(255, 255, 255, 0.06);
+          }
+
+          .stApp {
+            background:
+              radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%),
+              radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%),
+              linear-gradient(180deg, #070c18 0%, #0a1020 100%);
+            color: var(--mvv-text);
+          }
+
+          [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, rgba(16, 23, 38, 0.98), rgba(9, 13, 23, 0.98));
+            border-right: 1px solid rgba(255,255,255,0.06);
+          }
+
+          [data-testid="stSidebar"] .stMarkdown,
+          [data-testid="stSidebar"] label,
+          [data-testid="stSidebar"] div {
+            color: var(--mvv-text);
+          }
+
           .block-container {
             padding-top: 1.2rem;
             padding-bottom: 2.5rem;
@@ -257,106 +293,131 @@ def render_css() -> None:
           .team-hero {
             background:
               radial-gradient(circle at top right, rgba(228, 8, 36, 0.2), transparent 28%),
-              linear-gradient(180deg, rgba(24, 24, 27, 0.97), rgba(11, 11, 15, 0.97));
-            color: #f9fafb;
+              linear-gradient(135deg, rgba(18, 25, 42, 0.98), rgba(10, 15, 27, 0.98));
+            color: var(--mvv-text);
             border-radius: 8px;
-            padding: 1.25rem 1.35rem 1.4rem 1.35rem;
+            padding: 1.35rem 1.45rem 1.5rem 1.45rem;
             border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
           }
 
           .team-kicker {
-            color: rgba(255,255,255,0.72);
-            font-size: 0.82rem;
-            font-weight: 700;
+            color: rgba(255,255,255,0.76);
+            font-size: 0.74rem;
+            font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.18em;
             margin-bottom: 0.35rem;
           }
 
           .team-title {
             margin: 0;
-            font-size: 2.25rem;
-            line-height: 1.02;
+            font-size: 2.45rem;
+            line-height: 1;
             font-weight: 800;
           }
 
           .team-sub {
-            margin-top: 0.55rem;
-            max-width: 68ch;
-            color: rgba(255,255,255,0.82);
+            margin-top: 0.65rem;
+            max-width: 72ch;
+            color: rgba(255,255,255,0.84);
             line-height: 1.5;
           }
 
           .team-pill {
             display: inline-block;
-            padding: 0.38rem 0.72rem;
+            padding: 0.42rem 0.76rem;
             border-radius: 999px;
             margin-right: 0.45rem;
             margin-top: 0.75rem;
-            font-size: 0.82rem;
-            font-weight: 700;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: rgba(255,255,255,0.05);
+            font-size: 0.78rem;
+            font-weight: 800;
+            border: 1px solid rgba(234, 51, 81, 0.22);
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.92);
           }
 
           .team-section {
-            padding-top: 1.1rem;
+            padding-top: 1.25rem;
           }
 
           .team-section-head {
             display: flex;
             justify-content: space-between;
-            align-items: baseline;
+            align-items: center;
             gap: 1rem;
-            margin-bottom: 0.85rem;
-            padding-bottom: 0.45rem;
-            border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+            margin-bottom: 1rem;
+            padding: 0.95rem 1.05rem;
+            border: 1px solid var(--mvv-line);
+            border-left: 4px solid var(--mvv-red);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(18, 25, 42, 0.98), rgba(11, 16, 29, 0.98));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
           }
 
           .team-section-title {
             margin: 0;
-            font-size: 1.22rem;
+            font-size: 1.5rem;
             font-weight: 800;
-            color: #111827;
+            color: var(--mvv-text);
           }
 
           .team-section-copy {
-            margin: 0.15rem 0 0 0;
-            color: #4b5563;
+            margin: 0.22rem 0 0 0;
+            color: rgba(255,255,255,0.68);
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
           }
 
           .team-count {
-            font-size: 0.88rem;
-            font-weight: 700;
-            color: #6b7280;
+            font-size: 0.82rem;
+            font-weight: 800;
+            color: #ffffff;
             white-space: nowrap;
+            background: rgba(234, 51, 81, 0.16);
+            border: 1px solid rgba(234, 51, 81, 0.32);
+            border-radius: 999px;
+            padding: 0.44rem 0.72rem;
           }
 
           .team-toolbar-note {
             margin-top: 1.7rem;
-            color: #4b5563;
+            color: rgba(255,255,255,0.76);
             font-size: 0.88rem;
             text-align: right;
+            font-weight: 700;
           }
 
           .team-card {
-            border: 1px solid rgba(17,24,39,0.08);
+            border: 1px solid rgba(234, 51, 81, 0.14);
             border-radius: 8px;
             padding: 0.85rem 0.9rem 0.95rem 0.9rem;
-            background: #ffffff;
-            min-height: 214px;
+            background: linear-gradient(180deg, rgba(19, 26, 41, 0.98), rgba(12, 17, 28, 0.98));
+            min-height: 226px;
+            box-shadow: 0 12px 22px rgba(0, 0, 0, 0.18);
           }
 
           .team-card-title {
-            margin: 0.7rem 0 0 0;
+            margin: 0.22rem 0 0 0;
             font-size: 1rem;
             font-weight: 800;
-            color: #111827;
+            color: var(--mvv-text);
+          }
+
+          .team-card-role {
+            margin-top: 0.72rem;
+            color: rgba(255,255,255,0.62);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
           }
 
           .team-card-meta {
-            margin-top: 0.15rem;
-            color: #6b7280;
+            margin-top: 0.18rem;
+            color: var(--mvv-muted);
             font-size: 0.84rem;
           }
 
@@ -368,6 +429,7 @@ def render_css() -> None:
             color: #ffffff;
             font-size: 0.8rem;
             font-weight: 800;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.14);
           }
 
           .team-grid-gap {
@@ -375,21 +437,26 @@ def render_css() -> None:
           }
 
           [data-testid="stMetric"] {
-            background: #ffffff;
-            border: 1px solid rgba(17,24,39,0.08);
+            background: linear-gradient(180deg, rgba(18, 25, 42, 0.98), rgba(11, 16, 29, 0.98));
+            border: 1px solid rgba(234, 51, 81, 0.16);
             border-radius: 8px;
             padding: 0.85rem 1rem;
             height: 100%;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
           }
 
           [data-testid="stMetricLabel"] {
-            font-weight: 700;
-            color: #6b7280;
+            font-weight: 800;
+            color: rgba(255,255,255,0.68);
           }
 
           [data-testid="stMetricValue"] {
             font-size: 1.95rem;
-            color: #111827;
+            color: #ffffff;
+          }
+
+          [data-testid="stMetricDelta"] {
+            color: #ffffff;
           }
 
           .team-initials {
@@ -399,11 +466,13 @@ def render_css() -> None:
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(180deg, #1f2937, #111827);
+            background:
+              radial-gradient(circle at top left, rgba(234, 51, 81, 0.28), transparent 36%),
+              linear-gradient(180deg, #182236, #0f1729);
             color: #ffffff;
             font-size: 2rem;
             font-weight: 800;
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(234, 51, 81, 0.18);
             margin-bottom: 0.75rem;
           }
 
@@ -414,17 +483,21 @@ def render_css() -> None:
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(180deg, #1f2937, #111827);
+            background:
+              radial-gradient(circle at top left, rgba(234, 51, 81, 0.28), transparent 36%),
+              linear-gradient(180deg, #182236, #0f1729);
             color: #ffffff;
             font-size: 1.7rem;
             font-weight: 800;
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(234, 51, 81, 0.18);
             margin-bottom: 0;
           }
 
           [data-testid="stImage"] img {
             border-radius: 8px;
             display: block;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
           }
 
           .team-list-row {
@@ -432,23 +505,24 @@ def render_css() -> None:
           }
 
           .team-list-panel {
-            border: 1px solid rgba(17,24,39,0.08);
+            border: 1px solid rgba(234, 51, 81, 0.14);
             border-radius: 8px;
             padding: 0.95rem 1rem;
-            background: #ffffff;
+            background: linear-gradient(180deg, rgba(19, 26, 41, 0.98), rgba(12, 17, 28, 0.98));
             min-height: 188px;
+            box-shadow: 0 12px 22px rgba(0, 0, 0, 0.18);
           }
 
           .team-list-name {
             margin: 0;
             font-size: 1.05rem;
             font-weight: 800;
-            color: #111827;
+            color: var(--mvv-text);
           }
 
           .team-list-copy {
             margin-top: 0.2rem;
-            color: #4b5563;
+            color: var(--mvv-muted);
             font-size: 0.87rem;
             line-height: 1.45;
           }
@@ -458,7 +532,7 @@ def render_css() -> None:
             font-weight: 800;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: #9ca3af;
+            color: rgba(255,255,255,0.58);
             margin-bottom: 0.35rem;
           }
 
@@ -471,6 +545,7 @@ def render_css() -> None:
             color: #ffffff;
             font-size: 0.8rem;
             font-weight: 800;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.14);
           }
 
           .team-list-acwr-grid {
@@ -481,10 +556,10 @@ def render_css() -> None:
           }
 
           .team-list-acwr-item {
-            border: 1px solid rgba(17,24,39,0.08);
+            border: 1px solid rgba(255,255,255,0.06);
             border-radius: 8px;
             padding: 0.55rem 0.65rem;
-            background: rgba(17,24,39,0.02);
+            background: rgba(255,255,255,0.04);
           }
 
           .team-list-acwr-label {
@@ -492,14 +567,18 @@ def render_css() -> None:
             font-weight: 800;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            color: #9ca3af;
+            color: rgba(255,255,255,0.58);
           }
 
           .team-list-acwr-value {
             margin-top: 0.18rem;
             font-size: 1rem;
             font-weight: 800;
-            color: #111827;
+            color: var(--mvv-text);
+          }
+
+          .stCaption {
+            color: rgba(255,255,255,0.72) !important;
           }
         </style>
         """,
@@ -794,14 +873,14 @@ def render_hero(df: pd.DataFrame) -> None:
         st.markdown(
             f"""
             <div class="team-hero">
-              <div class="team-kicker">MVV Maastricht | Team Readiness | Beta</div>
-              <h1 class="team-title">Team Page</h1>
+              <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
+              <h1 class="team-title">Selectieoverzicht</h1>
               <div class="team-sub">
                 Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
                 aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
               </div>
-              <span class="team-pill">Gegroepeerd op doelmannen, verdedigers, middenvelders en aanvallers</span>
-              <span class="team-pill">Readiness gebaseerd op laatste wellness-score in de app</span>
+              <span class="team-pill">Per linie gegroepeerd voor staf en performance-overzicht</span>
+              <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
               <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
             </div>
             """,
@@ -835,10 +914,12 @@ def render_player_card(player: Dict[str, Any]) -> None:
     )
 
     render_player_thumbnail(player, initials_class="team-initials")
+    position_label = display_position_label(player.get("position"), player.get("group", "Selectie"))
 
     st.markdown(
         f"""
         <div class="team-card">
+          <div class="team-card-role">{position_label}</div>
           <div class="team-card-title">{player['full_name']}</div>
           <div class="team-card-meta">
             Wellness {format_metric_value(player.get('wellness_value'))} | RPE {format_metric_value(player.get('rpe_value'))}
@@ -880,7 +961,7 @@ def render_group_header(group_name: str, label_en: str, count: int) -> None:
         <div class="team-section-head">
           <div>
             <div class="team-section-title">{group_name}</div>
-            <div class="team-section-copy">{label_en}</div>
+            <div class="team-section-copy">Linie | {label_en}</div>
           </div>
           <div class="team-count">{count} spelers</div>
         </div>
@@ -892,6 +973,7 @@ def render_group_header(group_name: str, label_en: str, count: int) -> None:
 def render_list_player_row(player: Dict[str, Any]) -> None:
     current_week_label = player.get("acwr_week_label", current_week_context()[1])
     latest_update = player["wellness_date"].strftime("%d-%m") if player.get("wellness_date") else "--"
+    position_label = display_position_label(player.get("position"), player.get("group", "Selectie"))
 
     acwr_grid = "".join(
         f"""
@@ -913,7 +995,8 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
         st.markdown(
             f"""
             <div class="team-list-panel">
-              <div class="team-list-kicker">Player status</div>
+              <div class="team-list-kicker">Spelerstatus</div>
+              <div class="team-list-copy" style="margin-top:0; margin-bottom:0.4rem;">{position_label}</div>
               <div class="team-list-name">{player['full_name']}</div>
               <span class="team-list-status" style="background:{player['readiness_color']};">
                 {player['readiness_label']}
@@ -939,7 +1022,7 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
         st.markdown(
             f"""
             <div class="team-list-panel">
-              <div class="team-list-kicker">Current week ACWR</div>
+              <div class="team-list-kicker">Belastingsratio</div>
               <div class="team-list-name">{current_week_label}</div>
               <div class="team-list-copy">
                 Huidige week gedeeld door gemiddelde van de vorige 4 weken
