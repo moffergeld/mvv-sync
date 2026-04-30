@@ -38,6 +38,20 @@ GROUP_ORDER = [
     ("Selectie", "Squad"),
 ]
 
+ACWR_METRICS = [
+    ("total_distance", "TD"),
+    ("running", "Run"),
+    ("sprint", "Sprint"),
+    ("high_sprint", "HS"),
+]
+
+ACWR_LIST_LABELS = {
+    "total_distance_acwr": "ACWR TD",
+    "running_acwr": "ACWR Run",
+    "sprint_acwr": "ACWR Sprint",
+    "high_sprint_acwr": "ACWR HS",
+}
+
 
 def normalize_name(value: str) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -160,6 +174,22 @@ def format_metric_value(value: Optional[float], suffix: str = "") -> str:
     return f"{value:.1f}{suffix}"
 
 
+def format_acwr_value(value: Optional[float]) -> str:
+    if value is None or pd.isna(value):
+        return "--"
+    value = float(value)
+    if not math.isfinite(value):
+        return "--"
+    return f"{value:.2f}"
+
+
+def current_week_context() -> tuple[int, str]:
+    iso = date.today().isocalendar()
+    week_key = int(iso.year) * 100 + int(iso.week)
+    week_label = f"{int(iso.year):04d}-W{int(iso.week):02d}"
+    return week_key, week_label
+
+
 def initials_for_name(name: str) -> str:
     parts = [part for part in str(name).split() if part]
     if not parts:
@@ -277,6 +307,13 @@ def render_css() -> None:
             font-weight: 700;
             color: #6b7280;
             white-space: nowrap;
+          }
+
+          .team-toolbar-note {
+            margin-top: 1.7rem;
+            color: #4b5563;
+            font-size: 0.88rem;
+            text-align: right;
           }
 
           .team-card {
@@ -465,6 +502,89 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
     return daily
 
 
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    try:
+        rows = (
+            _sb.table("v_gps_summary")
+            .select("player_id,datum,total_distance,running,sprint,high_sprint")
+            .gte("datum", start_iso)
+            .lte("datum", end_iso)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        rows = []
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
+    df = df.dropna(subset=["player_id", "datum"]).copy()
+    if df.empty:
+        return df
+
+    metric_cols = [metric for metric, _ in ACWR_METRICS]
+    for metric in metric_cols:
+        if metric not in df.columns:
+            df[metric] = 0.0
+        df[metric] = pd.to_numeric(df[metric], errors="coerce").fillna(0.0)
+
+    iso = df["datum"].dt.isocalendar()
+    df["iso_year"] = iso["year"].astype("Int64")
+    df["iso_week"] = iso["week"].astype("Int64")
+    df["week_key"] = (df["iso_year"] * 100 + df["iso_week"]).astype("Int64")
+    df["week_label"] = df.apply(
+        lambda row: f"{int(row['iso_year']):04d}-W{int(row['iso_week']):02d}"
+        if pd.notna(row["iso_year"]) and pd.notna(row["iso_week"])
+        else None,
+        axis=1,
+    )
+
+    weekly = (
+        df.groupby(["player_id", "week_key", "week_label"], as_index=False)[metric_cols]
+        .sum()
+        .sort_values(["player_id", "week_key"])
+    )
+    return weekly
+
+
+def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[str, Dict[str, Any]]]:
+    current_week_key, current_week_label = current_week_context()
+    if weekly_df.empty:
+        return current_week_label, {}
+
+    df = weekly_df.copy()
+    df["week_key"] = pd.to_numeric(df["week_key"], errors="coerce").astype("Int64")
+    df = df.dropna(subset=["player_id", "week_key"]).sort_values(["player_id", "week_key"]).copy()
+    if df.empty:
+        return current_week_label, {}
+
+    metric_cols = [metric for metric, _ in ACWR_METRICS]
+    for metric in metric_cols:
+        chronic = df.groupby("player_id")[metric].transform(
+            lambda series: series.shift(1).rolling(window=4, min_periods=2).mean()
+        )
+        df[f"{metric}_acwr"] = df[metric].div(chronic.where(chronic != 0))
+
+    current_df = df[df["week_key"] == current_week_key].copy()
+    lookup: Dict[str, Dict[str, Any]] = {}
+    for _, row in current_df.iterrows():
+        player_payload: Dict[str, Any] = {"week_label": current_week_label}
+        for metric in metric_cols:
+            value = row.get(f"{metric}_acwr")
+            if value is None or pd.isna(value):
+                player_payload[f"{metric}_acwr"] = None
+                continue
+            value = float(value)
+            player_payload[f"{metric}_acwr"] = value if math.isfinite(value) else None
+        lookup[str(row["player_id"])] = player_payload
+
+    return current_week_label, lookup
+
+
 def build_snapshot_lookup(df: pd.DataFrame, date_col: str, value_col: str) -> Dict[str, Dict[str, Any]]:
     if df.empty:
         return {}
@@ -494,14 +614,17 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
     start_wellness = today_value - timedelta(days=13)
     start_rpe = today_value - timedelta(days=6)
     start_gps = today_value - timedelta(days=13)
+    start_acwr = today_value - timedelta(days=84)
 
     wellness_df = fetch_wellness_snapshot(sb, access_scope, start_wellness.isoformat(), today_value.isoformat())
     rpe_df = fetch_rpe_snapshot(sb, access_scope, start_rpe.isoformat(), today_value.isoformat())
     gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
+    acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
 
     wellness_lookup = build_snapshot_lookup(wellness_df, "entry_date", "wellness_avg")
     rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
     gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
+    current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
 
     rows: List[Dict[str, Any]] = []
     for player in players:
@@ -510,6 +633,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
         wellness = wellness_lookup.get(player_id, {})
         rpe = rpe_lookup.get(player_id, {})
         gps = gps_lookup.get(player_id, {})
+        acwr = acwr_lookup.get(player_id, {})
         readiness_label, readiness_color = build_status(wellness.get("value"))
 
         rows.append(
@@ -526,6 +650,11 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
                 "rpe_today": bool(rpe.get("is_today", False)),
                 "gps_value": gps.get("value"),
                 "gps_date": gps.get("date"),
+                "acwr_week_label": acwr.get("week_label", current_week_label),
+                "total_distance_acwr": acwr.get("total_distance_acwr"),
+                "running_acwr": acwr.get("running_acwr"),
+                "sprint_acwr": acwr.get("sprint_acwr"),
+                "high_sprint_acwr": acwr.get("high_sprint_acwr"),
                 "readiness_label": readiness_label,
                 "readiness_color": readiness_color,
                 "readiness_rank": {"Alert": 0, "Watch": 1, "Ready": 2, "No data": 3}.get(readiness_label, 3),
@@ -536,6 +665,11 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
 
 
 def render_hero(df: pd.DataFrame) -> None:
+    current_week_label = (
+        str(df["acwr_week_label"].dropna().iloc[0])
+        if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
+        else current_week_context()[1]
+    )
     left, right = st.columns([0.28, 1.72], gap="large")
     with left:
         if TEAM_LOGO.exists():
@@ -543,16 +677,17 @@ def render_hero(df: pd.DataFrame) -> None:
 
     with right:
         st.markdown(
-            """
+            f"""
             <div class="team-hero">
               <div class="team-kicker">MVV Maastricht | Team Readiness | Beta</div>
               <h1 class="team-title">Team Page</h1>
               <div class="team-sub">
                 Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
-                aangevuld met RPE en laatste GPS-belasting.
+                aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
               </div>
               <span class="team-pill">Gegroepeerd op doelmannen, verdedigers, middenvelders en aanvallers</span>
               <span class="team-pill">Readiness gebaseerd op laatste wellness-score in de app</span>
+              <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -575,6 +710,15 @@ def render_hero(df: pd.DataFrame) -> None:
 
 
 def render_player_card(player: Dict[str, Any]) -> None:
+    acwr_line_one = " | ".join(
+        f"{label} {format_acwr_value(player.get(f'{metric}_acwr'))}"
+        for metric, label in ACWR_METRICS[:2]
+    )
+    acwr_line_two = " | ".join(
+        f"{label} {format_acwr_value(player.get(f'{metric}_acwr'))}"
+        for metric, label in ACWR_METRICS[2:]
+    )
+
     photo_path = player.get("photo_path")
     if is_valid_image_path(photo_path):
         st.image(build_uniform_player_image(str(photo_path)), use_container_width=True)
@@ -600,9 +744,45 @@ def render_player_card(player: Dict[str, Any]) -> None:
           <div class="team-card-meta" style="margin-top:0.65rem;">
             Vandaag wellness: {"Ja" if player.get('wellness_today') else "Nee"} | Vandaag RPE: {"Ja" if player.get('rpe_today') else "Nee"}
           </div>
+          <div class="team-card-meta">ACWR {player.get('acwr_week_label', current_week_context()[1])}: {acwr_line_one}</div>
+          <div class="team-card-meta">{acwr_line_two}</div>
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def render_group_header(group_name: str, label_en: str, count: int) -> None:
+    st.markdown(
+        f"""
+        <div class="team-section-head">
+          <div>
+            <div class="team-section-title">{group_name}</div>
+            <div class="team-section-copy">{label_en}</div>
+          </div>
+          <div class="team-count">{count} spelers</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def build_group_list_df(group_df: pd.DataFrame) -> pd.DataFrame:
+    list_df = group_df.copy()
+    return pd.DataFrame(
+        {
+            "Speler": list_df["full_name"],
+            "Readiness": list_df["readiness_label"],
+            "Wellness": list_df["wellness_value"].map(format_metric_value),
+            "RPE": list_df["rpe_value"].map(format_metric_value),
+            "GPS (m)": list_df["gps_value"].map(lambda value: format_metric_value(value, " m")),
+            "Wellness vandaag": list_df["wellness_today"].map(lambda value: "Ja" if bool(value) else "Nee"),
+            "RPE vandaag": list_df["rpe_today"].map(lambda value: "Ja" if bool(value) else "Nee"),
+            ACWR_LIST_LABELS["total_distance_acwr"]: list_df["total_distance_acwr"].map(format_acwr_value),
+            ACWR_LIST_LABELS["running_acwr"]: list_df["running_acwr"].map(format_acwr_value),
+            ACWR_LIST_LABELS["sprint_acwr"]: list_df["sprint_acwr"].map(format_acwr_value),
+            ACWR_LIST_LABELS["high_sprint_acwr"]: list_df["high_sprint_acwr"].map(format_acwr_value),
+        }
     )
 
 
@@ -614,18 +794,7 @@ def render_group_section(df: pd.DataFrame, group_name: str, label_en: str) -> No
     group_df = group_df.sort_values(["readiness_rank", "full_name"], ascending=[True, True]).reset_index(drop=True)
 
     st.markdown('<div class="team-section">', unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <div class="team-section-head">
-          <div>
-            <div class="team-section-title">{group_name}</div>
-            <div class="team-section-copy">{label_en}</div>
-          </div>
-          <div class="team-count">{len(group_df)} spelers</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    render_group_header(group_name, label_en, len(group_df))
 
     cols_per_row = 4
     rows_needed = int(math.ceil(len(group_df) / cols_per_row))
@@ -639,6 +808,30 @@ def render_group_section(df: pd.DataFrame, group_name: str, label_en: str) -> No
             st.markdown('<div class="team-grid-gap"></div>', unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_list_view(df: pd.DataFrame) -> None:
+    current_week_label = (
+        str(df["acwr_week_label"].dropna().iloc[0])
+        if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
+        else current_week_context()[1]
+    )
+    st.caption(f"ACWR {current_week_label} | huidige week gedeeld door gemiddelde van de vorige 4 weken")
+
+    for group_name, label_en in GROUP_ORDER:
+        group_df = df[df["group"] == group_name].copy()
+        if group_df.empty:
+            continue
+
+        group_df = group_df.sort_values(["readiness_rank", "full_name"], ascending=[True, True]).reset_index(drop=True)
+        st.markdown('<div class="team-section">', unsafe_allow_html=True)
+        render_group_header(group_name, label_en, len(group_df))
+        st.dataframe(
+            build_group_list_df(group_df),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def main() -> None:
@@ -662,6 +855,23 @@ def main() -> None:
         st.stop()
 
     render_hero(squad_df)
+    toolbar_left, toolbar_right = st.columns([1.1, 1.9], gap="large")
+    with toolbar_left:
+        view_mode = st.radio("Weergave", ["Kaarten", "Lijst"], horizontal=True, key="team_beta_view")
+    with toolbar_right:
+        current_week_label = (
+            str(squad_df["acwr_week_label"].dropna().iloc[0])
+            if "acwr_week_label" in squad_df.columns and squad_df["acwr_week_label"].notna().any()
+            else current_week_context()[1]
+        )
+        st.markdown(
+            f"<div class='team-toolbar-note'>ACWR huidige week: {current_week_label}</div>",
+            unsafe_allow_html=True,
+        )
+
+    if view_mode == "Lijst":
+        render_list_view(squad_df)
+        return
 
     for group_name, label_en in GROUP_ORDER:
         render_group_section(squad_df, group_name, label_en)
