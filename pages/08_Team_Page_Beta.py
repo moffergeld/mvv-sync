@@ -1058,12 +1058,10 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
     position_label = display_position_label(player.get("position"), player.get("group", "Selectie"))
 
     acwr_grid = "".join(
-        f"""
-        <div class="team-list-acwr-item">
-          <div class="team-list-acwr-label">{label}</div>
-          <div class="team-list-acwr-value">{format_acwr_value(player.get(f"{metric}_acwr"))}</div>
-        </div>
-        """
+        f'<div class="team-list-acwr-item">'
+        f'<div class="team-list-acwr-label">{label}</div>'
+        f'<div class="team-list-acwr-value">{format_acwr_value(player.get(f"{metric}_acwr"))}</div>'
+        f"</div>"
         for metric, label in ACWR_METRICS
     )
 
@@ -1075,42 +1073,12 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
     with info_col:
         status_grid = "".join(
             [
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">Wellness</div>
-                  <div class="team-list-main-value">{format_metric_value(player.get('wellness_value'))}</div>
-                </div>
-                """,
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">RPE</div>
-                  <div class="team-list-main-value">{format_metric_value(player.get('rpe_value'))}</div>
-                </div>
-                """,
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">GPS load</div>
-                  <div class="team-list-main-value">{format_metric_value(player.get('gps_value'), ' m')}</div>
-                </div>
-                """,
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">GPS update</div>
-                  <div class="team-list-main-value">{latest_gps_update}</div>
-                </div>
-                """,
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">Wellness vandaag</div>
-                  <div class="team-list-main-value">{"Ja" if player.get('wellness_today') else "Nee"}</div>
-                </div>
-                """,
-                f"""
-                <div class="team-list-main-item">
-                  <div class="team-list-main-label">RPE vandaag</div>
-                  <div class="team-list-main-value">{"Ja" if player.get('rpe_today') else "Nee"}</div>
-                </div>
-                """,
+                f'<div class="team-list-main-item"><div class="team-list-main-label">Wellness</div><div class="team-list-main-value">{format_metric_value(player.get("wellness_value"))}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">RPE</div><div class="team-list-main-value">{format_metric_value(player.get("rpe_value"))}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">GPS load</div><div class="team-list-main-value">{format_metric_value(player.get("gps_value"), " m")}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">GPS update</div><div class="team-list-main-value">{latest_gps_update}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">Wellness vandaag</div><div class="team-list-main-value">{"Ja" if player.get("wellness_today") else "Nee"}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">RPE vandaag</div><div class="team-list-main-value">{"Ja" if player.get("rpe_today") else "Nee"}</div></div>',
             ]
         )
 
