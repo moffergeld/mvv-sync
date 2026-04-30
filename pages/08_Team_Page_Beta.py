@@ -62,29 +62,40 @@ def normalize_name(value: str) -> str:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, Any]]:
-    try:
-        rows = (
-            _sb.table("players")
-            .select('player_id,full_name,is_active,position:"Position"')
-            .eq("is_active", True)
-            .order("full_name")
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        rows = []
+    rows: List[Dict[str, Any]] = []
+    select_variants = [
+        'player_id,full_name,is_active,"Position"',
+        "player_id,full_name,is_active",
+    ]
+
+    for select_clause in select_variants:
+        try:
+            rows = (
+                _sb.table("players")
+                .select(select_clause)
+                .eq("is_active", True)
+                .order("full_name")
+                .execute()
+                .data
+                or []
+            )
+            break
+        except Exception:
+            rows = []
 
     out: List[Dict[str, Any]] = []
     for row in rows:
         player_id = row.get("player_id")
         full_name = str(row.get("full_name") or "").strip()
+        position_value = row.get("Position")
+        if position_value is None:
+            position_value = row.get("position")
         if player_id and full_name:
             out.append(
                 {
                     "player_id": str(player_id),
                     "full_name": full_name,
-                    "position": str(row.get("position") or "").strip(),
+                    "position": str(position_value or "").strip(),
                 }
             )
     return out
