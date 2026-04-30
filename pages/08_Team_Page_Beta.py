@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import streamlit as st
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 THIS_DIR = Path(__file__).resolve().parent
@@ -60,54 +60,12 @@ def normalize_name(value: str) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
-POSITION_GROUP_BY_NAME = {
-    normalize_name("Sem Westerveld"): "Doelmannen",
-    normalize_name("Tom Poitoux"): "Doelmannen",
-    normalize_name("Sep van der Heijden"): "Doelmannen",
-    normalize_name("Ruud Geerinck"): "Doelmannen",
-    normalize_name("Nicola Rijnbout"): "Doelmannen",
-    normalize_name("Simon Francis"): "Verdedigers",
-    normalize_name("Finn Dicke"): "Verdedigers",
-    normalize_name("Wout Coomans"): "Verdedigers",
-    normalize_name("Ilias Breugelmans"): "Verdedigers",
-    normalize_name("Adam Zaian"): "Verdedigers",
-    normalize_name("Djairo Tehubijuluw"): "Verdedigers",
-    normalize_name("Mitch van Kempen"): "Verdedigers",
-    normalize_name("Lenn-Minh Tran"): "Verdedigers",
-    normalize_name("Lars Schenk"): "Verdedigers",
-    normalize_name("Kanou Sy"): "Verdedigers",
-    normalize_name("Andrea Librici"): "Verdedigers",
-    normalize_name("Andrea Librici"): "Verdedigers",
-    normalize_name("Nabil El Basri"): "Middenvelders",
-    normalize_name("Stan van Dessel"): "Middenvelders",
-    normalize_name("Amine Amgar"): "Middenvelders",
-    normalize_name("Marko Kleinen"): "Middenvelders",
-    normalize_name("Adriano Mpudi"): "Middenvelders",
-    normalize_name("Robert Klaasen"): "Middenvelders",
-    normalize_name("Bryan Smeets"): "Middenvelders",
-    normalize_name("Jashari"): "Middenvelders",
-    normalize_name("Lirim Jashari"): "Middenvelders",
-    normalize_name("Travis de Jong"): "Aanvallers",
-    normalize_name("Ayman Kassimi"): "Aanvallers",
-    normalize_name("Sven Braken"): "Aanvallers",
-    normalize_name("Ilano Silva Timas"): "Aanvallers",
-    normalize_name("Thijme Verheijen"): "Aanvallers",
-    normalize_name("Mats Kuipers"): "Aanvallers",
-    normalize_name("Jael Pawirodihardjo"): "Aanvallers",
-    normalize_name("Jael"): "Aanvallers",
-    normalize_name("Jael Pawirodihardjo"): "Aanvallers",
-    normalize_name("Delano Asante"): "Aanvallers",
-    normalize_name("Luca Foubert"): "Aanvallers",
-    normalize_name("Camil Mmaee"): "Aanvallers",
-}
-
-
 @st.cache_data(show_spinner=False, ttl=300)
-def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, str]]:
+def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, Any]]:
     try:
         rows = (
             _sb.table("players")
-            .select("player_id,full_name,is_active")
+            .select('player_id,full_name,is_active,position:"Position"')
             .eq("is_active", True)
             .order("full_name")
             .execute()
@@ -117,12 +75,18 @@ def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[
     except Exception:
         rows = []
 
-    out: List[Dict[str, str]] = []
+    out: List[Dict[str, Any]] = []
     for row in rows:
         player_id = row.get("player_id")
         full_name = str(row.get("full_name") or "").strip()
         if player_id and full_name:
-            out.append({"player_id": str(player_id), "full_name": full_name})
+            out.append(
+                {
+                    "player_id": str(player_id),
+                    "full_name": full_name,
+                    "position": str(row.get("position") or "").strip(),
+                }
+            )
     return out
 
 
@@ -152,8 +116,64 @@ def resolve_player_image(player_name: str) -> Optional[str]:
     return None
 
 
-def resolve_group(player_name: str) -> str:
-    return POSITION_GROUP_BY_NAME.get(normalize_name(player_name), "Selectie")
+def resolve_group(position_value: Any) -> str:
+    normalized = normalize_name(str(position_value or ""))
+    if not normalized:
+        return "Selectie"
+
+    goalkeeper_tokens = {"gk", "goalkeeper", "keeper", "doelman", "goalie"}
+    defender_tokens = {
+        "defender",
+        "verdediger",
+        "centerback",
+        "centreback",
+        "fullback",
+        "wingback",
+        "back",
+        "cb",
+        "lb",
+        "rb",
+        "lwb",
+        "rwb",
+    }
+    midfielder_tokens = {
+        "midfielder",
+        "middenvelder",
+        "midfield",
+        "cm",
+        "dm",
+        "am",
+        "cam",
+        "cdm",
+        "lm",
+        "rm",
+    }
+    attacker_tokens = {
+        "forward",
+        "attacker",
+        "aanvaller",
+        "striker",
+        "spits",
+        "winger",
+        "cf",
+        "st",
+        "ss",
+        "lw",
+        "rw",
+        "lf",
+        "rf",
+    }
+
+    if normalized in goalkeeper_tokens or "goalkeeper" in normalized or "doelman" in normalized:
+        return "Doelmannen"
+    if normalized in defender_tokens or any(token in normalized for token in ("defender", "verdediger", "back")):
+        return "Verdedigers"
+    if normalized in midfielder_tokens or any(token in normalized for token in ("midfielder", "middenvelder", "midfield")):
+        return "Middenvelders"
+    if normalized in attacker_tokens or any(token in normalized for token in ("forward", "attacker", "aanvaller", "spits", "winger")):
+        return "Aanvallers"
+
+    return "Selectie"
 
 
 def build_status(score: Optional[float]) -> tuple[str, str]:
@@ -210,15 +230,18 @@ def is_valid_image_path(value: Any) -> bool:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def build_uniform_player_image(path_value: str, target_width: int = 960, target_height: int = 1200):
-    with Image.open(path_value) as image:
-        image = image.convert("RGB")
-        fitted = ImageOps.fit(
-            image,
-            (target_width, target_height),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.35),
-        )
-        return fitted
+    try:
+        with Image.open(path_value) as image:
+            image = image.convert("RGB")
+            fitted = ImageOps.fit(
+                image,
+                (target_width, target_height),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.35),
+            )
+            return fitted
+    except (FileNotFoundError, OSError, UnidentifiedImageError, ValueError):
+        return None
 
 
 def render_css() -> None:
@@ -720,6 +743,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
     for player in players:
         player_id = player["player_id"]
         player_name = player["full_name"]
+        player_position = player.get("position")
         wellness = wellness_lookup.get(player_id, {})
         rpe = rpe_lookup.get(player_id, {})
         gps = gps_lookup.get(player_id, {})
@@ -730,7 +754,8 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
             {
                 "player_id": player_id,
                 "full_name": player_name,
-                "group": resolve_group(player_name),
+                "position": player_position,
+                "group": resolve_group(player_position),
                 "photo_path": resolve_player_image(player_name),
                 "wellness_value": wellness.get("value"),
                 "wellness_date": wellness.get("date"),
@@ -809,14 +834,7 @@ def render_player_card(player: Dict[str, Any]) -> None:
         for metric, label in ACWR_METRICS[2:]
     )
 
-    photo_path = player.get("photo_path")
-    if is_valid_image_path(photo_path):
-        st.image(build_uniform_player_image(str(photo_path)), use_container_width=True)
-    else:
-        st.markdown(
-            f"<div class='team-initials'>{initials_for_name(player['full_name'])}</div>",
-            unsafe_allow_html=True,
-        )
+    render_player_thumbnail(player, initials_class="team-initials")
 
     st.markdown(
         f"""
@@ -845,8 +863,10 @@ def render_player_card(player: Dict[str, Any]) -> None:
 def render_player_thumbnail(player: Dict[str, Any], initials_class: str = "team-initials") -> None:
     photo_path = player.get("photo_path")
     if is_valid_image_path(photo_path):
-        st.image(build_uniform_player_image(str(photo_path)), use_container_width=True)
-        return
+        player_image = build_uniform_player_image(str(photo_path))
+        if player_image is not None:
+            st.image(player_image, use_container_width=True)
+            return
 
     st.markdown(
         f"<div class='{initials_class}'>{initials_for_name(player['full_name'])}</div>",
