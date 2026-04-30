@@ -507,15 +507,15 @@ def render_css() -> None:
           .team-list-panel {
             border: 1px solid rgba(234, 51, 81, 0.14);
             border-radius: 8px;
-            padding: 0.95rem 1rem;
+            padding: 1rem 1.05rem;
             background: linear-gradient(180deg, rgba(19, 26, 41, 0.98), rgba(12, 17, 28, 0.98));
-            min-height: 188px;
+            min-height: 350px;
             box-shadow: 0 12px 22px rgba(0, 0, 0, 0.18);
           }
 
           .team-list-name {
             margin: 0;
-            font-size: 1.05rem;
+            font-size: 1.22rem;
             font-weight: 800;
             color: var(--mvv-text);
           }
@@ -536,6 +536,20 @@ def render_css() -> None:
             margin-bottom: 0.35rem;
           }
 
+          .team-list-position-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.34rem 0.58rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.88);
+            font-size: 0.76rem;
+            font-weight: 800;
+            margin-bottom: 0.65rem;
+          }
+
           .team-list-status {
             display: inline-block;
             margin-top: 0.7rem;
@@ -548,17 +562,74 @@ def render_css() -> None:
             box-shadow: inset 0 -1px 0 rgba(0,0,0,0.14);
           }
 
+          .team-list-status-row {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            margin-top: 0.2rem;
+            margin-bottom: 0.8rem;
+            flex-wrap: wrap;
+          }
+
+          .team-list-status-copy {
+            color: rgba(255,255,255,0.66);
+            font-size: 0.83rem;
+            line-height: 1.4;
+          }
+
+          .team-list-main-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin-top: 0.55rem;
+          }
+
+          .team-list-main-item {
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            padding: 0.62rem 0.72rem;
+            background: rgba(255,255,255,0.04);
+          }
+
+          .team-list-main-label {
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.56);
+          }
+
+          .team-list-main-value {
+            margin-top: 0.18rem;
+            color: var(--mvv-text);
+            font-size: 0.96rem;
+            font-weight: 800;
+          }
+
+          .team-list-week-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.34rem 0.58rem;
+            border-radius: 999px;
+            border: 1px solid rgba(234, 51, 81, 0.28);
+            background: rgba(234, 51, 81, 0.12);
+            color: #ffffff;
+            font-size: 0.78rem;
+            font-weight: 800;
+            margin-bottom: 0.7rem;
+          }
+
           .team-list-acwr-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 0.55rem 0.8rem;
-            margin-top: 0.75rem;
+            margin-top: 0.95rem;
           }
 
           .team-list-acwr-item {
             border: 1px solid rgba(255,255,255,0.06);
             border-radius: 8px;
-            padding: 0.55rem 0.65rem;
+            padding: 0.75rem 0.75rem;
             background: rgba(255,255,255,0.04);
           }
 
@@ -572,7 +643,7 @@ def render_css() -> None:
 
           .team-list-acwr-value {
             margin-top: 0.18rem;
-            font-size: 1rem;
+            font-size: 1.08rem;
             font-weight: 800;
             color: var(--mvv-text);
           }
@@ -972,7 +1043,7 @@ def render_group_header(group_name: str, label_en: str, count: int) -> None:
 
 def render_list_player_row(player: Dict[str, Any]) -> None:
     current_week_label = player.get("acwr_week_label", current_week_context()[1])
-    latest_update = player["wellness_date"].strftime("%d-%m") if player.get("wellness_date") else "--"
+    latest_gps_update = player["gps_date"].strftime("%d-%m") if player.get("gps_date") else "--"
     position_label = display_position_label(player.get("position"), player.get("group", "Selectie"))
 
     acwr_grid = "".join(
@@ -985,33 +1056,69 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
         for metric, label in ACWR_METRICS
     )
 
-    st.markdown('<div class="team-list-row">', unsafe_allow_html=True)
     photo_col, info_col, acwr_col = st.columns([0.78, 1.2, 1.25], gap="medium")
 
     with photo_col:
         render_player_thumbnail(player, initials_class="team-initials-list")
 
     with info_col:
+        status_grid = "".join(
+            [
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">Wellness</div>
+                  <div class="team-list-main-value">{format_metric_value(player.get('wellness_value'))}</div>
+                </div>
+                """,
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">RPE</div>
+                  <div class="team-list-main-value">{format_metric_value(player.get('rpe_value'))}</div>
+                </div>
+                """,
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">GPS load</div>
+                  <div class="team-list-main-value">{format_metric_value(player.get('gps_value'), ' m')}</div>
+                </div>
+                """,
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">GPS update</div>
+                  <div class="team-list-main-value">{latest_gps_update}</div>
+                </div>
+                """,
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">Wellness vandaag</div>
+                  <div class="team-list-main-value">{"Ja" if player.get('wellness_today') else "Nee"}</div>
+                </div>
+                """,
+                f"""
+                <div class="team-list-main-item">
+                  <div class="team-list-main-label">RPE vandaag</div>
+                  <div class="team-list-main-value">{"Ja" if player.get('rpe_today') else "Nee"}</div>
+                </div>
+                """,
+            ]
+        )
+
         st.markdown(
             f"""
             <div class="team-list-panel">
               <div class="team-list-kicker">Spelerstatus</div>
-              <div class="team-list-copy" style="margin-top:0; margin-bottom:0.4rem;">{position_label}</div>
+              <div class="team-list-position-pill">{position_label}</div>
               <div class="team-list-name">{player['full_name']}</div>
-              <span class="team-list-status" style="background:{player['readiness_color']};">
-                {player['readiness_label']}
-              </span>
-              <div class="team-list-copy">
-                Wellness {format_metric_value(player.get('wellness_value'))} | RPE {format_metric_value(player.get('rpe_value'))}
+              <div class="team-list-status-row">
+                <span class="team-list-status" style="background:{player['readiness_color']};">
+                  {player['readiness_label']}
+                </span>
+                <div class="team-list-status-copy">
+                  Actuele readiness op basis van de laatste wellness-invoer in de app
+                </div>
               </div>
-              <div class="team-list-copy">
-                GPS {format_metric_value(player.get('gps_value'), ' m')} | Laatste update {latest_update}
-              </div>
-              <div class="team-list-copy" style="margin-top:0.55rem;">
-                Vandaag wellness: {"Ja" if player.get('wellness_today') else "Nee"}
-              </div>
-              <div class="team-list-copy">
-                Vandaag RPE: {"Ja" if player.get('rpe_today') else "Nee"}
+              <div class="team-list-main-grid">
+                {status_grid}
               </div>
             </div>
             """,
@@ -1023,7 +1130,8 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
             f"""
             <div class="team-list-panel">
               <div class="team-list-kicker">Belastingsratio</div>
-              <div class="team-list-name">{current_week_label}</div>
+              <div class="team-list-week-badge">{current_week_label}</div>
+              <div class="team-list-name">ACWR overzicht</div>
               <div class="team-list-copy">
                 Huidige week gedeeld door gemiddelde van de vorige 4 weken
               </div>
@@ -1034,8 +1142,6 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
             """,
             unsafe_allow_html=True,
         )
-
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_group_section(df: pd.DataFrame, group_name: str, label_en: str) -> None:
