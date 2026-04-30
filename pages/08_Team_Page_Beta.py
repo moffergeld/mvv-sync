@@ -384,9 +384,99 @@ def render_css() -> None:
             margin-bottom: 0.75rem;
           }
 
+          .team-initials-list {
+            width: 100%;
+            aspect-ratio: 4 / 5;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #1f2937, #111827);
+            color: #ffffff;
+            font-size: 1.7rem;
+            font-weight: 800;
+            border: 1px solid rgba(255,255,255,0.08);
+            margin-bottom: 0;
+          }
+
           [data-testid="stImage"] img {
             border-radius: 8px;
             display: block;
+          }
+
+          .team-list-row {
+            margin-bottom: 0.9rem;
+          }
+
+          .team-list-panel {
+            border: 1px solid rgba(17,24,39,0.08);
+            border-radius: 8px;
+            padding: 0.95rem 1rem;
+            background: #ffffff;
+            min-height: 188px;
+          }
+
+          .team-list-name {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #111827;
+          }
+
+          .team-list-copy {
+            margin-top: 0.2rem;
+            color: #4b5563;
+            font-size: 0.87rem;
+            line-height: 1.45;
+          }
+
+          .team-list-kicker {
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            margin-bottom: 0.35rem;
+          }
+
+          .team-list-status {
+            display: inline-block;
+            margin-top: 0.7rem;
+            margin-bottom: 0.55rem;
+            padding: 0.34rem 0.6rem;
+            border-radius: 999px;
+            color: #ffffff;
+            font-size: 0.8rem;
+            font-weight: 800;
+          }
+
+          .team-list-acwr-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem 0.8rem;
+            margin-top: 0.75rem;
+          }
+
+          .team-list-acwr-item {
+            border: 1px solid rgba(17,24,39,0.08);
+            border-radius: 8px;
+            padding: 0.55rem 0.65rem;
+            background: rgba(17,24,39,0.02);
+          }
+
+          .team-list-acwr-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #9ca3af;
+          }
+
+          .team-list-acwr-value {
+            margin-top: 0.18rem;
+            font-size: 1rem;
+            font-weight: 800;
+            color: #111827;
           }
         </style>
         """,
@@ -752,6 +842,18 @@ def render_player_card(player: Dict[str, Any]) -> None:
     )
 
 
+def render_player_thumbnail(player: Dict[str, Any], initials_class: str = "team-initials") -> None:
+    photo_path = player.get("photo_path")
+    if is_valid_image_path(photo_path):
+        st.image(build_uniform_player_image(str(photo_path)), use_container_width=True)
+        return
+
+    st.markdown(
+        f"<div class='{initials_class}'>{initials_for_name(player['full_name'])}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_group_header(group_name: str, label_en: str, count: int) -> None:
     st.markdown(
         f"""
@@ -767,23 +869,70 @@ def render_group_header(group_name: str, label_en: str, count: int) -> None:
     )
 
 
-def build_group_list_df(group_df: pd.DataFrame) -> pd.DataFrame:
-    list_df = group_df.copy()
-    return pd.DataFrame(
-        {
-            "Speler": list_df["full_name"],
-            "Readiness": list_df["readiness_label"],
-            "Wellness": list_df["wellness_value"].map(format_metric_value),
-            "RPE": list_df["rpe_value"].map(format_metric_value),
-            "GPS (m)": list_df["gps_value"].map(lambda value: format_metric_value(value, " m")),
-            "Wellness vandaag": list_df["wellness_today"].map(lambda value: "Ja" if bool(value) else "Nee"),
-            "RPE vandaag": list_df["rpe_today"].map(lambda value: "Ja" if bool(value) else "Nee"),
-            ACWR_LIST_LABELS["total_distance_acwr"]: list_df["total_distance_acwr"].map(format_acwr_value),
-            ACWR_LIST_LABELS["running_acwr"]: list_df["running_acwr"].map(format_acwr_value),
-            ACWR_LIST_LABELS["sprint_acwr"]: list_df["sprint_acwr"].map(format_acwr_value),
-            ACWR_LIST_LABELS["high_sprint_acwr"]: list_df["high_sprint_acwr"].map(format_acwr_value),
-        }
+def render_list_player_row(player: Dict[str, Any]) -> None:
+    current_week_label = player.get("acwr_week_label", current_week_context()[1])
+    latest_update = player["wellness_date"].strftime("%d-%m") if player.get("wellness_date") else "--"
+
+    acwr_grid = "".join(
+        f"""
+        <div class="team-list-acwr-item">
+          <div class="team-list-acwr-label">{label}</div>
+          <div class="team-list-acwr-value">{format_acwr_value(player.get(f"{metric}_acwr"))}</div>
+        </div>
+        """
+        for metric, label in ACWR_METRICS
     )
+
+    st.markdown('<div class="team-list-row">', unsafe_allow_html=True)
+    photo_col, info_col, acwr_col = st.columns([0.78, 1.2, 1.25], gap="medium")
+
+    with photo_col:
+        render_player_thumbnail(player, initials_class="team-initials-list")
+
+    with info_col:
+        st.markdown(
+            f"""
+            <div class="team-list-panel">
+              <div class="team-list-kicker">Player status</div>
+              <div class="team-list-name">{player['full_name']}</div>
+              <span class="team-list-status" style="background:{player['readiness_color']};">
+                {player['readiness_label']}
+              </span>
+              <div class="team-list-copy">
+                Wellness {format_metric_value(player.get('wellness_value'))} | RPE {format_metric_value(player.get('rpe_value'))}
+              </div>
+              <div class="team-list-copy">
+                GPS {format_metric_value(player.get('gps_value'), ' m')} | Laatste update {latest_update}
+              </div>
+              <div class="team-list-copy" style="margin-top:0.55rem;">
+                Vandaag wellness: {"Ja" if player.get('wellness_today') else "Nee"}
+              </div>
+              <div class="team-list-copy">
+                Vandaag RPE: {"Ja" if player.get('rpe_today') else "Nee"}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with acwr_col:
+        st.markdown(
+            f"""
+            <div class="team-list-panel">
+              <div class="team-list-kicker">Current week ACWR</div>
+              <div class="team-list-name">{current_week_label}</div>
+              <div class="team-list-copy">
+                Huidige week gedeeld door gemiddelde van de vorige 4 weken
+              </div>
+              <div class="team-list-acwr-grid">
+                {acwr_grid}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_group_section(df: pd.DataFrame, group_name: str, label_en: str) -> None:
@@ -826,11 +975,8 @@ def render_list_view(df: pd.DataFrame) -> None:
         group_df = group_df.sort_values(["readiness_rank", "full_name"], ascending=[True, True]).reset_index(drop=True)
         st.markdown('<div class="team-section">', unsafe_allow_html=True)
         render_group_header(group_name, label_en, len(group_df))
-        st.dataframe(
-            build_group_list_df(group_df),
-            hide_index=True,
-            use_container_width=True,
-        )
+        for _, player_row in group_df.iterrows():
+            render_list_player_row(player_row.to_dict())
         st.markdown("</div>", unsafe_allow_html=True)
 
 
