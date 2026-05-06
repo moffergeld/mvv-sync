@@ -290,7 +290,7 @@ def render_css(page_bg_uri: str = "") -> None:
         else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
     )
     st.markdown(
-        f"""
+        """
         <style>
           :root {
             --mvv-red: #c8102e;
@@ -305,7 +305,7 @@ def render_css(page_bg_uri: str = "") -> None:
           }
 
           .stApp {
-            background: {app_background};
+            background: __APP_BACKGROUND__;
             background-size: cover;
             background-position: center top;
             background-attachment: fixed;
@@ -708,7 +708,7 @@ def render_css(page_bg_uri: str = "") -> None:
             color: rgba(255,255,255,0.72) !important;
           }
         </style>
-        """,
+        """.replace("__APP_BACKGROUND__", app_background),
         unsafe_allow_html=True,
     )
 
