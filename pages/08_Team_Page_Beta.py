@@ -282,9 +282,9 @@ def build_uniform_player_image(path_value: str, target_width: int = 960, target_
 
 def render_css(page_bg_uri: str = "") -> None:
     app_background = (
-        f"background-image: linear-gradient(180deg, rgba(6, 10, 20, 0.92) 0%, rgba(6, 10, 20, 0.90) 100%), "
-        f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.18), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
-        f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.12), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
+        f"linear-gradient(180deg, rgba(6, 10, 20, 0.82) 0%, rgba(6, 10, 20, 0.80) 100%), "
+        f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.16), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
+        f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.10), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
         f"url('{page_bg_uri}')"
         if page_bg_uri
         else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
