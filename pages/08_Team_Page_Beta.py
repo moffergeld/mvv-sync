@@ -280,9 +280,17 @@ def build_uniform_player_image(path_value: str, target_width: int = 960, target_
         return None
 
 
-def render_css() -> None:
+def render_css(page_bg_uri: str = "") -> None:
+    app_background = (
+        f"background-image: linear-gradient(180deg, rgba(6, 10, 20, 0.92) 0%, rgba(6, 10, 20, 0.90) 100%), "
+        f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.18), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
+        f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.12), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
+        f"url('{page_bg_uri}')"
+        if page_bg_uri
+        else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
+    )
     st.markdown(
-        """
+        f"""
         <style>
           :root {
             --mvv-red: #c8102e;
@@ -297,10 +305,10 @@ def render_css() -> None:
           }
 
           .stApp {
-            background:
-              radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%),
-              radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%),
-              linear-gradient(180deg, #070c18 0%, #0a1020 100%);
+            background: {app_background};
+            background-size: cover;
+            background-position: center top;
+            background-attachment: fixed;
             color: var(--mvv-text);
           }
 
@@ -322,17 +330,19 @@ def render_css() -> None:
           }
 
           .team-hero {
+            position: relative;
             color: var(--mvv-text);
             border-radius: 8px;
             padding: 1.8rem 1.55rem 1.75rem 1.55rem;
             border: 1px solid rgba(255,255,255,0.08);
             box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
-            background-size: cover;
-            background-position: center;
             min-height: 320px;
             display: flex;
             align-items: flex-end;
             overflow: hidden;
+            background:
+              linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
+            backdrop-filter: blur(4px);
           }
 
           .team-hero-inner {
@@ -981,20 +991,12 @@ def render_hero(df: pd.DataFrame) -> None:
         if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
         else current_week_context()[1]
     )
-    hero_bg_uri = build_image_data_uri(str(TEAM_HERO_BG)) if TEAM_HERO_BG.exists() else ""
     hero_logo_uri = build_image_data_uri(str(TEAM_LOGO)) if TEAM_LOGO.exists() else ""
-    hero_background_style = (
-        f"background-image: linear-gradient(90deg, rgba(7, 12, 24, 0.82) 8%, rgba(7, 12, 24, 0.58) 46%, rgba(7, 12, 24, 0.86) 100%), "
-        f"radial-gradient(circle at top right, rgba(228, 8, 36, 0.18), transparent 26%), "
-        f"url('{hero_bg_uri}');"
-        if hero_bg_uri
-        else "background-image: radial-gradient(circle at top right, rgba(228, 8, 36, 0.2), transparent 28%), linear-gradient(135deg, rgba(18, 25, 42, 0.98), rgba(10, 15, 27, 0.98));"
-    )
     logo_markup = f'<img src="{hero_logo_uri}" alt="MVV Maastricht" class="team-hero-logo" />' if hero_logo_uri else ""
 
     st.markdown(
         f"""
-        <div class="team-hero" style="{hero_background_style}">
+        <div class="team-hero">
           <div class="team-hero-inner">
             {logo_markup}
             <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
@@ -1211,7 +1213,8 @@ def render_list_view(df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    render_css()
+    page_bg_uri = build_image_data_uri(str(TEAM_HERO_BG)) if TEAM_HERO_BG.exists() else ""
+    render_css(page_bg_uri)
 
     require_auth()
     sb = get_sb()
