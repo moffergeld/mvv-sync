@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import math
 import sys
 import unicodedata
@@ -17,6 +18,7 @@ ROOT_DIR = THIS_DIR.parent
 ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
 PLAYER_IMG_DIR = ASSETS_DIR / "Spelers"
 TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
+TEAM_HERO_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
@@ -244,6 +246,24 @@ def is_valid_image_path(value: Any) -> bool:
     return Path(path_value).exists()
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def build_image_data_uri(path_value: str) -> str:
+    path = Path(path_value)
+    if not path.exists():
+        return ""
+
+    suffix = path.suffix.lower()
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    mime_type = mime_map.get(suffix, "image/png")
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
 @st.cache_data(show_spinner=False, ttl=300)
 def build_uniform_player_image(path_value: str, target_width: int = 960, target_height: int = 1200):
     try:
@@ -302,14 +322,29 @@ def render_css() -> None:
           }
 
           .team-hero {
-            background:
-              radial-gradient(circle at top right, rgba(228, 8, 36, 0.2), transparent 28%),
-              linear-gradient(135deg, rgba(18, 25, 42, 0.98), rgba(10, 15, 27, 0.98));
             color: var(--mvv-text);
             border-radius: 8px;
-            padding: 1.35rem 1.45rem 1.5rem 1.45rem;
+            padding: 1.8rem 1.55rem 1.75rem 1.55rem;
             border: 1px solid rgba(255,255,255,0.08);
             box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+            background-size: cover;
+            background-position: center;
+            min-height: 320px;
+            display: flex;
+            align-items: flex-end;
+            overflow: hidden;
+          }
+
+          .team-hero-inner {
+            max-width: 760px;
+          }
+
+          .team-hero-logo {
+            width: 84px;
+            height: 84px;
+            object-fit: contain;
+            margin-bottom: 0.9rem;
+            filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
           }
 
           .team-kicker {
@@ -946,28 +981,35 @@ def render_hero(df: pd.DataFrame) -> None:
         if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
         else current_week_context()[1]
     )
-    left, right = st.columns([0.28, 1.72], gap="large")
-    with left:
-        if TEAM_LOGO.exists():
-            st.image(str(TEAM_LOGO), width=120)
+    hero_bg_uri = build_image_data_uri(str(TEAM_HERO_BG)) if TEAM_HERO_BG.exists() else ""
+    hero_logo_uri = build_image_data_uri(str(TEAM_LOGO)) if TEAM_LOGO.exists() else ""
+    hero_background_style = (
+        f"background-image: linear-gradient(90deg, rgba(7, 12, 24, 0.82) 8%, rgba(7, 12, 24, 0.58) 46%, rgba(7, 12, 24, 0.86) 100%), "
+        f"radial-gradient(circle at top right, rgba(228, 8, 36, 0.18), transparent 26%), "
+        f"url('{hero_bg_uri}');"
+        if hero_bg_uri
+        else "background-image: radial-gradient(circle at top right, rgba(228, 8, 36, 0.2), transparent 28%), linear-gradient(135deg, rgba(18, 25, 42, 0.98), rgba(10, 15, 27, 0.98));"
+    )
+    logo_markup = f'<img src="{hero_logo_uri}" alt="MVV Maastricht" class="team-hero-logo" />' if hero_logo_uri else ""
 
-    with right:
-        st.markdown(
-            f"""
-            <div class="team-hero">
-              <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
-              <h1 class="team-title">Selectieoverzicht</h1>
-              <div class="team-sub">
-                Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
-                aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
-              </div>
-              <span class="team-pill">Per linie gegroepeerd voor staf en performance-overzicht</span>
-              <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
-              <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
+    st.markdown(
+        f"""
+        <div class="team-hero" style="{hero_background_style}">
+          <div class="team-hero-inner">
+            {logo_markup}
+            <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
+            <h1 class="team-title">Selectieoverzicht</h1>
+            <div class="team-sub">
+              Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
+              aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
+            <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
     alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
