@@ -329,14 +329,21 @@ def render_css(page_bg_uri: str = "") -> None:
             max-width: 1380px;
           }
 
+          .team-hero-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 1.15rem;
+            margin-bottom: 1.65rem;
+          }
+
           .team-hero {
             position: relative;
             color: var(--mvv-text);
             border-radius: 8px;
-            padding: 1.8rem 1.55rem 1.75rem 1.55rem;
+            padding: 2.1rem 1.75rem 1.95rem 1.75rem;
             border: 1px solid rgba(255,255,255,0.08);
             box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
-            min-height: 320px;
+            min-height: 348px;
             display: flex;
             align-items: flex-end;
             overflow: hidden;
@@ -346,7 +353,7 @@ def render_css(page_bg_uri: str = "") -> None:
           }
 
           .team-hero-inner {
-            max-width: 760px;
+            max-width: 820px;
           }
 
           .team-hero-logo {
@@ -374,23 +381,72 @@ def render_css(page_bg_uri: str = "") -> None:
           }
 
           .team-sub {
-            margin-top: 0.65rem;
+            margin-top: 0.8rem;
             max-width: 72ch;
             color: rgba(255,255,255,0.84);
-            line-height: 1.5;
+            line-height: 1.62;
+          }
+
+          .team-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin-top: 1rem;
           }
 
           .team-pill {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
             padding: 0.42rem 0.76rem;
             border-radius: 999px;
-            margin-right: 0.45rem;
-            margin-top: 0.75rem;
             font-size: 0.78rem;
             font-weight: 800;
             border: 1px solid rgba(234, 51, 81, 0.22);
             background: rgba(255,255,255,0.06);
             color: rgba(255,255,255,0.92);
+          }
+
+          .team-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 1rem;
+          }
+
+          .team-summary-card {
+            min-height: 122px;
+            padding: 1rem 1.05rem 0.95rem 1.05rem;
+            border-radius: 8px;
+            border: 1px solid rgba(234, 51, 81, 0.14);
+            background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+          }
+
+          .team-summary-label {
+            color: rgba(255,255,255,0.68);
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }
+
+          .team-summary-value {
+            margin-top: 0.55rem;
+            font-size: 2rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #ffffff;
+          }
+
+          .team-summary-foot {
+            margin-top: 0.65rem;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.86rem;
+            line-height: 1.4;
+          }
+
+          .team-summary-foot strong {
+            color: #ffffff;
+            font-weight: 800;
           }
 
           .team-section {
@@ -444,6 +500,71 @@ def render_css(page_bg_uri: str = "") -> None:
             font-size: 0.88rem;
             text-align: right;
             font-weight: 700;
+          }
+
+          .team-view-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 1rem;
+            margin: 0.1rem 0 0.8rem 0;
+          }
+
+          .team-view-kicker {
+            color: rgba(255,255,255,0.62);
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+          }
+
+          .team-view-title {
+            margin-top: 0.25rem;
+            color: #ffffff;
+            font-size: 1.02rem;
+            font-weight: 700;
+          }
+
+          .team-view-note {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.88rem;
+            font-weight: 700;
+            text-align: right;
+          }
+
+          .stTabs [data-baseweb="tab-list"] {
+            gap: 0.45rem;
+            width: fit-content;
+            padding: 0.28rem;
+            margin-bottom: 1.2rem;
+            border-radius: 999px;
+            border: 1px solid rgba(234, 51, 81, 0.18);
+            background: rgba(11, 16, 29, 0.86);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+          }
+
+          .stTabs [data-baseweb="tab"] {
+            height: auto;
+            padding: 0.55rem 1rem;
+            border-radius: 999px;
+            background: transparent;
+            color: rgba(255,255,255,0.7);
+          }
+
+          .stTabs [data-baseweb="tab"] p {
+            font-size: 0.95rem;
+            font-weight: 800;
+          }
+
+          .stTabs [aria-selected="true"] {
+            background: linear-gradient(135deg, rgba(234, 51, 81, 0.22), rgba(200, 16, 46, 0.34));
+            color: #ffffff;
+            border: 1px solid rgba(234, 51, 81, 0.3);
+          }
+
+          .stTabs [aria-selected="false"]:hover {
+            background: rgba(255,255,255,0.04);
+            color: #ffffff;
           }
 
           .team-card {
@@ -706,6 +827,41 @@ def render_css(page_bg_uri: str = "") -> None:
 
           .stCaption {
             color: rgba(255,255,255,0.72) !important;
+          }
+
+          @media (max-width: 1100px) {
+            .team-summary-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+          }
+
+          @media (max-width: 768px) {
+            .team-hero-shell {
+              gap: 0.9rem;
+              margin-bottom: 1.3rem;
+            }
+
+            .team-hero {
+              min-height: auto;
+              padding: 1.55rem 1rem;
+            }
+
+            .team-title {
+              font-size: 2rem;
+            }
+
+            .team-summary-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .team-view-header {
+              flex-direction: column;
+              align-items: flex-start;
+            }
+
+            .team-view-note {
+              text-align: left;
+            }
           }
         </style>
         """.replace("__APP_BACKGROUND__", app_background),
@@ -993,40 +1149,52 @@ def render_hero(df: pd.DataFrame) -> None:
     )
     hero_logo_uri = build_image_data_uri(str(TEAM_LOGO)) if TEAM_LOGO.exists() else ""
     logo_markup = f'<img src="{hero_logo_uri}" alt="MVV Maastricht" class="team-hero-logo" />' if hero_logo_uri else ""
+    ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
+    alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
+    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
+    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
+    summary_cards = [
+        ("Selectiespelers", str(len(df)), "Actieve spelers in deze teamweergave"),
+        ("Wellness vandaag", str(wellness_today_count), "Spelers met wellness-invoer vandaag"),
+        ("RPE vandaag", str(rpe_today_count), "Spelers met RPE-invoer vandaag"),
+        ("Readiness", str(ready_count), f"<strong>{alert_count}</strong> spelers vragen extra aandacht"),
+    ]
+    summary_markup = "".join(
+        f"""
+        <div class="team-summary-card">
+          <div class="team-summary-label">{label}</div>
+          <div class="team-summary-value">{value}</div>
+          <div class="team-summary-foot">{foot}</div>
+        </div>
+        """
+        for label, value, foot in summary_cards
+    )
 
     st.markdown(
         f"""
-        <div class="team-hero">
-          <div class="team-hero-inner">
-            {logo_markup}
-            <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
-            <h1 class="team-title">Selectieoverzicht</h1>
-            <div class="team-sub">
-              Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
-              aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
+        <div class="team-hero-shell">
+          <div class="team-hero">
+            <div class="team-hero-inner">
+              {logo_markup}
+              <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
+              <h1 class="team-title">Selectieoverzicht</h1>
+              <div class="team-sub">
+                Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
+                aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
+              </div>
+              <div class="team-pill-row">
+                <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
+                <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
+              </div>
             </div>
-            <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
-            <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
+          </div>
+          <div class="team-summary-grid">
+            {summary_markup}
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
-    alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
-    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
-    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
-
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("Spelers", len(df))
-    with m2:
-        st.metric("Wellness vandaag", wellness_today_count)
-    with m3:
-        st.metric("RPE vandaag", rpe_today_count)
-    with m4:
-        st.metric("Alerts", alert_count, delta=f"Ready {ready_count}")
 
 
 def render_player_card(player: Dict[str, Any]) -> None:
@@ -1234,26 +1402,31 @@ def main() -> None:
         st.stop()
 
     render_hero(squad_df)
-    toolbar_left, toolbar_right = st.columns([1.1, 1.9], gap="large")
-    with toolbar_left:
-        view_mode = st.radio("Weergave", ["Kaarten", "Lijst"], horizontal=True, key="team_beta_view")
-    with toolbar_right:
-        current_week_label = (
-            str(squad_df["acwr_week_label"].dropna().iloc[0])
-            if "acwr_week_label" in squad_df.columns and squad_df["acwr_week_label"].notna().any()
-            else current_week_context()[1]
-        )
-        st.markdown(
-            f"<div class='team-toolbar-note'>ACWR huidige week: {current_week_label}</div>",
-            unsafe_allow_html=True,
-        )
+    current_week_label = (
+        str(squad_df["acwr_week_label"].dropna().iloc[0])
+        if "acwr_week_label" in squad_df.columns and squad_df["acwr_week_label"].notna().any()
+        else current_week_context()[1]
+    )
+    st.markdown(
+        f"""
+        <div class="team-view-header">
+          <div>
+            <div class="team-view-kicker">Weergave</div>
+            <div class="team-view-title">Kies hoe je de selectie wilt bekijken</div>
+          </div>
+          <div class="team-view-note">ACWR huidige week: {current_week_label}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if view_mode == "Lijst":
+    cards_tab, list_tab = st.tabs(["Kaarten", "Lijst"])
+    with cards_tab:
+        for group_name, label_en in GROUP_ORDER:
+            render_group_section(squad_df, group_name, label_en)
+
+    with list_tab:
         render_list_view(squad_df)
-        return
-
-    for group_name, label_en in GROUP_ORDER:
-        render_group_section(squad_df, group_name, label_en)
 
 
 if __name__ == "__main__":
