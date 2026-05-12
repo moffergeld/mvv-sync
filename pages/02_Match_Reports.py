@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import base64
 import sys
 from datetime import date
 from pathlib import Path
@@ -39,12 +40,21 @@ from roles import get_sb, require_auth, get_profile  # noqa: E402
 # -----------------------------
 # Config
 # -----------------------------
+st.set_page_config(page_title="Match Reports", layout="wide")
+
+ASSETS_DIR = ROOT / "Assets" / "Afbeeldingen"
 LOGO_DIR = ROOT / "Assets" / "Afbeeldingen" / "Team_Logos"
 MVV_TEAM_NAME = "MVV Maastricht"
+TEAM_HERO_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
+TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 
 EVENT_FULL = "Full match"
 EVENT_FIRST = "First Half"
 EVENT_SECOND = "Second Half"
+
+MATCH_FILTER_ALL = "Alle wedstrijden"
+MATCH_FILTER_REGULAR = "Normale wedstrijd"
+MATCH_FILTER_FRIENDLY = "Oefenwedstrijd"
 
 COL_PLAYER = "player_name"
 COL_TD = "total_distance"
@@ -56,8 +66,8 @@ COL_DUR = "duration"
 
 LABEL_PLAYER = "Player"
 LABEL_TD = "TD"
-LABEL_RUN = "14.4–19.7"
-LABEL_SPR = "19.8–25.1"
+LABEL_RUN = "14.4â€“19.7"
+LABEL_SPR = "19.8â€“25.1"
 LABEL_HSPR = "25.2+"
 LABEL_MAX = "Max Speed"
 LABEL_PERMIN = "/min"
@@ -74,19 +84,99 @@ MVV_TEXT = "#F5F7FB"
 MVV_TEXT_SOFT = "rgba(245,247,251,0.76)"
 MVV_GRID = "rgba(255,255,255,0.08)"
 
+
+def _build_data_uri(path: Path) -> str:
+    if not path.exists():
+        return ""
+
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }.get(path.suffix.lower(), "application/octet-stream")
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+PAGE_BG_URI = _build_data_uri(TEAM_HERO_BG)
+TEAM_LOGO_URI = _build_data_uri(TEAM_LOGO)
+
 # -----------------------------
 # Global CSS
 # -----------------------------
+_PAGE_BACKGROUND = (
+    f"linear-gradient(180deg, rgba(6, 10, 20, 0.82) 0%, rgba(6, 10, 20, 0.80) 100%), "
+    f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.16), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
+    f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.10), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
+    f"url('{PAGE_BG_URI}')"
+    if PAGE_BG_URI
+    else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
+)
+
 st.markdown(
     """
     <style>
+    :root {
+        --mvv-red: #c8102e;
+        --mvv-red-bright: #ea3351;
+        --mvv-navy: #0b1020;
+        --mvv-panel: #12192a;
+        --mvv-panel-2: #182134;
+        --mvv-text: #f5f7fb;
+        --mvv-soft: rgba(255,255,255,0.06);
+    }
+
+    .stApp {
+        background: __APP_BACKGROUND__;
+        background-size: cover;
+        background-position: center top;
+        background-attachment: fixed;
+        color: var(--mvv-text);
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(16, 23, 38, 0.98), rgba(9, 13, 23, 0.98));
+        border-right: 1px solid rgba(255,255,255,0.06);
+    }
+
+    [data-testid="stSidebar"] .stMarkdown,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] div {
+        color: var(--mvv-text);
+    }
+
     .block-container {
         padding-top: 1.2rem;
         padding-bottom: 2rem;
+        max-width: 1380px;
     }
 
     [data-testid="stDataFrame"] div {
         overflow: visible !important;
+    }
+
+    .mr-page-hero-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 1.1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .mr-page-hero {
+        min-height: 318px;
+        padding: 2rem 1.75rem 1.85rem 1.75rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+    }
+
+    .mr-page-logo {
+        width: 82px;
+        height: 82px;
+        object-fit: contain;
+        margin-bottom: 0.9rem;
+        filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
     }
 
     .mr-kicker {
@@ -94,19 +184,138 @@ st.markdown(
         letter-spacing: .24em;
         text-transform: uppercase;
         font-weight: 800;
-        color: rgba(255,255,255,.72);
+        color: rgba(255,255,255,.76);
         margin-bottom: 6px;
     }
 
+    .mr-page-title {
+        margin: 0;
+        font-size: 42px;
+        line-height: 1;
+        font-weight: 850;
+        color: #FFFFFF;
+    }
+
     .mr-sub {
-        color: rgba(255,255,255,.80);
-        margin-bottom: 14px;
-        line-height: 1.5;
+        color: rgba(255,255,255,.84);
+        margin-top: 12px;
+        line-height: 1.6;
+        max-width: 72ch;
+    }
+
+    .mr-hero-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+    }
+
+    .mr-hero-pill {
+        padding: 8px 13px;
+        border-radius: 999px;
+        border: 1px solid rgba(234, 51, 81, 0.22);
+        background: rgba(255,255,255,0.06);
+        font-weight: 800;
+        color: #FFFFFF;
+        font-size: 12px;
+    }
+
+    .mr-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .mr-summary-card {
+        min-height: 122px;
+        padding: 1rem 1.05rem 0.95rem 1.05rem;
+        border-radius: 8px;
+        border: 1px solid rgba(234, 51, 81, 0.14);
+        background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .mr-summary-label {
+        color: rgba(255,255,255,0.68);
+        font-size: 11px;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+        font-weight: 800;
+    }
+
+    .mr-summary-value {
+        margin-top: 10px;
+        font-size: 31px;
+        line-height: 1.06;
+        font-weight: 850;
+        color: #FFFFFF;
+    }
+
+    .mr-summary-foot {
+        margin-top: 10px;
+        color: rgba(255,255,255,0.80);
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    .mr-filter-panel {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 8px;
+        padding: 16px 16px 8px 16px;
+        margin-bottom: 18px;
+        background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+        box-shadow: 0 12px 24px rgba(0,0,0,.18);
+    }
+
+    .mr-filter-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        margin-bottom: 12px;
+    }
+
+    .mr-filter-title {
+        color: #FFFFFF;
+        font-size: 18px;
+        font-weight: 800;
+        margin-top: 4px;
+    }
+
+    .mr-filter-note {
+        color: rgba(255,255,255,0.78);
+        font-size: 13px;
+        font-weight: 700;
+        text-align: right;
+    }
+
+    [data-testid="stSelectbox"] label,
+    [data-testid="stRadio"] label {
+        font-size: 11px !important;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+        font-weight: 800 !important;
+        color: rgba(255,255,255,.68) !important;
+    }
+
+    div[data-baseweb="select"] > div {
+        min-height: 48px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: linear-gradient(180deg, rgba(19, 26, 41, 0.98), rgba(12, 17, 28, 0.98)) !important;
+        box-shadow: 0 10px 22px rgba(0,0,0,.14);
+    }
+
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] input,
+    div[data-baseweb="select"] svg {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
     }
 
     .mr-hero {
         border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 24px;
+        border-radius: 8px;
         padding: 18px 20px 14px 20px;
         margin-bottom: 18px;
         background:
@@ -119,7 +328,7 @@ st.markdown(
 
     .mr-panel {
         border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 20px;
+        border-radius: 8px;
         padding: 14px 16px;
         background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.018) 100%);
         box-shadow: 0 10px 24px rgba(0,0,0,.14);
@@ -168,7 +377,7 @@ st.markdown(
 
     .mr-kpi-card {
         border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 20px;
+        border-radius: 8px;
         padding: 14px 16px;
         background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.018) 100%);
         box-shadow: 0 10px 24px rgba(0,0,0,.14);
@@ -215,8 +424,38 @@ st.markdown(
         color: rgba(255,255,255,.72);
         margin-bottom: 8px;
     }
+
+    @media (max-width: 1100px) {
+        .mr-summary-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .mr-page-hero {
+            min-height: auto;
+            padding: 1.55rem 1rem;
+        }
+
+        .mr-page-title {
+            font-size: 34px;
+        }
+
+        .mr-summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .mr-filter-head {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .mr-filter-note {
+            text-align: left;
+        }
+    }
     </style>
-    """,
+    """.replace("__APP_BACKGROUND__", _PAGE_BACKGROUND),
     unsafe_allow_html=True,
 )
 
@@ -237,6 +476,13 @@ def _calc_height(n_rows: int) -> int:
 
 def _norm_text(x: Any) -> str:
     return str(x or "").strip().lower()
+
+
+def _match_type_bucket(x: Any) -> str:
+    val = _norm_text(x)
+    if any(token in val for token in ["oefen", "friendly", "vriend", "test"]):
+        return MATCH_FILTER_FRIENDLY
+    return MATCH_FILTER_REGULAR
 
 
 def _build_logo_index() -> Dict[str, Path]:
@@ -357,6 +603,58 @@ def _series_rank_colors(n: int) -> List[str]:
     return [palette[min(i, len(palette) - 1)] for i in range(n)]
 
 
+def render_reports_intro(matches_df: pd.DataFrame) -> None:
+    logo_markup = (
+        f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="mr-page-logo" />'
+        if TEAM_LOGO_URI
+        else ""
+    )
+    total_matches = len(matches_df)
+    regular_count = int((matches_df["match_bucket"] == MATCH_FILTER_REGULAR).sum()) if not matches_df.empty else 0
+    friendly_count = int((matches_df["match_bucket"] == MATCH_FILTER_FRIENDLY).sum()) if not matches_df.empty else 0
+    opponent_count = matches_df["opponent"].dropna().astype(str).str.strip().replace("", np.nan).dropna().nunique()
+    summary_cards = [
+        ("Wedstrijden", str(total_matches), "Totaal beschikbare match reports"),
+        ("Normaal", str(regular_count), "Competitie, beker en overige officiele duels"),
+        ("Oefen", str(friendly_count), "Oefenwedstrijden en vriendschappelijke duels"),
+        ("Tegenstanders", str(opponent_count), "Unieke opponenten in deze rapportage"),
+    ]
+    summary_markup = "".join(
+        f"""
+        <div class="mr-summary-card">
+          <div class="mr-summary-label">{label}</div>
+          <div class="mr-summary-value">{value}</div>
+          <div class="mr-summary-foot">{foot}</div>
+        </div>
+        """
+        for label, value, foot in summary_cards
+    )
+
+    st.markdown(
+        f"""
+        <div class="mr-page-hero-shell">
+          <div class="mr-page-hero">
+            {logo_markup}
+            <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
+            <h1 class="mr-page-title">Match Reports</h1>
+            <div class="mr-sub">
+              Professionele wedstrijdrapportage met wedstrijdheader, KPI's, grafieken en per-speler tabellen
+              op basis van GPS-match events. Filter op wedstrijdtype, tegenstander en datum om sneller de juiste match te openen.
+            </div>
+            <div class="mr-hero-pill-row">
+              <span class="mr-hero-pill">Filter op oefenwedstrijd of normale wedstrijd</span>
+              <span class="mr-hero-pill">Analyse per fase: full match, first half, second half</span>
+            </div>
+          </div>
+          <div class="mr-summary-grid">
+            {summary_markup}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _base_plot_layout(fig: go.Figure, title: str) -> None:
     fig.update_layout(
         title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=MVV_TEXT)),
@@ -411,6 +709,8 @@ def fetch_matches_rows(limit: int = 1000) -> pd.DataFrame:
 
     df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce").dt.date
     df = df.dropna(subset=["match_id", "match_date"]).copy()
+    df["match_type"] = df["match_type"].fillna("").astype(str).str.strip()
+    df["match_bucket"] = df["match_type"].apply(_match_type_bucket)
 
     df["date_label"] = df.apply(
         lambda r: f"{r['match_date'].isoformat()} ({_ha_tag(r.get('home_away'))})",
@@ -789,6 +1089,7 @@ def render_match_header(match_row: pd.Series) -> None:
     fixture: str = str(match_row.get("fixture") or "").strip()
     home_away: str = str(match_row.get("home_away") or "").strip()
     match_type: str = str(match_row.get("match_type") or "").strip()
+    match_bucket: str = str(match_row.get("match_bucket") or "").strip()
     season: str = str(match_row.get("season") or "").strip()
 
     gf = match_row.get("goals_for", None)
@@ -836,7 +1137,8 @@ def render_match_header(match_row: pd.Series) -> None:
               <div class="mr-score">{score_txt}</div>
               <div class="mr-chip-row">
                 <span class="mr-chip">{home_away}</span>
-                <span class="mr-chip">{match_type}</span>
+                <span class="mr-chip">{match_bucket or match_type or MATCH_FILTER_REGULAR}</span>
+                {'<span class="mr-chip">' + match_type + '</span>' if match_type and match_type != match_bucket else ''}
                 <span class="mr-chip">{season}</span>
               </div>
             </div>
@@ -864,41 +1166,74 @@ def main() -> None:
 
     _ = get_profile(sb)
 
-    st.markdown('<div class="mr-kicker">Match Reports</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="mr-sub">Professionele wedstrijdrapportage met matchheader, grafieken en per-speler tabellen op basis van GPS-match events.</div>',
-        unsafe_allow_html=True,
-    )
-
     matches_df = fetch_matches_rows(limit=1000)
     if matches_df.empty:
         st.info("Geen matches gevonden.")
         st.stop()
 
+    render_reports_intro(matches_df)
+
+    match_type_options = [MATCH_FILTER_ALL, MATCH_FILTER_REGULAR, MATCH_FILTER_FRIENDLY]
+    st.markdown(
+        f"""
+        <div class="mr-filter-panel">
+          <div class="mr-filter-head">
+            <div>
+              <div class="mr-kicker">Filter</div>
+              <div class="mr-filter-title">Kies eerst het soort wedstrijd en daarna de exacte match</div>
+            </div>
+            <div class="mr-filter-note">{len(matches_df)} wedstrijden beschikbaar in totaal</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    select_a, select_b, select_c = st.columns([1.1, 1.2, 1.7], gap="large")
+    with select_a:
+        selected_match_type = st.selectbox(
+            "Wedstrijdtype",
+            options=match_type_options,
+            index=0,
+            key="mr_match_type_filter",
+        )
+
+    filtered_matches = matches_df.copy()
+    if selected_match_type != MATCH_FILTER_ALL:
+        filtered_matches = filtered_matches[filtered_matches["match_bucket"] == selected_match_type].copy()
+
+    if filtered_matches.empty:
+        st.info("Geen wedstrijden gevonden voor dit wedstrijdtype.")
+        st.stop()
+
     opponents = sorted(
         [
             o
-            for o in matches_df["opponent"].dropna().astype(str).unique().tolist()
+            for o in filtered_matches["opponent"].dropna().astype(str).unique().tolist()
             if o.strip()
         ],
         key=lambda x: x.lower(),
     )
+    if not opponents:
+        st.info("Geen geldige tegenstanders gevonden voor dit wedstrijdtype.")
+        st.stop()
 
-    select_l, select_r = st.columns([1.2, 2.0])
-
-    with select_l:
-        sel_opp = st.selectbox("Opponent", options=opponents, index=0, key="mr_opp")
+    with select_b:
+        sel_opp = st.selectbox("Tegenstander", options=opponents, index=0, key="mr_opp")
 
     df_opp = (
-        matches_df[matches_df["opponent"].astype(str) == str(sel_opp)]
+        filtered_matches[filtered_matches["opponent"].astype(str) == str(sel_opp)]
         .copy()
         .sort_values("match_date", ascending=False)
     )
 
     date_options = df_opp["date_label"].tolist()
+    if not date_options:
+        st.info("Geen datums gevonden voor deze tegenstander binnen dit wedstrijdtype.")
+        st.stop()
 
-    with select_r:
-        sel_date_label = st.selectbox("Date", options=date_options, index=0, key="mr_date")
+    with select_c:
+        sel_date_label = st.selectbox("Wedstrijd", options=date_options, index=0, key="mr_date")
 
     match_row = df_opp[df_opp["date_label"] == sel_date_label].iloc[0]
     match_id = int(match_row["match_id"])
@@ -938,3 +1273,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
