@@ -24,11 +24,15 @@ import pages.Subscripts.gps_data_session_load_pages as session_load_pages
 import pages.Subscripts.gps_data_acwr_pages as acwr_pages
 import pages.Subscripts.gps_data_ffp_pages as ffp_pages
 import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages
+from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 
 from auth_session import ensure_auth_restored, get_sb_client
 from roles import get_profile, is_staff_user
 
 st.set_page_config(page_title="GPS Data", layout="wide")
+
+PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
+TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
 
 
 # ==========================================================
@@ -201,6 +205,226 @@ st.markdown(
     }
     </style>
     """,
+    unsafe_allow_html=True,
+)
+
+_GPS_PAGE_BACKGROUND = (
+    f"linear-gradient(180deg, rgba(6, 10, 20, 0.82) 0%, rgba(6, 10, 20, 0.80) 100%), "
+    f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.16), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
+    f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.10), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
+    f"url('{PAGE_BG_URI}')"
+    if PAGE_BG_URI
+    else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
+)
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: __GPS_PAGE_BACKGROUND__ !important;
+        background-size: cover !important;
+        background-position: center top !important;
+        background-attachment: fixed !important;
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(16, 23, 38, 0.98), rgba(9, 13, 23, 0.98)) !important;
+        border-right: 1px solid rgba(255,255,255,0.06) !important;
+    }
+
+    .gps-hero-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 1.1rem;
+        margin-bottom: 1.55rem;
+    }
+
+    .gps-hero {
+        min-height: 320px;
+        border-radius: 8px;
+        padding: 2rem 1.75rem 1.9rem 1.75rem;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
+        box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
+    }
+
+    .gps-hero-logo {
+        width: 82px;
+        height: 82px;
+        object-fit: contain;
+        margin-bottom: 0.9rem;
+        filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+    }
+
+    .gps-kicker {
+        color: rgba(255,255,255,0.76);
+        font-size: 0.74rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        margin-bottom: 0.35rem;
+    }
+
+    .gps-title {
+        font-size: 2.55rem;
+        line-height: 1;
+        font-weight: 800;
+        color: #FFFFFF;
+        margin: 0;
+    }
+
+    .gps-subtitle {
+        margin-top: 0.8rem;
+        max-width: 74ch;
+        color: rgba(255,255,255,0.84);
+        line-height: 1.62;
+        font-size: 0.96rem;
+        margin-bottom: 0;
+    }
+
+    .gps-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        margin-top: 1rem;
+    }
+
+    .gps-pill {
+        border-radius: 999px;
+        padding: 0.42rem 0.76rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        border: 1px solid rgba(234, 51, 81, 0.22);
+        background: rgba(255,255,255,0.06);
+        color: #FFFFFF;
+    }
+
+    .gps-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .gps-summary-card,
+    .gps-section-card {
+        border-radius: 8px;
+        border: 1px solid rgba(234, 51, 81, 0.14);
+        background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    .gps-summary-card {
+        min-height: 122px;
+        padding: 1rem 1.05rem 0.95rem 1.05rem;
+    }
+
+    .gps-summary-label {
+        color: rgba(255,255,255,0.68);
+        font-size: 0.8rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    .gps-summary-value {
+        margin-top: 0.55rem;
+        font-size: 2rem;
+        line-height: 1.05;
+        font-weight: 800;
+        color: #FFFFFF;
+    }
+
+    .gps-summary-foot {
+        margin-top: 0.65rem;
+        color: rgba(255,255,255,0.8);
+        font-size: 0.86rem;
+        line-height: 1.4;
+    }
+
+    .gps-filter-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        margin-bottom: 12px;
+    }
+
+    .gps-filter-title {
+        color: #FFFFFF;
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-top: 0.25rem;
+    }
+
+    .gps-filter-note {
+        color: rgba(255,255,255,0.8);
+        font-size: 0.88rem;
+        font-weight: 700;
+        text-align: right;
+    }
+
+    .gps-section-card {
+        padding: 16px;
+        margin: 0 0 18px 0;
+    }
+
+    .gps-section-label {
+        font-size: 0.75rem;
+        letter-spacing: 0.12em;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.62);
+        margin-bottom: 0.25rem;
+    }
+
+    .gps-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 0.5rem;
+    }
+
+    .gps-badge {
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: white;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    @media (max-width: 1100px) {
+        .gps-summary-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .gps-hero {
+            min-height: auto;
+            padding: 1.55rem 1rem;
+        }
+
+        .gps-title {
+            font-size: 2rem;
+        }
+
+        .gps-summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .gps-filter-head {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .gps-filter-note {
+            text-align: left;
+        }
+    }
+    </style>
+    """.replace("__GPS_PAGE_BACKGROUND__", _GPS_PAGE_BACKGROUND),
     unsafe_allow_html=True,
 )
 
@@ -468,29 +692,59 @@ if not access_token:
 u = auth_get_user(access_token)
 st.session_state["user_id"] = u.get("id") or ""
 
-with st.sidebar:
-    st.markdown("### GPS filters")
-    scope_key = st.selectbox(
-        "Data scope (Summary-only)",
-        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-        index=0,
-        key="gps_scope",
-    )
+calendar_df_all = fetch_calendar_dates_all_cached(access_token)
+session_days = (
+    int(calendar_df_all["datum"].dropna().nunique())
+    if not calendar_df_all.empty and "datum" in calendar_df_all.columns
+    else 0
+)
+session_types = (
+    int(calendar_df_all["type"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+    if not calendar_df_all.empty and "type" in calendar_df_all.columns
+    else 0
+)
+summary_cards = [
+    ("Sessiedagen", str(session_days), "Unieke dagen met Summary-data"),
+    ("Kalenderitems", str(len(calendar_df_all)), "Records beschikbaar in de GPS-kalender"),
+    ("Datatypen", str(session_types), "Trainings- en wedstrijdbuckets in de dataset"),
+    ("Modules", "4", "Session Load, ACWR, FFP en Benchmarks"),
+]
+summary_markup = "".join(
+    f"""
+    <div class="gps-summary-card">
+        <div class="gps-summary-label">{label}</div>
+        <div class="gps-summary-value">{value}</div>
+        <div class="gps-summary-foot">{foot}</div>
+    </div>
+    """
+    for label, value, foot in summary_cards
+)
+hero_logo_markup = (
+    f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="gps-hero-logo" />'
+    if TEAM_LOGO_URI
+    else ""
+)
 
 st.markdown(
     f"""
-    <div class="gps-hero">
-        <div class="gps-kicker">MVV Performance Dashboard</div>
-        <div class="gps-title">GPS Data Overview</div>
-        <div class="gps-subtitle">
-            Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
-            De dataflow en caching blijven gelijk; alleen de pagina-opmaak en grafiekstijl zijn vernieuwd.
+    <div class="gps-hero-shell">
+        <div class="gps-hero">
+            {hero_logo_markup}
+            <div class="gps-kicker">MVV Performance Dashboard | GPS Data</div>
+            <div class="gps-title">GPS Data Overview</div>
+            <div class="gps-subtitle">
+                Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
+                De dataflow blijft gelijk, maar de pagina leest nu visueel mee met de rest van de MVV-omgeving.
+            </div>
+            <div class="gps-pill-row">
+                <div class="gps-pill">Summary-only analyses</div>
+                <div class="gps-pill">ACWR thresholds per week</div>
+                <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
+                <div class="gps-pill">Benchmarks uit match events</div>
+            </div>
         </div>
-        <div class="gps-pill-row">
-            <div class="gps-pill">Summary-only analyses</div>
-            <div class="gps-pill">ACWR thresholds per week</div>
-            <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
-            <div class="gps-pill">Benchmarks uit match events</div>
+        <div class="gps-summary-grid">
+            {summary_markup}
         </div>
     </div>
     """,
@@ -500,9 +754,14 @@ st.markdown(
 st.markdown(
     f"""
     <div class="gps-section-card">
-        <div class="gps-section-label">Actieve selectie</div>
+        <div class="gps-filter-head">
+            <div>
+                <div class="gps-section-label">Data scope</div>
+                <div class="gps-filter-title">Kies welke periode je wilt gebruiken voor de Summary-analyses</div>
+            </div>
+            <div class="gps-filter-note">FFP blijft altijd alle Summary-data laden</div>
+        </div>
         <div class="gps-badge-row">
-            <div class="gps-badge">Scope: {scope_key}</div>
             <div class="gps-badge">Modules: Session Load, ACWR, FFP, Benchmarks</div>
         </div>
     </div>
@@ -510,7 +769,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-calendar_df_all = fetch_calendar_dates_all_cached(access_token)
+scope_col, note_col = st.columns([1.15, 1.85], gap="large")
+with scope_col:
+    scope_key = st.selectbox(
+        "Data scope (Summary-only)",
+        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+        index=0,
+        key="gps_scope",
+    )
+with note_col:
+    st.markdown(
+        f"""
+        <div class="gps-badge-row" style="justify-content:flex-end; margin-top: 1.95rem;">
+            <div class="gps-badge">Actieve scope: {scope_key}</div>
+            <div class="gps-badge">{session_days} sessiedagen in de kalender</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 tab_session, tab_acwr, tab_ffp, tab_bench = st.tabs(
     ["Session Load", "ACWR", "FFP", "Benchmarks"]
