@@ -854,21 +854,6 @@ def render_mini_stat_card(label: str, value: str, note: str = "") -> None:
     )
 
 
-def render_rpe_load_pill(duration_min: int, rpe_value: int) -> None:
-    duration_min = int(duration_min or 0)
-    rpe_value = int(rpe_value or 0)
-    load_value = duration_min * rpe_value
-    st.markdown(
-        (
-            '<div class="mvv-load-pill">'
-            f'Trainingsload: <strong>{load_value} AU</strong><br/>'
-            f'<span>{duration_min} min x RPE {rpe_value}</span>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-
 def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: str, next_step: str) -> None:
     wellness_class = "mvv-status-ok" if str(wellness_state).upper() == "OK" else "mvv-status-open"
     rpe_class = "mvv-status-ok" if str(rpe_state).upper() == "OK" else "mvv-status-open"
@@ -1452,7 +1437,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     value=s1_default_rpe,
                     key=f"tablet_rpe_s1_rpe_{player_id}",
                 )
-                render_rpe_load_pill(int(s1_dur), int(s1_rpe))
 
             with session_cols[1]:
                 st.markdown(
@@ -1477,20 +1461,9 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                         value=s2_default_rpe,
                         key=f"tablet_rpe_s2_rpe_{player_id}",
                     )
-                    render_rpe_load_pill(int(s2_dur), int(s2_rpe))
                 else:
                     s2_dur = 0
                     s2_rpe = s2_default_rpe
-
-            total_duration = int(s1_dur) + (int(s2_dur) if bool(enable_s2) else 0)
-            total_load = (int(s1_dur) * int(s1_rpe)) + ((int(s2_dur) * int(s2_rpe)) if bool(enable_s2) else 0)
-            summary_cols = st.columns(3)
-            with summary_cols[0]:
-                render_mini_stat_card("Sessies actief", "2" if bool(enable_s2) else "1")
-            with summary_cols[1]:
-                render_mini_stat_card("Totale duur", f"{total_duration} min")
-            with summary_cols[2]:
-                render_mini_stat_card("Trainingsload", f"{total_load} AU")
 
             st.divider()
             st.markdown(
