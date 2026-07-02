@@ -463,6 +463,58 @@ st.markdown(
         font-weight: 900 !important;
       }
 
+      .stApp [data-testid="stToggle"] {
+        margin: 0.35rem 0 1rem;
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] {
+        width: 100%;
+        min-height: 88px;
+        padding: 1rem 1.15rem;
+        border-radius: 24px;
+        border: 1px solid rgba(200, 16, 46, 0.18);
+        background: rgba(255, 255, 255, 0.90);
+        box-shadow: 0 12px 26px rgba(78, 8, 18, 0.08);
+        display: flex !important;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.9rem;
+        cursor: pointer;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"]:hover {
+        border-color: rgba(200, 16, 46, 0.28) !important;
+        box-shadow: 0 14px 28px rgba(78, 8, 18, 0.12);
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"]:has(input:checked) {
+        border-color: rgba(200, 16, 46, 0.38) !important;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 122, 128, 0.16) 100%) !important;
+        box-shadow: 0 16px 32px rgba(78, 8, 18, 0.14);
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] input + div {
+        background: rgba(20, 7, 10, 0.16) !important;
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] input:checked + div {
+        background: linear-gradient(90deg, #ff7a80 0%, var(--mvv-red) 100%) !important;
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] > div:first-of-type {
+        transform: scale(1.28);
+        transform-origin: center;
+      }
+
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] p,
+      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] span {
+        margin: 0 !important;
+        font-size: 1.05rem !important;
+        font-weight: 900 !important;
+        color: var(--mvv-deep) !important;
+      }
+
       div[role="radiogroup"] label {
         background: rgba(255,255,255,0.80);
         border: 1px solid rgba(200,16,46,0.16);
