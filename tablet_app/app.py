@@ -253,6 +253,108 @@ st.markdown(
         color: var(--mvv-red) !important;
       }
 
+      .mvv-mini-stat {
+        min-height: 110px;
+        padding: 0.95rem 1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(200, 16, 46, 0.14);
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 245, 242, 0.92) 100%);
+        box-shadow: 0 10px 24px rgba(78, 8, 18, 0.06);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        margin-bottom: 0.6rem;
+      }
+
+      .mvv-mini-stat-label {
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(20, 7, 10, 0.62) !important;
+      }
+
+      .mvv-mini-stat-value {
+        margin-top: 0.28rem;
+        font-size: 1.7rem;
+        line-height: 1;
+        font-weight: 900;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-mini-stat-note {
+        margin-top: 0.3rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: rgba(20, 7, 10, 0.72) !important;
+      }
+
+      .mvv-form-kicker {
+        margin: 0;
+        text-transform: uppercase;
+        font-size: 0.76rem;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        color: var(--mvv-red) !important;
+      }
+
+      .mvv-form-title {
+        margin: 0.25rem 0 0 0;
+        font-family: 'Bebas Neue', sans-serif;
+        font-size: 2.05rem;
+        line-height: 0.98;
+        letter-spacing: 0.02em;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-form-subtitle {
+        margin: 0.32rem 0 0.8rem 0;
+        font-size: 0.98rem;
+        font-weight: 600;
+        color: rgba(20, 7, 10, 0.78) !important;
+      }
+
+      .mvv-session-title {
+        margin: 0 0 0.14rem 0;
+        font-size: 1.18rem;
+        font-weight: 900;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-session-note {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: rgba(20, 7, 10, 0.72) !important;
+      }
+
+      .mvv-load-pill {
+        margin: 0.6rem 0 0.35rem 0;
+        padding: 0.72rem 0.85rem;
+        border-radius: 16px;
+        border: 1px solid rgba(200, 16, 46, 0.14);
+        background: rgba(255, 248, 246, 0.95);
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-load-pill strong {
+        color: var(--mvv-red) !important;
+        font-size: 1.12rem;
+      }
+
+      .mvv-muted-box {
+        margin: 0.35rem 0 0.2rem 0;
+        padding: 0.85rem 0.95rem;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px dashed rgba(200, 16, 46, 0.22);
+        color: rgba(20, 7, 10, 0.72) !important;
+        font-size: 0.94rem;
+        font-weight: 600;
+      }
+
       .tablet-hero a,
       .tablet-hero a:visited,
       .tablet-hero a:hover,
@@ -298,6 +400,20 @@ st.markdown(
       .stApp textarea {
         border: 1px solid rgba(200, 16, 46, 0.18) !important;
         box-shadow: none !important;
+      }
+
+      .stApp [data-testid="stNumberInput"] input,
+      .stApp textarea {
+        min-height: 54px;
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+      }
+
+      .stApp [data-testid="stSlider"] label,
+      .stApp [data-testid="stNumberInput"] label,
+      .stApp [data-testid="stTextArea"] label,
+      .stApp [data-testid="stSelectbox"] label {
+        font-weight: 800 !important;
       }
 
       div[role="radiogroup"] label {
@@ -613,6 +729,33 @@ def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
 def render_kpi_card(label: str, value: str) -> None:
     st.markdown(
         f'<div class="mvv-kpi-card"><div class="mvv-kpi-label">{html.escape(str(label))}</div><div class="mvv-kpi-value">{html.escape(str(value))}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_mini_stat_card(label: str, value: str, note: str = "") -> None:
+    note_html = (
+        f'<div class="mvv-mini-stat-note">{html.escape(str(note))}</div>'
+        if str(note).strip()
+        else ""
+    )
+    st.markdown(
+        f'<div class="mvv-mini-stat"><div class="mvv-mini-stat-label">{html.escape(str(label))}</div><div class="mvv-mini-stat-value">{html.escape(str(value))}</div>{note_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_rpe_load_pill(duration_min: int, rpe_value: int) -> None:
+    duration_min = int(duration_min or 0)
+    rpe_value = int(rpe_value or 0)
+    load_value = duration_min * rpe_value
+    st.markdown(
+        (
+            '<div class="mvv-load-pill">'
+            f'Trainingsload: <strong>{load_value} AU</strong><br/>'
+            f'<span>{duration_min} min x RPE {rpe_value}</span>'
+            '</div>'
+        ),
         unsafe_allow_html=True,
     )
 
@@ -1136,77 +1279,148 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         if existing_loc not in injury_locations:
             existing_loc = "Other"
 
+        s1_default_dur = _session_value(rpe_sessions, 1, "duration_min", 0)
+        s1_default_rpe = _session_value(rpe_sessions, 1, "rpe", 5)
+        s2_default_dur = _session_value(rpe_sessions, 2, "duration_min", 0)
+        s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
+        notes_default = str(rpe_header.get("notes") or "")
+        injury_pain_default = int(rpe_header.get("injury_pain", 0) or 0)
+
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
+            st.markdown(
+                """
+                <div class="mvv-form-kicker">RPE Check-in</div>
+                <div class="mvv-form-title">Compact invullen op tablet</div>
+                <div class="mvv-form-subtitle">Zelfde opslag naar Supabase, maar duidelijker gegroepeerd voor spelers en staff.</div>
+                """,
+                unsafe_allow_html=True,
+            )
             _legend_rpe()
 
-            st.markdown("### Session 1")
-            s1_dur = st.number_input(
-                "[1] Duration (min)",
-                min_value=0,
-                max_value=600,
-                value=_session_value(rpe_sessions, 1, "duration_min", 0),
-                key=f"tablet_rpe_s1_dur_{player_id}",
-            )
-            s1_rpe = st.slider(
-                "[1] RPE (1-10)",
-                1,
-                10,
-                value=_session_value(rpe_sessions, 1, "rpe", 5),
-                key=f"tablet_rpe_s1_rpe_{player_id}",
-            )
+            session_cols = st.columns(2)
+            with session_cols[0]:
+                st.markdown(
+                    """
+                    <div class="mvv-session-title">Session 1</div>
+                    <div class="mvv-session-note">Verplicht. Vul hier de hoofdtraining of wedstrijdbelasting in.</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                s1_dur = st.number_input(
+                    "Duration (min)",
+                    min_value=0,
+                    max_value=600,
+                    value=s1_default_dur,
+                    step=5,
+                    key=f"tablet_rpe_s1_dur_{player_id}",
+                )
+                s1_rpe = st.slider(
+                    "RPE (1-10)",
+                    1,
+                    10,
+                    value=s1_default_rpe,
+                    key=f"tablet_rpe_s1_rpe_{player_id}",
+                )
+                render_rpe_load_pill(int(s1_dur), int(s1_rpe))
+
+            with session_cols[1]:
+                st.markdown(
+                    """
+                    <div class="mvv-session-title">Session 2</div>
+                    <div class="mvv-session-note">Optioneel. Gebruik dit alleen voor gym, extras of een tweede veldsessie.</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                enable_s2 = st.toggle(
+                    "2e sessie toevoegen",
+                    value=has_s2,
+                    key=f"tablet_rpe_enable_s2_{player_id}",
+                )
+                if enable_s2:
+                    s2_dur = st.number_input(
+                        "2e Duration (min)",
+                        min_value=0,
+                        max_value=600,
+                        value=s2_default_dur,
+                        step=5,
+                        key=f"tablet_rpe_s2_dur_{player_id}",
+                    )
+                    s2_rpe = st.slider(
+                        "2e RPE (1-10)",
+                        1,
+                        10,
+                        value=s2_default_rpe,
+                        key=f"tablet_rpe_s2_rpe_{player_id}",
+                    )
+                    render_rpe_load_pill(int(s2_dur), int(s2_rpe))
+                else:
+                    s2_dur = 0
+                    s2_rpe = s2_default_rpe
+                    st.markdown(
+                        '<div class="mvv-muted-box">Geen tweede sessie actief. Zo blijft de invoer kort voor spelers die maar 1 moment hoeven te registreren.</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            total_duration = int(s1_dur) + (int(s2_dur) if bool(enable_s2) else 0)
+            total_load = (int(s1_dur) * int(s1_rpe)) + ((int(s2_dur) * int(s2_rpe)) if bool(enable_s2) else 0)
+            summary_cols = st.columns(3)
+            with summary_cols[0]:
+                render_mini_stat_card("Sessies actief", "2" if bool(enable_s2) else "1", "Hoeveel sessies vandaag meetellen")
+            with summary_cols[1]:
+                render_mini_stat_card("Totale duur", f"{total_duration} min", "Som van alle ingevulde minuten")
+            with summary_cols[2]:
+                render_mini_stat_card("Trainingsload", f"{total_load} AU", "Handig voor snelle staff-check")
 
             st.divider()
-
-            enable_s2 = st.toggle(
-                "Add 2nd session?",
-                value=has_s2,
-                key=f"tablet_rpe_enable_s2_{player_id}",
+            st.markdown(
+                """
+                <div class="mvv-session-title">Injury</div>
+                <div class="mvv-session-note">Alleen openen als de speler echt een blessure of pijnsignaal wil melden.</div>
+                """,
+                unsafe_allow_html=True,
             )
-
-            st.markdown("### Session 2")
-            s2_dur = st.number_input(
-                "[2] Duration (min)",
-                min_value=0,
-                max_value=600,
-                value=_session_value(rpe_sessions, 2, "duration_min", 0),
-                key=f"tablet_rpe_s2_dur_{player_id}",
-            )
-            s2_rpe = st.slider(
-                "[2] RPE (1-10)",
-                1,
-                10,
-                value=_session_value(rpe_sessions, 2, "rpe", 5),
-                key=f"tablet_rpe_s2_rpe_{player_id}",
-            )
-
-            st.divider()
-            st.markdown("### Injury")
 
             injury = st.toggle("Injury?", value=injury_default, key=f"tablet_rpe_injury_{player_id}")
 
-            loc_col, pain_col = st.columns([1.2, 2.0])
-            with loc_col:
-                injury_loc = st.selectbox(
-                    "Location",
-                    options=injury_locations,
-                    index=injury_locations.index(existing_loc),
-                    key=f"tablet_rpe_loc_{player_id}",
-                )
-            with pain_col:
-                injury_pain = st.slider(
-                    "Pain (0-10)",
-                    0,
-                    10,
-                    value=int(rpe_header.get("injury_pain", 0) or 0),
-                    key=f"tablet_rpe_pain_{player_id}",
+            if injury:
+                loc_col, pain_col = st.columns([1.2, 2.0])
+                with loc_col:
+                    injury_loc = st.selectbox(
+                        "Location",
+                        options=injury_locations,
+                        index=injury_locations.index(existing_loc),
+                        key=f"tablet_rpe_loc_{player_id}",
+                    )
+                with pain_col:
+                    injury_pain = st.slider(
+                        "Pain (0-10)",
+                        0,
+                        10,
+                        value=injury_pain_default,
+                        key=f"tablet_rpe_pain_{player_id}",
+                    )
+            else:
+                injury_loc = "None"
+                injury_pain = 0
+                st.markdown(
+                    '<div class="mvv-muted-box">Geen blessure aangevinkt. Locatie en pijnscore worden dan ook niet opgeslagen.</div>',
+                    unsafe_allow_html=True,
                 )
 
             notes = st.text_area(
                 "Notes (optional)",
-                value=str(rpe_header.get("notes") or ""),
+                value=notes_default,
                 key=f"tablet_rpe_notes_{player_id}",
+                height=120,
             )
-            rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
+
+            save_cols = st.columns([1, 1, 1.35])
+            with save_cols[0]:
+                render_mini_stat_card("Speler", player_name, "Opslaan voor deze selectie")
+            with save_cols[1]:
+                render_mini_stat_card("Status", "Klaar" if int(s1_dur) > 0 else "Check duur", "Session 1 moet minuten bevatten")
+            with save_cols[2]:
+                rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
 
         if rpe_submit:
             try:
