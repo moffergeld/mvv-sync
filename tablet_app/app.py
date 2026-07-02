@@ -1285,16 +1285,24 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
         notes_default = str(rpe_header.get("notes") or "")
         injury_pain_default = int(rpe_header.get("injury_pain", 0) or 0)
+        enable_s2_key = f"tablet_rpe_enable_s2_{player_id}"
+        injury_key = f"tablet_rpe_injury_{player_id}"
+
+        if enable_s2_key not in st.session_state:
+            st.session_state[enable_s2_key] = has_s2
+        if injury_key not in st.session_state:
+            st.session_state[injury_key] = injury_default
+
+        toggle_cols = st.columns(2)
+        with toggle_cols[0]:
+            enable_s2 = st.toggle(
+                "2e sessie toevoegen",
+                key=enable_s2_key,
+            )
+        with toggle_cols[1]:
+            injury = st.toggle("Injury?", key=injury_key)
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
-            st.markdown(
-                """
-                <div class="mvv-form-kicker">RPE Check-in</div>
-                <div class="mvv-form-title">Compact invullen op tablet</div>
-                <div class="mvv-form-subtitle">Zelfde opslag naar Supabase, maar duidelijker gegroepeerd voor spelers en staff.</div>
-                """,
-                unsafe_allow_html=True,
-            )
             _legend_rpe()
 
             session_cols = st.columns(2)
@@ -1302,7 +1310,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.markdown(
                     """
                     <div class="mvv-session-title">Session 1</div>
-                    <div class="mvv-session-note">Verplicht. Vul hier de hoofdtraining of wedstrijdbelasting in.</div>
                     """,
                     unsafe_allow_html=True,
                 )
@@ -1327,14 +1334,8 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.markdown(
                     """
                     <div class="mvv-session-title">Session 2</div>
-                    <div class="mvv-session-note">Optioneel. Gebruik dit alleen voor gym, extras of een tweede veldsessie.</div>
                     """,
                     unsafe_allow_html=True,
-                )
-                enable_s2 = st.toggle(
-                    "2e sessie toevoegen",
-                    value=has_s2,
-                    key=f"tablet_rpe_enable_s2_{player_id}",
                 )
                 if enable_s2:
                     s2_dur = st.number_input(
@@ -1356,31 +1357,24 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 else:
                     s2_dur = 0
                     s2_rpe = s2_default_rpe
-                    st.markdown(
-                        '<div class="mvv-muted-box">Geen tweede sessie actief. Zo blijft de invoer kort voor spelers die maar 1 moment hoeven te registreren.</div>',
-                        unsafe_allow_html=True,
-                    )
 
             total_duration = int(s1_dur) + (int(s2_dur) if bool(enable_s2) else 0)
             total_load = (int(s1_dur) * int(s1_rpe)) + ((int(s2_dur) * int(s2_rpe)) if bool(enable_s2) else 0)
             summary_cols = st.columns(3)
             with summary_cols[0]:
-                render_mini_stat_card("Sessies actief", "2" if bool(enable_s2) else "1", "Hoeveel sessies vandaag meetellen")
+                render_mini_stat_card("Sessies actief", "2" if bool(enable_s2) else "1")
             with summary_cols[1]:
-                render_mini_stat_card("Totale duur", f"{total_duration} min", "Som van alle ingevulde minuten")
+                render_mini_stat_card("Totale duur", f"{total_duration} min")
             with summary_cols[2]:
-                render_mini_stat_card("Trainingsload", f"{total_load} AU", "Handig voor snelle staff-check")
+                render_mini_stat_card("Trainingsload", f"{total_load} AU")
 
             st.divider()
             st.markdown(
                 """
                 <div class="mvv-session-title">Injury</div>
-                <div class="mvv-session-note">Alleen openen als de speler echt een blessure of pijnsignaal wil melden.</div>
                 """,
                 unsafe_allow_html=True,
             )
-
-            injury = st.toggle("Injury?", value=injury_default, key=f"tablet_rpe_injury_{player_id}")
 
             if injury:
                 loc_col, pain_col = st.columns([1.2, 2.0])
@@ -1402,10 +1396,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
             else:
                 injury_loc = "None"
                 injury_pain = 0
-                st.markdown(
-                    '<div class="mvv-muted-box">Geen blessure aangevinkt. Locatie en pijnscore worden dan ook niet opgeslagen.</div>',
-                    unsafe_allow_html=True,
-                )
 
             notes = st.text_area(
                 "Notes (optional)",
@@ -1416,9 +1406,9 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
 
             save_cols = st.columns([1, 1, 1.35])
             with save_cols[0]:
-                render_mini_stat_card("Speler", player_name, "Opslaan voor deze selectie")
+                render_mini_stat_card("Speler", player_name)
             with save_cols[1]:
-                render_mini_stat_card("Status", "Klaar" if int(s1_dur) > 0 else "Check duur", "Session 1 moet minuten bevatten")
+                render_mini_stat_card("Status", "Klaar" if int(s1_dur) > 0 else "Check duur")
             with save_cols[2]:
                 rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
 
