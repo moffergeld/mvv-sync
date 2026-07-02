@@ -479,14 +479,15 @@ st.markdown(
       .stApp [data-testid="stRadio"] div[role="radiogroup"] {
         display: flex;
         gap: 0.45rem;
+        width: fit-content;
       }
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label {
         flex: 1 1 0;
-        min-width: 0;
+        min-width: 8.75rem;
         min-height: 88px;
         margin: 0 !important;
-        padding: 0.95rem 1.35rem;
+        padding: 0.95rem 1.45rem;
         border-radius: 24px;
         border: 1px solid rgba(200, 16, 46, 0.18);
         background: rgba(255,255,255,0.90);
@@ -520,6 +521,7 @@ st.markdown(
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label p,
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label span {
         margin: 0 !important;
+        white-space: nowrap !important;
         font-size: 1.08rem !important;
         font-weight: 900 !important;
         color: var(--mvv-deep) !important;
