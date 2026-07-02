@@ -478,14 +478,15 @@ st.markdown(
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] {
         display: flex;
-        gap: 0.7rem;
+        gap: 0.45rem;
       }
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label {
         flex: 1 1 0;
+        min-width: 0;
         min-height: 88px;
         margin: 0 !important;
-        padding: 0.95rem 1rem;
+        padding: 0.95rem 1.15rem;
         border-radius: 24px;
         border: 1px solid rgba(200, 16, 46, 0.18);
         background: rgba(255,255,255,0.90);
@@ -514,6 +515,7 @@ st.markdown(
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
         transform: scale(1.3);
         transform-origin: center;
+        display: none !important;
       }
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label p,
@@ -522,6 +524,14 @@ st.markdown(
         font-size: 1.08rem !important;
         font-weight: 900 !important;
         color: var(--mvv-deep) !important;
+      }
+
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
       }
 
 
@@ -1392,7 +1402,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         if injury_key not in st.session_state:
             st.session_state[injury_key] = injury_default
 
-        toggle_cols = st.columns(2)
+        toggle_cols = st.columns(2, gap="small")
         with toggle_cols[0]:
             st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
             enable_s2 = st.radio(
