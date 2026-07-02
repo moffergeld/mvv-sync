@@ -486,7 +486,7 @@ st.markdown(
         min-width: 0;
         min-height: 88px;
         margin: 0 !important;
-        padding: 0.95rem 1.15rem;
+        padding: 0.95rem 1.35rem;
         border-radius: 24px;
         border: 1px solid rgba(200, 16, 46, 0.18);
         background: rgba(255,255,255,0.90);
@@ -495,7 +495,7 @@ st.markdown(
         font-size: 1.08rem !important;
         display: flex !important;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 0.7rem;
         transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.12s ease;
       }
@@ -515,7 +515,6 @@ st.markdown(
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
         transform: scale(1.3);
         transform-origin: center;
-        display: none !important;
       }
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label p,
@@ -527,7 +526,8 @@ st.markdown(
       }
 
       .stApp [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1387,29 +1387,26 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         if injury_key not in st.session_state:
             st.session_state[injury_key] = injury_default
 
-        toggle_cols = st.columns(2, gap="small")
-        with toggle_cols[0]:
-            st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
-            enable_s2 = st.radio(
-                "2e sessie",
-                options=[False, True],
-                index=1 if bool(st.session_state[enable_s2_key]) else 0,
-                format_func=lambda value: "Ja" if value else "Nee",
-                horizontal=True,
-                label_visibility="collapsed",
-                key=enable_s2_key,
-            )
-        with toggle_cols[1]:
-            st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
-            injury = st.radio(
-                "Injury",
-                options=[False, True],
-                index=1 if bool(st.session_state[injury_key]) else 0,
-                format_func=lambda value: "Ja" if value else "Nee",
-                horizontal=True,
-                label_visibility="collapsed",
-                key=injury_key,
-            )
+        st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
+        enable_s2 = st.radio(
+            "2e sessie",
+            options=[False, True],
+            index=1 if bool(st.session_state[enable_s2_key]) else 0,
+            format_func=lambda value: "Ja" if value else "Nee",
+            horizontal=True,
+            label_visibility="collapsed",
+            key=enable_s2_key,
+        )
+        st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
+        injury = st.radio(
+            "Injury",
+            options=[False, True],
+            index=1 if bool(st.session_state[injury_key]) else 0,
+            format_func=lambda value: "Ja" if value else "Nee",
+            horizontal=True,
+            label_visibility="collapsed",
+            key=injury_key,
+        )
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
             _legend_rpe()
