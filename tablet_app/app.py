@@ -463,65 +463,65 @@ st.markdown(
         font-weight: 900 !important;
       }
 
-      .stApp [data-testid="stToggle"] {
+      .mvv-toggle-choice-title {
+        margin: 0 0 0.45rem 0;
+        font-size: 0.9rem;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(20, 7, 10, 0.76);
+      }
+
+      .stApp [data-testid="stRadio"] {
         margin: 0.35rem 0 1rem;
       }
 
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] {
-        width: 100%;
-        min-height: 88px;
-        padding: 1rem 1.15rem;
-        border-radius: 24px;
-        border: 1px solid rgba(200, 16, 46, 0.18);
-        background: rgba(255, 255, 255, 0.90);
-        box-shadow: 0 12px 26px rgba(78, 8, 18, 0.08);
-        display: flex !important;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.9rem;
-        cursor: pointer;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] {
+        display: flex;
+        gap: 0.7rem;
       }
 
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"]:hover {
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label {
+        flex: 1 1 0;
+        min-height: 88px;
+        margin: 0 !important;
+        padding: 0.95rem 1rem;
+        border-radius: 24px;
+        border: 1px solid rgba(200, 16, 46, 0.18);
+        background: rgba(255,255,255,0.90);
+        box-shadow: 0 12px 26px rgba(78, 8, 18, 0.08);
+        font-weight: 900;
+        font-size: 1.08rem !important;
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        gap: 0.7rem;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.12s ease;
+      }
+
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label:hover {
+        transform: translateY(-1px);
         border-color: rgba(200, 16, 46, 0.28) !important;
         box-shadow: 0 14px 28px rgba(78, 8, 18, 0.12);
       }
 
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"]:has(input:checked) {
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
         border-color: rgba(200, 16, 46, 0.38) !important;
         background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 122, 128, 0.16) 100%) !important;
         box-shadow: 0 16px 32px rgba(78, 8, 18, 0.14);
       }
 
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] input + div {
-        background: rgba(20, 7, 10, 0.16) !important;
-      }
-
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] input:checked + div {
-        background: linear-gradient(90deg, #ff7a80 0%, var(--mvv-red) 100%) !important;
-      }
-
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] > div:first-of-type {
-        transform: scale(1.28);
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
+        transform: scale(1.3);
         transform-origin: center;
       }
 
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] p,
-      .stApp [data-testid="stToggle"] label[data-baseweb="checkbox"] span {
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label p,
+      .stApp [data-testid="stRadio"] div[role="radiogroup"] label span {
         margin: 0 !important;
-        font-size: 1.05rem !important;
+        font-size: 1.08rem !important;
         font-weight: 900 !important;
         color: var(--mvv-deep) !important;
-      }
-
-      div[role="radiogroup"] label {
-        background: rgba(255,255,255,0.80);
-        border: 1px solid rgba(200,16,46,0.16);
-        border-radius: 999px;
-        padding: 0.45rem 0.8rem;
-        margin-right: 0.45rem;
-        font-weight: 900;
       }
 
 
@@ -1394,12 +1394,27 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
 
         toggle_cols = st.columns(2)
         with toggle_cols[0]:
-            enable_s2 = st.toggle(
-                "2e sessie toevoegen",
+            st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
+            enable_s2 = st.radio(
+                "2e sessie",
+                options=[False, True],
+                index=1 if bool(st.session_state[enable_s2_key]) else 0,
+                format_func=lambda value: "Ja" if value else "Nee",
+                horizontal=True,
+                label_visibility="collapsed",
                 key=enable_s2_key,
             )
         with toggle_cols[1]:
-            injury = st.toggle("Injury?", key=injury_key)
+            st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
+            injury = st.radio(
+                "Injury",
+                options=[False, True],
+                index=1 if bool(st.session_state[injury_key]) else 0,
+                format_func=lambda value: "Ja" if value else "Nee",
+                horizontal=True,
+                label_visibility="collapsed",
+                key=injury_key,
+            )
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
             _legend_rpe()
