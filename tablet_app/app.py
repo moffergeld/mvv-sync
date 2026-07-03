@@ -229,30 +229,90 @@ st.markdown(
 
 
       .mvv-kpi-card {
-        padding: 1rem 1.1rem;
-        border-radius: 20px;
-        border: 1px solid rgba(200, 16, 46, 0.12);
-        background: rgba(255, 255, 255, 0.88);
-        box-shadow: 0 12px 30px rgba(78, 8, 18, 0.08);
-        min-height: 110px;
+        position: relative;
+        overflow: hidden;
+        padding: 1rem 1.15rem 0.95rem 1.15rem;
+        border-radius: 24px;
+        border: 0;
+        box-shadow: 0 16px 34px rgba(78, 8, 18, 0.16);
+        min-height: 122px;
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        justify-content: space-between;
         margin-bottom: 0.6rem;
       }
 
+      .mvv-kpi-card::after {
+        content: "";
+        position: absolute;
+        top: -34px;
+        right: -20px;
+        width: 112px;
+        height: 112px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .mvv-kpi-card-wellness {
+        background: linear-gradient(135deg, #16572d 0%, #1f8a3b 45%, #2a9d51 100%);
+      }
+
+      .mvv-kpi-card-rpe {
+        background: linear-gradient(135deg, #6f1225 0%, #98172b 48%, #c8102e 100%);
+      }
+
+      .mvv-kpi-head {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
       .mvv-kpi-label {
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--mvv-deep) !important;
-        margin-bottom: 0.25rem;
+        font-size: 0.9rem;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #ffffff !important;
+      }
+
+      .mvv-kpi-note {
+        font-size: 0.72rem;
+        font-weight: 800;
+        line-height: 1.2;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        text-align: right;
+        color: rgba(255, 255, 255, 0.84) !important;
       }
 
       .mvv-kpi-value {
-        font-size: 2.25rem;
+        position: relative;
+        z-index: 1;
+        margin-top: 0.45rem;
+        font-size: 2.35rem;
         line-height: 1;
         font-weight: 900;
-        color: var(--mvv-red) !important;
+        color: #ffffff !important;
+      }
+
+      .mvv-kpi-progress {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.8rem;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.22);
+        overflow: hidden;
+      }
+
+      .mvv-kpi-progress span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.72) 0%, #ffffff 100%);
       }
 
       .mvv-mini-stat {
@@ -841,9 +901,19 @@ def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
     )
 
 
-def render_kpi_card(label: str, value: str) -> None:
+def render_kpi_card(label: str, completed: int, total: int, tone: str) -> None:
+    progress = 0 if total <= 0 else max(0, min(100, round((completed / total) * 100)))
     st.markdown(
-        f'<div class="mvv-kpi-card"><div class="mvv-kpi-label">{html.escape(str(label))}</div><div class="mvv-kpi-value">{html.escape(str(value))}</div></div>',
+        f"""
+        <div class="mvv-kpi-card mvv-kpi-card-{html.escape(tone)}">
+          <div class="mvv-kpi-head">
+            <div class="mvv-kpi-label">{html.escape(str(label))}</div>
+            <div class="mvv-kpi-note">Ingevuld<br>vandaag</div>
+          </div>
+          <div class="mvv-kpi-value">{completed}/{total}</div>
+          <div class="mvv-kpi-progress"><span style="width: {progress}%;"></span></div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -1392,13 +1462,15 @@ def render_player_picker(sb) -> None:
         f"Selecteer een speler voor de invoer van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
     )
 
-    stat_1, stat_2, stat_3 = st.columns(3)
+    total_players = len(players)
+    wellness_completed = sum(1 for player in players if player["player_id"] in asrm_ids)
+    rpe_completed = sum(1 for player in players if player["player_id"] in rpe_ids)
+
+    stat_1, stat_2 = st.columns(2)
     with stat_1:
-        render_kpi_card("Actieve spelers", len(players))
+        render_kpi_card("Wellness", wellness_completed, total_players, tone="wellness")
     with stat_2:
-        render_kpi_card("Wellness ingevuld", sum(1 for player in players if player["player_id"] in asrm_ids))
-    with stat_3:
-        render_kpi_card("RPE ingevuld", sum(1 for player in players if player["player_id"] in rpe_ids))
+        render_kpi_card("RPE", rpe_completed, total_players, tone="rpe")
 
     cols = st.columns(3)
     for idx, player in enumerate(players):
