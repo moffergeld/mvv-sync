@@ -58,6 +58,7 @@ st.markdown(
         --mvv-deep: #14070a;
         --mvv-cream: #fff7ef;
         --mvv-soft: #f7e9e7;
+        --mvv-page: #E7E5E4;
         --mvv-gold: #d6a94a;
         --mvv-border: rgba(200, 16, 46, 0.20);
       }
@@ -73,7 +74,7 @@ st.markdown(
       .stApp {
         background:
           radial-gradient(circle at top left, rgba(200, 16, 46, 0.22), transparent 34rem),
-          linear-gradient(135deg, #fff9f5 0%, #f7eeee 48%, #ffffff 100%);
+          linear-gradient(135deg, #efedec 0%, #e9e7e6 48%, var(--mvv-page) 100%);
       }
 
       .block-container {
