@@ -28,8 +28,6 @@ from Subscripts.player_tab_forms import (  # noqa: E402
     _legend_rpe,
     load_asrm,
     load_rpe,
-    save_asrm as original_save_asrm,
-    save_rpe as original_save_rpe,
 )
 
 
@@ -37,6 +35,9 @@ APP_TITLE = "MVV Tablet Check-in"
 CLUB_NAME = "MVV Maastricht"
 ACCESS_COOKIE_NAME = "mvv_tablet_access"
 ACCESS_COOKIE_SECONDS = 60 * 60 * 24 * 30
+TABLET_PLAYER_CACHE_TTL_SECONDS = 120
+TABLET_COMPLETION_CACHE_TTL_SECONDS = 45
+TABLET_FORM_CACHE_TTL_SECONDS = 300
 
 
 st.set_page_config(
@@ -940,6 +941,48 @@ def get_tablet_created_by(player_id: str = "") -> str:
     return str(player_id or "").strip()
 
 
+def _session_cache_get(bucket_name: str, key: str, ttl_seconds: int):
+    bucket = st.session_state.get(bucket_name) or {}
+    cached = bucket.get(key)
+    if not cached:
+        return None
+
+    fetched_at = float(cached.get("fetched_at", 0) or 0)
+    if fetched_at and (time.time() - fetched_at) <= ttl_seconds:
+        return cached.get("value")
+
+    updated_bucket = dict(bucket)
+    updated_bucket.pop(key, None)
+    if updated_bucket:
+        st.session_state[bucket_name] = updated_bucket
+    else:
+        st.session_state.pop(bucket_name, None)
+    return None
+
+
+def _session_cache_set(bucket_name: str, key: str, value) -> None:
+    bucket = dict(st.session_state.get(bucket_name) or {})
+    bucket[key] = {"fetched_at": time.time(), "value": value}
+    st.session_state[bucket_name] = bucket
+
+
+def _session_cache_clear(bucket_name: str, key: str | None = None) -> None:
+    if key is None:
+        st.session_state.pop(bucket_name, None)
+        return
+
+    bucket = dict(st.session_state.get(bucket_name) or {})
+    bucket.pop(key, None)
+    if bucket:
+        st.session_state[bucket_name] = bucket
+    else:
+        st.session_state.pop(bucket_name, None)
+
+
+def _player_day_cache_key(player_id: str, entry_date_iso: str) -> str:
+    return f"{entry_date_iso}:{player_id}"
+
+
 def _execute_upsert_with_fallback(sb, table_name: str, payload: Dict[str, Any], keys: Dict[str, Any]):
     try:
         return sb.table(table_name).upsert(payload, on_conflict=",".join(keys.keys())).execute()
@@ -980,25 +1023,6 @@ def save_asrm_tablet(sb, player_id, entry_date, muscle_soreness, fatigue, sleep_
 
 
 def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: str | None, injury_pain: int | None, notes: str, sessions: List[Dict[str, int]]) -> None:
-    try:
-        original_save_rpe(
-            sb,
-            player_id=player_id,
-            entry_date=entry_date,
-            injury=injury,
-            injury_type=injury_type,
-            injury_pain=injury_pain,
-            notes=notes,
-            sessions=sessions,
-        )
-        return
-    except Exception as exc:
-        # De originele save_rpe kan falen in tablet-mode door created_by/auth.uid(),
-        # of doordat oudere code een kolom gebruikt die niet in jouw rpe_sessions schema staat.
-        # In die gevallen slaan we hieronder handmatig op volgens de actuele database-tabellen.
-        if "created_by" not in str(exc) and "training_load" not in str(exc) and "schema cache" not in str(exc):
-            raise
-
     entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
     now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
     header_payload = {
@@ -1035,38 +1059,40 @@ def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: s
     if not rpe_entry_id:
         raise RuntimeError("RPE-header kon niet worden opgeslagen.")
 
-    try:
-        sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
-        session_fk = "rpe_entry_id"
-    except Exception:
-        sb.table("rpe_sessions").delete().eq("rpe_id", rpe_entry_id).execute()
-        session_fk = "rpe_id"
+    sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
 
+    if not sessions:
+        return
+
+    session_payloads: List[Dict[str, Any]] = []
+    minimal_payloads: List[Dict[str, Any]] = []
     for session in sessions:
         duration_min = int(session.get("duration_min", 0) or 0)
         rpe_value = int(session.get("rpe", 0) or 0)
-        session_payload = {
-            session_fk: rpe_entry_id,
-            "session_index": int(session.get("session_index", 1) or 1),
+        session_index = int(session.get("session_index", 1) or 1)
+        minimal_payload = {
+            "rpe_entry_id": rpe_entry_id,
+            "session_index": session_index,
             "duration_min": duration_min,
             "rpe": rpe_value,
-            "created_at": now_iso,
-            "updated_at": now_iso,
         }
-        try:
-            sb.table("rpe_sessions").insert(session_payload).execute()
-        except Exception as exc:
-            # Sommige rpe_sessions-tabellen hebben geen created_at/updated_at.
-            # Dan opnieuw proberen met alleen de noodzakelijke kolommen.
-            if "schema cache" not in str(exc) and "Could not find" not in str(exc):
-                raise
-            minimal_payload = {
-                session_fk: rpe_entry_id,
-                "session_index": int(session.get("session_index", 1) or 1),
-                "duration_min": duration_min,
-                "rpe": rpe_value,
+        minimal_payloads.append(minimal_payload)
+        session_payloads.append(
+            {
+                **minimal_payload,
+                "created_at": now_iso,
+                "updated_at": now_iso,
             }
-            sb.table("rpe_sessions").insert(minimal_payload).execute()
+        )
+
+    try:
+        sb.table("rpe_sessions").insert(session_payloads).execute()
+    except Exception as exc:
+        # Sommige rpe_sessions-tabellen hebben geen created_at/updated_at.
+        # Dan opnieuw proberen met alleen de noodzakelijke kolommen.
+        if "schema cache" not in str(exc) and "Could not find" not in str(exc):
+            raise
+        sb.table("rpe_sessions").insert(minimal_payloads).execute()
 
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
@@ -1151,6 +1177,16 @@ def fetch_active_players(_sb) -> List[Dict[str, str]]:
     return out
 
 
+def get_cached_active_players(sb) -> List[Dict[str, str]]:
+    cached = _session_cache_get("_tablet_active_players_cache", "all", TABLET_PLAYER_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return list(cached)
+
+    players = fetch_active_players(sb)
+    _session_cache_set("_tablet_active_players_cache", "all", players)
+    return players
+
+
 @st.cache_data(show_spinner=False, ttl=30)
 def fetch_daily_completion(_sb, entry_date_iso: str) -> Dict[str, List[str]]:
     try:
@@ -1182,8 +1218,101 @@ def fetch_daily_completion(_sb, entry_date_iso: str) -> Dict[str, List[str]]:
     return {"asrm_ids": asrm_ids, "rpe_ids": rpe_ids}
 
 
-def clear_daily_cache() -> None:
+def get_cached_daily_completion(sb, entry_date_iso: str) -> Dict[str, List[str]]:
+    cached = _session_cache_get(
+        "_tablet_daily_completion_cache",
+        entry_date_iso,
+        TABLET_COMPLETION_CACHE_TTL_SECONDS,
+    )
+    if cached is not None:
+        return {
+            "asrm_ids": list(cached.get("asrm_ids", [])),
+            "rpe_ids": list(cached.get("rpe_ids", [])),
+        }
+
+    completion = fetch_daily_completion(sb, entry_date_iso)
+    _session_cache_set("_tablet_daily_completion_cache", entry_date_iso, completion)
+    return completion
+
+
+def update_cached_daily_completion(sb, player_id: str, entry_date_iso: str, *, has_asrm: bool | None = None, has_rpe: bool | None = None) -> None:
+    cached = _session_cache_get(
+        "_tablet_daily_completion_cache",
+        entry_date_iso,
+        TABLET_COMPLETION_CACHE_TTL_SECONDS,
+    )
+    if cached is None:
+        try:
+            cached = fetch_daily_completion(sb, entry_date_iso)
+        except Exception:
+            cached = {"asrm_ids": [], "rpe_ids": []}
+    asrm_ids = set(cached.get("asrm_ids", []))
+    rpe_ids = set(cached.get("rpe_ids", []))
+
+    if has_asrm is True:
+        asrm_ids.add(str(player_id))
+    elif has_asrm is False:
+        asrm_ids.discard(str(player_id))
+
+    if has_rpe is True:
+        rpe_ids.add(str(player_id))
+    elif has_rpe is False:
+        rpe_ids.discard(str(player_id))
+
+    _session_cache_set(
+        "_tablet_daily_completion_cache",
+        entry_date_iso,
+        {"asrm_ids": sorted(asrm_ids), "rpe_ids": sorted(rpe_ids)},
+    )
+
+
+def get_cached_asrm_detail(sb, player_id: str, entry_date) -> Dict[str, Any]:
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    cache_key = _player_day_cache_key(str(player_id), entry_date_iso)
+    cached = _session_cache_get("_tablet_asrm_detail_cache", cache_key, TABLET_FORM_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return dict(cached)
+
+    existing_asrm = load_asrm(sb, player_id, entry_date) or {}
+    _session_cache_set("_tablet_asrm_detail_cache", cache_key, existing_asrm)
+    return existing_asrm
+
+
+def set_cached_asrm_detail(player_id: str, entry_date, payload: Dict[str, Any]) -> None:
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    cache_key = _player_day_cache_key(str(player_id), entry_date_iso)
+    _session_cache_set("_tablet_asrm_detail_cache", cache_key, payload)
+
+
+def get_cached_rpe_detail(sb, player_id: str, entry_date) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    cache_key = _player_day_cache_key(str(player_id), entry_date_iso)
+    cached = _session_cache_get("_tablet_rpe_detail_cache", cache_key, TABLET_FORM_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return dict(cached.get("header", {})), list(cached.get("sessions", []))
+
+    rpe_header, rpe_sessions = load_rpe(sb, player_id, entry_date)
+    snapshot = {"header": rpe_header or {}, "sessions": rpe_sessions or []}
+    _session_cache_set("_tablet_rpe_detail_cache", cache_key, snapshot)
+    return dict(snapshot["header"]), list(snapshot["sessions"])
+
+
+def set_cached_rpe_detail(player_id: str, entry_date, header: Dict[str, Any], sessions: List[Dict[str, Any]]) -> None:
+    entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
+    cache_key = _player_day_cache_key(str(player_id), entry_date_iso)
+    _session_cache_set(
+        "_tablet_rpe_detail_cache",
+        cache_key,
+        {"header": header, "sessions": sessions},
+    )
+
+
+def clear_daily_cache(entry_date_iso: str | None = None) -> None:
     fetch_daily_completion.clear()
+    if entry_date_iso:
+        _session_cache_clear("_tablet_daily_completion_cache", entry_date_iso)
+    else:
+        _session_cache_clear("_tablet_daily_completion_cache")
 
 
 def show_flash() -> None:
@@ -1198,12 +1327,13 @@ def render_top_actions(show_back: bool = False) -> None:
 
 def render_player_picker(sb) -> None:
     entry_date = amsterdam_today()
-    players = fetch_active_players(sb)
+    entry_date_iso = entry_date.isoformat()
+    players = get_cached_active_players(sb)
     if not players:
         st.warning("Geen actieve spelers gevonden.")
         return
 
-    completion = fetch_daily_completion(sb, entry_date.isoformat())
+    completion = get_cached_daily_completion(sb, entry_date_iso)
     asrm_ids = set(completion.get("asrm_ids", []))
     rpe_ids = set(completion.get("rpe_ids", []))
 
@@ -1250,6 +1380,8 @@ def render_player_picker(sb) -> None:
             if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
+                st.session_state["tablet_player_has_wellness"] = wellness_done
+                st.session_state["tablet_player_has_rpe"] = rpe_done
                 # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
                 st.session_state["tablet_active_form"] = "RPE" if wellness_done else "Wellness"
                 st.rerun()
@@ -1265,15 +1397,14 @@ def _session_value(rpe_sessions: List[Dict[str, Any]], idx: int, key: str, defau
 
 def render_player_forms(sb, player_id: str, player_name: str) -> None:
     entry_date = amsterdam_today()
-    existing_asrm = load_asrm(sb, player_id, entry_date) or {}
-    rpe_header, rpe_sessions = load_rpe(sb, player_id, entry_date)
-    rpe_header = rpe_header or {}
-    rpe_sessions = rpe_sessions or []
+    entry_date_iso = entry_date.isoformat()
+    if "tablet_player_has_wellness" not in st.session_state or "tablet_player_has_rpe" not in st.session_state:
+        completion = get_cached_daily_completion(sb, entry_date_iso)
+        st.session_state["tablet_player_has_wellness"] = str(player_id) in set(completion.get("asrm_ids", []))
+        st.session_state["tablet_player_has_rpe"] = str(player_id) in set(completion.get("rpe_ids", []))
 
-    has_wellness = bool(existing_asrm)
-    has_rpe = bool(rpe_header)
-    has_s2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
-    injury_default = bool(rpe_header.get("injury", False))
+    has_wellness = bool(st.session_state.get("tablet_player_has_wellness", False))
+    has_rpe = bool(st.session_state.get("tablet_player_has_rpe", False))
 
     if "tablet_active_form" not in st.session_state:
         st.session_state["tablet_active_form"] = "RPE" if has_wellness else "Wellness"
@@ -1295,6 +1426,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     st.session_state["tablet_active_form"] = active_form
 
     if active_form == "Wellness":
+        existing_asrm = get_cached_asrm_detail(sb, player_id, entry_date) if has_wellness else {}
         with st.form(f"tablet_asrm_form_{player_id}", clear_on_submit=False):
             _legend_asrm()
 
@@ -1339,7 +1471,21 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         if asrm_submit:
             try:
                 save_asrm_tablet(sb, player_id, entry_date, ms, fat, sleep, stress, mood)
-                clear_daily_cache()
+                st.session_state["tablet_player_has_wellness"] = True
+                set_cached_asrm_detail(
+                    player_id,
+                    entry_date,
+                    {
+                        "player_id": str(player_id),
+                        "entry_date": entry_date_iso,
+                        "muscle_soreness": int(ms),
+                        "fatigue": int(fat),
+                        "sleep_quality": int(sleep),
+                        "stress": int(stress),
+                        "mood": int(mood),
+                    },
+                )
+                update_cached_daily_completion(sb, player_id, entry_date_iso, has_asrm=True)
                 st.session_state["tablet_active_form"] = "RPE"
                 st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}. RPE is nu geopend."
                 st.rerun()
@@ -1347,6 +1493,12 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.error(f"Opslaan faalde: {exc}")
 
     if active_form == "RPE":
+        if has_rpe:
+            rpe_header, rpe_sessions = get_cached_rpe_detail(sb, player_id, entry_date)
+        else:
+            rpe_header, rpe_sessions = {}, []
+        has_s2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
+        injury_default = bool(rpe_header.get("injury", False))
         injury_locations = [
             "None",
             "Foot",
@@ -1538,7 +1690,21 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     notes=notes,
                     sessions=sessions_payload,
                 )
-                clear_daily_cache()
+                st.session_state["tablet_player_has_rpe"] = True
+                set_cached_rpe_detail(
+                    player_id,
+                    entry_date,
+                    {
+                        "player_id": str(player_id),
+                        "entry_date": entry_date_iso,
+                        "injury": bool(injury),
+                        "injury_type": injury_type_to_save,
+                        "injury_pain": injury_pain_to_save,
+                        "notes": str(notes or ""),
+                    },
+                    sessions_payload,
+                )
+                update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe=True)
                 st.session_state["tablet_flash"] = f"RPE opgeslagen voor {player_name}."
                 st.rerun()
             except Exception as exc:
@@ -1546,6 +1712,8 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
     if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
         st.session_state.pop("tablet_player_id", None)
         st.session_state.pop("tablet_player_name", None)
+        st.session_state.pop("tablet_player_has_wellness", None)
+        st.session_state.pop("tablet_player_has_rpe", None)
         st.session_state.pop("tablet_active_form", None)
         st.rerun()
 
