@@ -1315,6 +1315,39 @@ def clear_daily_cache(entry_date_iso: str | None = None) -> None:
         _session_cache_clear("_tablet_daily_completion_cache")
 
 
+def clear_selected_player_state(player_id: str | None = None) -> None:
+    keys_to_clear = [
+        "tablet_player_id",
+        "tablet_player_name",
+        "tablet_player_has_wellness",
+        "tablet_player_has_rpe",
+        "tablet_active_form",
+    ]
+
+    if player_id:
+        keys_to_clear.extend(
+            [
+                f"tablet_asrm_ms_{player_id}",
+                f"tablet_asrm_fat_{player_id}",
+                f"tablet_asrm_sleep_{player_id}",
+                f"tablet_asrm_stress_{player_id}",
+                f"tablet_asrm_mood_{player_id}",
+                f"tablet_rpe_enable_s2_{player_id}",
+                f"tablet_rpe_injury_{player_id}",
+                f"tablet_rpe_s1_dur_{player_id}",
+                f"tablet_rpe_s1_rpe_{player_id}",
+                f"tablet_rpe_s2_dur_{player_id}",
+                f"tablet_rpe_s2_rpe_{player_id}",
+                f"tablet_rpe_loc_{player_id}",
+                f"tablet_rpe_pain_{player_id}",
+                f"tablet_rpe_notes_{player_id}",
+            ]
+        )
+
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+
+
 def show_flash() -> None:
     flash = st.session_state.pop("tablet_flash", None)
     if flash:
@@ -1541,32 +1574,42 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         if injury_key not in st.session_state:
             st.session_state[injury_key] = injury_default
 
-        st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
-        enable_s2 = st.radio(
-            "2e sessie",
-            options=[False, True],
-            index=1 if bool(st.session_state[enable_s2_key]) else 0,
-            format_func=lambda value: "Ja" if value else "Nee",
-            horizontal=True,
-            label_visibility="collapsed",
-            key=enable_s2_key,
-        )
-        st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
-        injury = st.radio(
-            "Injury",
-            options=[False, True],
-            index=1 if bool(st.session_state[injury_key]) else 0,
-            format_func=lambda value: "Ja" if value else "Nee",
-            horizontal=True,
-            label_visibility="collapsed",
-            key=injury_key,
-        )
+        toggle_cols = st.columns(2, gap="large")
+        with toggle_cols[0]:
+            st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
+            enable_s2 = st.radio(
+                "2e sessie",
+                options=[False, True],
+                index=1 if bool(st.session_state[enable_s2_key]) else 0,
+                format_func=lambda value: "Ja" if value else "Nee",
+                horizontal=True,
+                label_visibility="collapsed",
+                key=enable_s2_key,
+            )
+        with toggle_cols[1]:
+            st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
+            injury = st.radio(
+                "Injury",
+                options=[False, True],
+                index=1 if bool(st.session_state[injury_key]) else 0,
+                format_func=lambda value: "Ja" if value else "Nee",
+                horizontal=True,
+                label_visibility="collapsed",
+                key=injury_key,
+            )
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
             _legend_rpe()
 
-            session_cols = st.columns(2)
-            with session_cols[0]:
+            if enable_s2:
+                session_cols = st.columns(2, gap="large")
+                session_1_container = session_cols[0]
+                session_2_container = session_cols[1]
+            else:
+                session_1_container = st.container()
+                session_2_container = None
+
+            with session_1_container:
                 st.markdown(
                     """
                     <div class="mvv-session-title">Session 1</div>
@@ -1589,14 +1632,14 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     key=f"tablet_rpe_s1_rpe_{player_id}",
                 )
 
-            with session_cols[1]:
-                st.markdown(
-                    """
-                    <div class="mvv-session-title">Session 2</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if enable_s2:
+            if enable_s2 and session_2_container is not None:
+                with session_2_container:
+                    st.markdown(
+                        """
+                        <div class="mvv-session-title">Session 2</div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
                     s2_dur = st.number_input(
                         "2e Duration (min)",
                         min_value=0,
@@ -1612,19 +1655,18 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                         value=s2_default_rpe,
                         key=f"tablet_rpe_s2_rpe_{player_id}",
                     )
-                else:
-                    s2_dur = 0
-                    s2_rpe = s2_default_rpe
-
-            st.divider()
-            st.markdown(
-                """
-                <div class="mvv-session-title">Injury</div>
-                """,
-                unsafe_allow_html=True,
-            )
+            else:
+                s2_dur = 0
+                s2_rpe = s2_default_rpe
 
             if injury:
+                st.divider()
+                st.markdown(
+                    """
+                    <div class="mvv-session-title">Injury</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
                 loc_col, pain_col = st.columns([1.2, 2.0])
                 with loc_col:
                     injury_loc = st.selectbox(
@@ -1645,6 +1687,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 injury_loc = "None"
                 injury_pain = 0
 
+            st.divider()
             notes = st.text_area(
                 "Notes (optional)",
                 value=notes_default,
@@ -1652,13 +1695,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 height=120,
             )
 
-            save_cols = st.columns([1, 1, 1.35])
-            with save_cols[0]:
-                render_mini_stat_card("Speler", player_name)
-            with save_cols[1]:
-                render_mini_stat_card("Status", "Klaar" if int(s1_dur) > 0 else "Check duur")
-            with save_cols[2]:
-                rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
+            rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
 
         if rpe_submit:
             try:
@@ -1706,15 +1743,12 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 )
                 update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe=True)
                 st.session_state["tablet_flash"] = f"RPE opgeslagen voor {player_name}."
+                clear_selected_player_state(player_id)
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
     if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
-        st.session_state.pop("tablet_player_id", None)
-        st.session_state.pop("tablet_player_name", None)
-        st.session_state.pop("tablet_player_has_wellness", None)
-        st.session_state.pop("tablet_player_has_rpe", None)
-        st.session_state.pop("tablet_active_form", None)
+        clear_selected_player_state(player_id)
         st.rerun()
 
 
