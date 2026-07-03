@@ -165,20 +165,20 @@ st.markdown(
 
       .mvv-logo-wrap {
         z-index: 1;
-        width: 72px;
-        height: 72px;
-        min-width: 72px;
+        width: 88px;
+        height: 88px;
+        min-width: 88px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 20px;
+        border-radius: 24px;
         background: rgba(255, 255, 255, 0.92);
         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4), 0 12px 24px rgba(0,0,0,0.16);
       }
 
       .mvv-logo-wrap img {
-        max-width: 58px;
-        max-height: 58px;
+        max-width: 76px;
+        max-height: 76px;
         object-fit: contain;
       }
 
@@ -787,7 +787,7 @@ st.markdown(
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
-        .mvv-logo-wrap { width: 58px; height: 58px; min-width: 58px; border-radius: 16px; }
+        .mvv-logo-wrap { width: 70px; height: 70px; min-width: 70px; border-radius: 18px; }
         div.stButton > button { min-height: 4.8rem; }
       }
     </style>
