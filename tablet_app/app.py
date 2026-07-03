@@ -809,6 +809,8 @@ def cookie_mgr():
 def logo_html() -> str:
     """Use an MVV logo file when present; otherwise show a clean MVV fallback mark."""
     candidates = [
+        ROOT_DIR / "Assets" / "Afbeeldingen" / "Team_Logos" / "MVV Maastricht.png",
+        ROOT_DIR / "Assets" / "Afbeeldingen" / "Team_Logos" / "MVV Maastricht.jpg",
         ROOT_DIR / "assets" / "mvv-logo.png",
         ROOT_DIR / "assets" / "mvv_logo.png",
         ROOT_DIR / "assets" / "mvv.png",
