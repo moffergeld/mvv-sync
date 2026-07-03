@@ -1022,7 +1022,17 @@ def save_asrm_tablet(sb, player_id, entry_date, muscle_soreness, fatigue, sleep_
     )
 
 
-def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: str | None, injury_pain: int | None, notes: str, sessions: List[Dict[str, int]]) -> None:
+def save_rpe_tablet(
+    sb,
+    player_id: str,
+    entry_date,
+    injury: bool,
+    injury_type: str | None,
+    injury_pain: int | None,
+    notes: str,
+    sessions: List[Dict[str, int]],
+    existing_rpe_entry_id: str | None = None,
+) -> str:
     entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
     now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
     header_payload = {
@@ -1036,63 +1046,64 @@ def save_rpe_tablet(sb, player_id: str, entry_date, injury: bool, injury_type: s
         "updated_at": now_iso,
     }
 
-    existing = (
-        sb.table("rpe_entries")
-        .select("id")
-        .eq("player_id", str(player_id))
-        .eq("entry_date", entry_date_iso)
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
+    rpe_entry_id = str(existing_rpe_entry_id or "").strip() or None
 
-    if existing:
-        rpe_entry_id = existing[0].get("id")
+    if rpe_entry_id:
         update_payload = dict(header_payload)
         update_payload.pop("created_by", None)
         sb.table("rpe_entries").update(update_payload).eq("id", rpe_entry_id).execute()
     else:
-        inserted = sb.table("rpe_entries").insert(header_payload).execute().data or []
-        rpe_entry_id = inserted[0].get("id") if inserted else None
+        existing = (
+            sb.table("rpe_entries")
+            .select("id")
+            .eq("player_id", str(player_id))
+            .eq("entry_date", entry_date_iso)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if existing:
+            rpe_entry_id = existing[0].get("id")
+            update_payload = dict(header_payload)
+            update_payload.pop("created_by", None)
+            sb.table("rpe_entries").update(update_payload).eq("id", rpe_entry_id).execute()
+        else:
+            inserted = sb.table("rpe_entries").insert(header_payload).execute().data or []
+            rpe_entry_id = inserted[0].get("id") if inserted else None
 
     if not rpe_entry_id:
         raise RuntimeError("RPE-header kon niet worden opgeslagen.")
 
-    sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
-
     if not sessions:
-        return
+        sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
+        return str(rpe_entry_id)
 
     session_payloads: List[Dict[str, Any]] = []
-    minimal_payloads: List[Dict[str, Any]] = []
+    keep_session_indexes: set[int] = set()
     for session in sessions:
         duration_min = int(session.get("duration_min", 0) or 0)
         rpe_value = int(session.get("rpe", 0) or 0)
         session_index = int(session.get("session_index", 1) or 1)
-        minimal_payload = {
+        keep_session_indexes.add(session_index)
+        session_payload = {
             "rpe_entry_id": rpe_entry_id,
             "session_index": session_index,
             "duration_min": duration_min,
             "rpe": rpe_value,
         }
-        minimal_payloads.append(minimal_payload)
-        session_payloads.append(
-            {
-                **minimal_payload,
-                "created_at": now_iso,
-                "updated_at": now_iso,
-            }
-        )
+        session_payloads.append(session_payload)
 
-    try:
-        sb.table("rpe_sessions").insert(session_payloads).execute()
-    except Exception as exc:
-        # Sommige rpe_sessions-tabellen hebben geen created_at/updated_at.
-        # Dan opnieuw proberen met alleen de noodzakelijke kolommen.
-        if "schema cache" not in str(exc) and "Could not find" not in str(exc):
-            raise
-        sb.table("rpe_sessions").insert(minimal_payloads).execute()
+    sb.table("rpe_sessions").upsert(
+        session_payloads,
+        on_conflict="rpe_entry_id,session_index",
+    ).execute()
+
+    for session_index in (1, 2):
+        if session_index not in keep_session_indexes:
+            sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).eq("session_index", session_index).execute()
+
+    return str(rpe_entry_id)
 
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
@@ -1386,19 +1397,8 @@ def render_player_picker(sb) -> None:
     with stat_3:
         render_kpi_card("RPE ingevuld", sum(1 for player in players if player["player_id"] in rpe_ids))
 
-    search = st.text_input("Zoek speler", value="", placeholder="Typ een naam")
-    search_value = search.strip().lower()
-    filtered_players = [
-        player for player in players
-        if not search_value or search_value in player["full_name"].lower()
-    ]
-
-    if not filtered_players:
-        st.info("Geen speler gevonden.")
-        return
-
     cols = st.columns(3)
-    for idx, player in enumerate(filtered_players):
+    for idx, player in enumerate(players):
         player_id = player["player_id"]
         player_name = player["full_name"]
         wellness_done = player_id in asrm_ids
@@ -1717,7 +1717,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     injury_type_to_save = None if injury_loc == "None" else injury_loc
                     injury_pain_to_save = int(injury_pain)
 
-                save_rpe_tablet(
+                saved_rpe_entry_id = save_rpe_tablet(
                     sb,
                     player_id=player_id,
                     entry_date=entry_date,
@@ -1726,12 +1726,14 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     injury_pain=injury_pain_to_save,
                     notes=notes,
                     sessions=sessions_payload,
+                    existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
                 )
                 st.session_state["tablet_player_has_rpe"] = True
                 set_cached_rpe_detail(
                     player_id,
                     entry_date,
                     {
+                        "id": saved_rpe_entry_id,
                         "player_id": str(player_id),
                         "entry_date": entry_date_iso,
                         "injury": bool(injury),
