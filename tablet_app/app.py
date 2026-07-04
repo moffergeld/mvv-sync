@@ -1644,10 +1644,6 @@ def render_bulk_rpe_page(sb) -> None:
         for player in players
         if str(player.get("player_id")) in asrm_ids and str(player.get("player_id")) not in rpe_ids
     ]
-    waiting_for_wellness = [
-        player for player in players if str(player.get("player_id")) not in asrm_ids
-    ]
-
     render_top_actions(show_back=False)
     show_flash()
 
@@ -1661,23 +1657,8 @@ def render_bulk_rpe_page(sb) -> None:
         st.session_state["tablet_bulk_rpe_mode"] = False
         st.rerun()
 
-    st.markdown(
-        f'<div class="mvv-load-pill"><strong>{len(ready_players)}</strong> spelers klaar voor snelle RPE-invoer.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="mvv-note">Deze pagina is voor snelle RPE. Voor injury, 2e sessie of extra notities gebruik je nog steeds de losse spelerkaart.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if waiting_for_wellness:
-        st.markdown(
-            f'<div class="mvv-muted-box">{len(waiting_for_wellness)} spelers staan hier nog niet tussen omdat wellness nog open staat.</div>',
-            unsafe_allow_html=True,
-        )
-
     if not ready_players:
-        st.success("Alle spelers die klaar zijn voor RPE zijn al ingevuld.")
+        st.info("Geen spelers om RPE in te vullen.")
         return
 
     bulk_entries: List[Dict[str, Any]] = []
