@@ -1,7 +1,12 @@
 import base64
+import html
+import math
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import extra_streamlit_components as stx  # noqa: F401
+import pandas as pd
 import streamlit as st
 
 from roles import (
@@ -28,73 +33,7 @@ ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
 TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
-MODULES = [
-    {
-        "id": "player",
-        "title": "Player Page",
-        "description": "Individuele spelerstatus, readiness en dagelijkse check-in op een plek.",
-        "badge": "Core",
-        "img_path": "Assets/Afbeeldingen/Script/Player_page.PNG",
-        "target_page": "pages/01_Player_Page.py",
-        "roles": {"player", "staff"},
-    },
-    {
-        "id": "matchreports",
-        "title": "Match Reports",
-        "description": "Rapportage, wedstrijdnotities en context voor staf en evaluatie.",
-        "badge": "Analyse",
-        "img_path": "Assets/Afbeeldingen/Script/Match Report.PNG",
-        "target_page": "pages/02_Match_Reports.py",
-        "roles": {"player", "staff"},
-    },
-    {
-        "id": "gpsdata",
-        "title": "GPS Data",
-        "description": "Belastingsdata, trainingsoutput en trends per speler of sessie.",
-        "badge": "Performance",
-        "img_path": "Assets/Afbeeldingen/Script/GPS_Data.PNG",
-        "target_page": "pages/03_GPS_Data.py",
-        "roles": {"staff"},
-    },
-    {
-        "id": "gpsimport",
-        "title": "GPS Import",
-        "description": "Nieuwe GPS-bestanden inladen en klaarzetten voor verwerking.",
-        "badge": "Workflow",
-        "img_path": "Assets/Afbeeldingen/Script/GPS_Import.PNG",
-        "target_page": "pages/06_GPS_Import.py",
-        "roles": {"staff"},
-    },
-    {
-        "id": "medical",
-        "title": "Medical",
-        "description": "Medische opvolging en beschikbaarheid, straks in dezelfde stijl.",
-        "badge": "Binnenkort",
-        "img_path": "Assets/Afbeeldingen/Script/Medical.PNG",
-        "target_page": None,
-        "disabled": True,
-        "roles": {"staff"},
-    },
-    {
-        "id": "accounts",
-        "title": "Accounts",
-        "description": "Gebruikers, rechten en teamtoegang vanuit een centraal paneel.",
-        "badge": "Binnenkort",
-        "img_path": "Assets/Afbeeldingen/Script/Accounts.PNG",
-        "target_page": None,
-        "disabled": True,
-        "roles": {"staff"},
-    },
-    {
-        "id": "compare",
-        "title": "Analytics",
-        "description": "Vergelijk spelers en sessies om sneller patronen te spotten.",
-        "badge": "Insights",
-        "img_path": "Assets/Afbeeldingen/Script/Analytics.PNG",
-        "target_page": "pages/05_Compare.py",
-        "roles": {"staff"},
-    },
-]
+ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
 
 
 def build_image_data_uri(path_like: str | Path) -> str:
@@ -172,6 +111,10 @@ def render_home_css() -> None:
           [data-testid="stSidebar"] label,
           [data-testid="stSidebar"] div {
             color: var(--mvv-text);
+          }
+
+          [data-testid="stSidebarNav"] {
+            display: none;
           }
 
           .block-container {
@@ -315,64 +258,98 @@ def render_home_css() -> None:
             text-align: right;
           }
 
-          .home-module-thumb {
-            position: relative;
-            aspect-ratio: 16 / 10;
-            display: flex;
-            align-items: flex-end;
-            padding: 1.05rem;
-            border-radius: 10px;
+          .home-kpi-board {
+            border-radius: 8px;
+            border: 1px solid rgba(234, 51, 81, 0.14);
+            background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
             overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.08);
-            box-shadow: 0 14px 26px rgba(0,0,0,0.2);
-            background-size: cover;
-            background-position: center;
           }
 
-          .home-module-thumb::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(180deg, rgba(7,12,24,0.02), rgba(7,12,24,0.9));
+          .home-kpi-head,
+          .home-kpi-row {
+            display: grid;
+            grid-template-columns: minmax(220px, 2fr) 0.95fr 0.85fr 0.85fr 1fr 0.9fr;
+            gap: 0.85rem;
+            align-items: center;
           }
 
-          .home-module-badge {
-            position: absolute;
-            top: 0.85rem;
-            left: 0.85rem;
-            z-index: 1;
-            padding: 0.38rem 0.65rem;
-            border-radius: 999px;
+          .home-kpi-head {
+            padding: 0.9rem 1.05rem 0.8rem 1.05rem;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            color: rgba(255,255,255,0.64);
             font-size: 0.74rem;
             font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+          }
+
+          .home-kpi-row {
+            padding: 0.95rem 1.05rem;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+          }
+
+          .home-kpi-row:last-child {
+            border-bottom: none;
+          }
+
+          .home-kpi-row[data-readiness="Alert"] {
+            background: linear-gradient(90deg, rgba(185, 28, 28, 0.14), rgba(185, 28, 28, 0.02));
+          }
+
+          .home-kpi-row[data-readiness="Watch"] {
+            background: linear-gradient(90deg, rgba(217, 119, 6, 0.10), rgba(217, 119, 6, 0.02));
+          }
+
+          .home-player-cell {
+            display: flex;
+            flex-direction: column;
+            gap: 0.22rem;
+            min-width: 0;
+          }
+
+          .home-player-name {
             color: #ffffff;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(11,16,29,0.74);
-            backdrop-filter: blur(10px);
-          }
-
-          .home-module-overlay {
-            position: relative;
-            z-index: 1;
-          }
-
-          .home-module-name {
-            font-size: 1.55rem;
+            font-size: 1rem;
             font-weight: 800;
+            line-height: 1.15;
+          }
+
+          .home-player-meta {
+            color: rgba(255,255,255,0.68);
+            font-size: 0.8rem;
+            line-height: 1.4;
+          }
+
+          .home-kpi-cell {
             color: #ffffff;
-            line-height: 1.06;
+            font-size: 0.95rem;
+            font-weight: 700;
+            line-height: 1.15;
           }
 
-          .home-module-copy {
-            margin-top: 0.38rem;
-            max-width: 28ch;
-            color: rgba(255,255,255,0.88);
-            line-height: 1.48;
-            font-size: 0.92rem;
+          .home-kpi-cell-muted {
+            color: rgba(255,255,255,0.7);
           }
 
-          .home-module-gap {
-            height: 0.7rem;
+          .home-ready-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: fit-content;
+            min-width: 78px;
+            padding: 0.38rem 0.62rem;
+            border-radius: 999px;
+            color: #ffffff;
+            font-size: 0.78rem;
+            font-weight: 800;
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+          }
+
+          .home-kpi-mobile-label {
+            display: none;
           }
 
           .stButton > button {
@@ -430,8 +407,32 @@ def render_home_css() -> None:
               text-align: left;
             }
 
-            .home-module-thumb {
-              aspect-ratio: 16 / 11;
+            .home-kpi-head {
+              display: none;
+            }
+
+            .home-kpi-row {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 0.7rem 1rem;
+            }
+
+            .home-player-cell {
+              grid-column: 1 / -1;
+            }
+
+            .home-kpi-cell {
+              display: flex;
+              flex-direction: column;
+              gap: 0.18rem;
+            }
+
+            .home-kpi-mobile-label {
+              display: block;
+              color: rgba(255,255,255,0.56);
+              font-size: 0.7rem;
+              font-weight: 800;
+              letter-spacing: 0.12em;
+              text-transform: uppercase;
             }
           }
         </style>
@@ -487,22 +488,379 @@ def logout_button() -> None:
         st.rerun()
 
 
-def modules_for_role(role: str) -> list[dict]:
-    role = (role or "").lower()
-    return [module for module in MODULES if role in module["roles"]]
+def role_label_for_home(role: str) -> str:
+    return "Staff" if (role or "").lower() != "player" else "Speler"
 
 
-def render_home_hero(role: str, email: str, modules: list[dict]) -> None:
+def build_status(score: Optional[float]) -> tuple[str, str]:
+    if score is None or pd.isna(score):
+        return "No data", "#6b7280"
+    if score <= 4.5:
+        return "Ready", "#14803c"
+    if score <= 7.5:
+        return "Watch", "#d97706"
+    return "Alert", "#b91c1c"
+
+
+def format_metric_value(value: Optional[float], suffix: str = "") -> str:
+    if value is None or pd.isna(value):
+        return "--"
+    value = float(value)
+    if not math.isfinite(value):
+        return "--"
+    if value.is_integer():
+        return f"{int(value)}{suffix}"
+    return f"{value:.1f}{suffix}"
+
+
+def format_acwr_value(value: Optional[float]) -> str:
+    if value is None or pd.isna(value):
+        return "--"
+    value = float(value)
+    if not math.isfinite(value):
+        return "--"
+    return f"{value:.2f}"
+
+
+def current_week_context() -> tuple[int, str]:
+    iso = date.today().isocalendar()
+    week_key = int(iso.year) * 100 + int(iso.week)
+    week_label = f"{int(iso.year):04d}-W{int(iso.week):02d}"
+    return week_key, week_label
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    select_variants = [
+        'player_id,full_name,is_active,"Position"',
+        "player_id,full_name,is_active",
+    ]
+
+    for select_clause in select_variants:
+        try:
+            rows = (
+                _sb.table("players")
+                .select(select_clause)
+                .eq("is_active", True)
+                .order("full_name")
+                .execute()
+                .data
+                or []
+            )
+            break
+        except Exception:
+            rows = []
+
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        player_id = row.get("player_id")
+        full_name = str(row.get("full_name") or "").strip()
+        position_value = row.get("Position")
+        if position_value is None:
+            position_value = row.get("position")
+        if player_id and full_name:
+            out.append(
+                {
+                    "player_id": str(player_id),
+                    "full_name": full_name,
+                    "position": str(position_value or "").strip(),
+                }
+            )
+    return out
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_wellness_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    try:
+        rows = (
+            _sb.table("asrm_entries")
+            .select("player_id,entry_date,muscle_soreness,fatigue,sleep_quality,stress,mood")
+            .gte("entry_date", start_iso)
+            .lte("entry_date", end_iso)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        rows = []
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce").dt.date
+    metric_cols = ["muscle_soreness", "fatigue", "sleep_quality", "stress", "mood"]
+    for col in metric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["wellness_avg"] = df[metric_cols].mean(axis=1)
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_rpe_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    try:
+        headers = (
+            _sb.table("rpe_entries")
+            .select("id,player_id,entry_date")
+            .gte("entry_date", start_iso)
+            .lte("entry_date", end_iso)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        headers = []
+
+    headers_df = pd.DataFrame(headers)
+    if headers_df.empty:
+        return headers_df
+
+    headers_df["entry_date"] = pd.to_datetime(headers_df["entry_date"], errors="coerce").dt.date
+    entry_ids = [str(item) for item in headers_df["id"].dropna().tolist()]
+    session_rows: List[Dict[str, Any]] = []
+
+    for idx in range(0, len(entry_ids), 100):
+        chunk = entry_ids[idx: idx + 100]
+        try:
+            rows = (
+                _sb.table("rpe_sessions")
+                .select("rpe_entry_id,rpe,duration_min")
+                .in_("rpe_entry_id", chunk)
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            rows = []
+        session_rows.extend(rows)
+
+    sessions_df = pd.DataFrame(session_rows)
+    if sessions_df.empty:
+        return pd.DataFrame(columns=["player_id", "entry_date", "rpe_avg"])
+
+    sessions_df["rpe"] = pd.to_numeric(sessions_df["rpe"], errors="coerce")
+    merged = headers_df.merge(sessions_df, left_on="id", right_on="rpe_entry_id", how="left")
+    daily = (
+        merged.groupby(["player_id", "entry_date"], as_index=False)
+        .agg(rpe_avg=("rpe", "mean"))
+        .sort_values(["player_id", "entry_date"])
+    )
+    return daily
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    try:
+        rows = (
+            _sb.table("v_gps_summary")
+            .select("player_id,datum,total_distance")
+            .gte("datum", start_iso)
+            .lte("datum", end_iso)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        rows = []
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
+    df["total_distance"] = pd.to_numeric(df["total_distance"], errors="coerce").fillna(0.0)
+    daily = (
+        df.groupby(["player_id", "datum"], as_index=False)
+        .agg(total_distance=("total_distance", "sum"))
+        .sort_values(["player_id", "datum"])
+    )
+    return daily
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    try:
+        rows = (
+            _sb.table("v_gps_summary")
+            .select("player_id,datum,total_distance,running,sprint,high_sprint")
+            .gte("datum", start_iso)
+            .lte("datum", end_iso)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        rows = []
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
+    df = df.dropna(subset=["player_id", "datum"]).copy()
+    if df.empty:
+        return df
+
+    metric_cols = [metric for metric, _ in ACWR_HOME_METRICS]
+    for metric in metric_cols:
+        if metric not in df.columns:
+            df[metric] = 0.0
+        df[metric] = pd.to_numeric(df[metric], errors="coerce").fillna(0.0)
+
+    iso = df["datum"].dt.isocalendar()
+    df["iso_year"] = iso["year"].astype("Int64")
+    df["iso_week"] = iso["week"].astype("Int64")
+    df["week_key"] = (df["iso_year"] * 100 + df["iso_week"]).astype("Int64")
+    df["week_label"] = df.apply(
+        lambda row: f"{int(row['iso_year']):04d}-W{int(row['iso_week']):02d}"
+        if pd.notna(row["iso_year"]) and pd.notna(row["iso_week"])
+        else None,
+        axis=1,
+    )
+
+    weekly = (
+        df.groupby(["player_id", "week_key", "week_label"], as_index=False)[metric_cols]
+        .sum()
+        .sort_values(["player_id", "week_key"])
+    )
+    return weekly
+
+
+def build_snapshot_lookup(df: pd.DataFrame, date_col: str, value_col: str) -> Dict[str, Dict[str, Any]]:
+    if df.empty:
+        return {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    today_value = date.today()
+    for player_id, grp in df.groupby("player_id"):
+        grp = grp.sort_values(date_col)
+        latest = grp.tail(1).iloc[0]
+        today_mask = grp[date_col] == today_value
+        row = grp[today_mask].tail(1).iloc[0] if today_mask.any() else latest
+        out[str(player_id)] = {
+            "value": None if pd.isna(row[value_col]) else float(row[value_col]),
+            "date": row[date_col],
+            "is_today": bool(row[date_col] == today_value),
+        }
+    return out
+
+
+def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[str, Dict[str, Any]]]:
+    current_week_key, current_week_label = current_week_context()
+    if weekly_df.empty:
+        return current_week_label, {}
+
+    df = weekly_df.copy()
+    df["week_key"] = pd.to_numeric(df["week_key"], errors="coerce").astype("Int64")
+    df = df.dropna(subset=["player_id", "week_key"]).sort_values(["player_id", "week_key"]).copy()
+    if df.empty:
+        return current_week_label, {}
+
+    metric_cols = [metric for metric, _ in ACWR_HOME_METRICS]
+    for metric in metric_cols:
+        chronic = df.groupby("player_id")[metric].transform(
+            lambda series: series.shift(1).rolling(window=4, min_periods=2).mean()
+        )
+        df[f"{metric}_acwr"] = df[metric].div(chronic.where(chronic != 0))
+
+    current_df = df[df["week_key"] == current_week_key].copy()
+    lookup: Dict[str, Dict[str, Any]] = {}
+    for _, row in current_df.iterrows():
+        player_payload: Dict[str, Any] = {"week_label": current_week_label}
+        for metric in metric_cols:
+            value = row.get(f"{metric}_acwr")
+            if value is None or pd.isna(value):
+                player_payload[f"{metric}_acwr"] = None
+                continue
+            value = float(value)
+            player_payload[f"{metric}_acwr"] = value if math.isfinite(value) else None
+        lookup[str(row["player_id"])] = player_payload
+
+    return current_week_label, lookup
+
+
+def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
+    players = fetch_active_players_cached(sb, access_scope)
+    players_df = pd.DataFrame(players)
+    if players_df.empty:
+        return players_df
+
+    today_value = date.today()
+    start_wellness = today_value - timedelta(days=13)
+    start_rpe = today_value - timedelta(days=6)
+    start_gps = today_value - timedelta(days=13)
+    start_acwr = today_value - timedelta(days=84)
+
+    wellness_df = fetch_wellness_snapshot(sb, access_scope, start_wellness.isoformat(), today_value.isoformat())
+    rpe_df = fetch_rpe_snapshot(sb, access_scope, start_rpe.isoformat(), today_value.isoformat())
+    gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
+    acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
+
+    wellness_lookup = build_snapshot_lookup(wellness_df, "entry_date", "wellness_avg")
+    rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
+    gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
+    current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
+
+    rows: List[Dict[str, Any]] = []
+    for player in players:
+        player_id = player["player_id"]
+        wellness = wellness_lookup.get(player_id, {})
+        rpe = rpe_lookup.get(player_id, {})
+        gps = gps_lookup.get(player_id, {})
+        acwr = acwr_lookup.get(player_id, {})
+        readiness_label, readiness_color = build_status(wellness.get("value"))
+
+        rows.append(
+            {
+                "player_id": player_id,
+                "full_name": player["full_name"],
+                "position": player.get("position"),
+                "wellness_value": wellness.get("value"),
+                "wellness_date": wellness.get("date"),
+                "wellness_today": bool(wellness.get("is_today", False)),
+                "rpe_value": rpe.get("value"),
+                "rpe_date": rpe.get("date"),
+                "rpe_today": bool(rpe.get("is_today", False)),
+                "gps_value": gps.get("value"),
+                "gps_date": gps.get("date"),
+                "acwr_week_label": acwr.get("week_label", current_week_label),
+                "total_distance_acwr": acwr.get("total_distance_acwr"),
+                "readiness_label": readiness_label,
+                "readiness_color": readiness_color,
+                "readiness_rank": {"Alert": 0, "Watch": 1, "Ready": 2, "No data": 3}.get(readiness_label, 3),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def filter_home_rows_for_profile(df: pd.DataFrame, role: str, profile: dict) -> pd.DataFrame:
+    if df.empty or (role or "").lower() != "player":
+        return df
+
+    player_id = str(profile.get("player_id") or "").strip()
+    if not player_id:
+        return df.iloc[0:0].copy()
+
+    filtered = df[df["player_id"].astype(str) == player_id].copy()
+    return filtered.reset_index(drop=True)
+
+
+def render_home_hero(role: str, email: str, df: pd.DataFrame) -> None:
     logo_uri = build_image_data_uri(TEAM_LOGO) if TEAM_LOGO.exists() else ""
     logo_markup = f'<img src="{logo_uri}" alt="MVV Maastricht" class="home-hero-logo" />' if logo_uri else ""
-    available_count = sum(1 for module in modules if module.get("target_page") and not module.get("disabled"))
-    disabled_count = len(modules) - available_count
-    role_label = "Staff" if role == "staff" else "Speler"
+    role_label = role_label_for_home(role)
+    ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
+    watch_count = int((df["readiness_label"] == "Watch").sum()) if not df.empty else 0
+    alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
+    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
+    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
     summary_cards = [
         ("Rol", role_label, "Actieve toegangslaag voor deze sessie"),
-        ("Modules", str(len(modules)), "Onderdelen zichtbaar op deze startpagina"),
-        ("Beschikbaar", str(available_count), "Direct te openen modules voor vandaag"),
-        ("Account", email or "--", f"{disabled_count} modules staan nog in opbouw"),
+        ("Spelers", str(len(df)), "Compact overzicht op basis van de actuele selectie"),
+        ("Wellness vandaag", str(wellness_today_count), "Spelers met wellness-invoer vandaag"),
+        ("RPE vandaag", str(rpe_today_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
     ]
     summary_markup = "".join(
         f"""
@@ -517,18 +875,19 @@ def render_home_hero(role: str, email: str, modules: list[dict]) -> None:
 
     st.markdown(
         f"""
-        <div class="home-hero-shell">
+          <div class="home-hero-shell">
           <div class="home-hero">
             {logo_markup}
-            <div class="home-kicker">MVV Maastricht | Dashboard | Seizoensoverzicht</div>
-            <h1 class="home-title">MVV Dashboard</h1>
+            <div class="home-kicker">MVV Maastricht | Dashboard | Readiness overview</div>
+            <h1 class="home-title">Selectie KPI's</h1>
             <div class="home-copy">
-              Centrale ingang voor de performance-omgeving van MVV Maastricht. Open snel de juiste module voor
-              player monitoring, GPS, rapportage en dagelijkse stafworkflow.
+              Compact overzicht van de actuele spelerstatus op basis van de laatste wellness-, RPE- en GPS-data.
+              De hoofdpagina focust nu alleen op readiness en de belangrijkste KPI's per speler.
             </div>
             <div class="home-pill-row">
-              <span class="home-pill">Zelfde MVV-stijl als de beta-pagina's</span>
-              <span class="home-pill">Directe toegang per rol en workflow</span>
+              <span class="home-pill">Compacte readiness-focus</span>
+              <span class="home-pill">Wellness, RPE, GPS en ACWR TD in 1 overzicht</span>
+              <span class="home-pill">Account: {html.escape(email or '--')}</span>
             </div>
           </div>
           <div class="home-summary-grid">
@@ -540,49 +899,91 @@ def render_home_hero(role: str, email: str, modules: list[dict]) -> None:
     )
 
 
-def render_module_tile(module: dict) -> None:
-    image_uri = "" if SAFE_MODE else build_image_data_uri(module["img_path"])
-    thumb_style = (
-        f"background-image: linear-gradient(135deg, rgba(10, 15, 27, 0.08), rgba(10, 15, 27, 0.04)), url('{image_uri}');"
-        if image_uri
-        else "background: linear-gradient(135deg, rgba(234, 51, 81, 0.16), rgba(10, 15, 27, 0.92));"
+def build_player_meta(row: dict) -> str:
+    parts: list[str] = []
+    position_value = str(row.get("position") or "").strip()
+    if position_value:
+        parts.append(position_value)
+    if row.get("gps_date"):
+        parts.append(f"GPS {row['gps_date'].strftime('%d-%m')}")
+    parts.append(f"Wellness vandaag {'Ja' if row.get('wellness_today') else 'Nee'}")
+    parts.append(f"RPE vandaag {'Ja' if row.get('rpe_today') else 'Nee'}")
+    return " | ".join(parts)
+
+
+def render_home_kpi_board(df: pd.DataFrame) -> None:
+    if df.empty:
+        st.info("Nog geen spelerdata beschikbaar voor deze startpagina.")
+        return
+
+    current_week_label = (
+        str(df["acwr_week_label"].dropna().iloc[0])
+        if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
+        else current_week_context()[1]
     )
-    badge = module.get("badge") or "Module"
     st.markdown(
         f"""
-        <div class="home-module-thumb" style="{thumb_style}">
-          <div class="home-module-badge">{badge}</div>
-          <div class="home-module-overlay">
-            <div class="home-module-name">{module['title']}</div>
-            <div class="home-module-copy">{module['description']}</div>
+        <div class="home-section-head">
+          <div>
+            <div class="home-section-kicker">Selectie</div>
+            <div class="home-section-title">Compact readiness-overzicht per speler</div>
           </div>
+          <div class="home-section-note">Gesorteerd op aandacht | ACWR week {current_week_label}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown('<div class="home-module-gap"></div>', unsafe_allow_html=True)
 
-    if module.get("disabled"):
-        st.button("Geen toegang", use_container_width=True, disabled=True, key=f"btn_{module['id']}_disabled")
-        return
-
-    if module.get("target_page") is None:
-        st.button("Binnenkort", use_container_width=True, disabled=True, key=f"btn_{module['id']}_soon")
-        return
-
-    if st.button("Open module", use_container_width=True, key=f"btn_{module['id']}_open"):
-        st.switch_page(module["target_page"])
-
-
-def render_module_grid(modules: list[dict], cols_per_row: int) -> None:
-    rows = [modules[i:i + cols_per_row] for i in range(0, len(modules), cols_per_row)]
-    for row_index, row_modules in enumerate(rows):
-        cols = st.columns(cols_per_row, gap="large")
-        for col, module in zip(cols, row_modules):
-            with col:
-                render_module_tile(module)
-        if row_index < len(rows) - 1:
-            st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
+    rows_df = df.sort_values(["readiness_rank", "full_name"], ascending=[True, True]).reset_index(drop=True)
+    row_markup = "".join(
+        f"""
+        <div class="home-kpi-row" data-readiness="{html.escape(str(row['readiness_label']))}">
+          <div class="home-player-cell">
+            <div class="home-player-name">{html.escape(str(row['full_name']))}</div>
+            <div class="home-player-meta">{html.escape(build_player_meta(row))}</div>
+          </div>
+          <div class="home-kpi-cell">
+            <span class="home-kpi-mobile-label">Readiness</span>
+            <span class="home-ready-badge" style="background:{html.escape(str(row['readiness_color']))};">
+              {html.escape(str(row['readiness_label']))}
+            </span>
+          </div>
+          <div class="home-kpi-cell">
+            <span class="home-kpi-mobile-label">Wellness</span>
+            {html.escape(format_metric_value(row.get('wellness_value')))}
+          </div>
+          <div class="home-kpi-cell">
+            <span class="home-kpi-mobile-label">RPE</span>
+            {html.escape(format_metric_value(row.get('rpe_value')))}
+          </div>
+          <div class="home-kpi-cell">
+            <span class="home-kpi-mobile-label">GPS</span>
+            {html.escape(format_metric_value(row.get('gps_value'), ' m'))}
+          </div>
+          <div class="home-kpi-cell home-kpi-cell-muted">
+            <span class="home-kpi-mobile-label">ACWR TD</span>
+            {html.escape(format_acwr_value(row.get('total_distance_acwr')))}
+          </div>
+        </div>
+        """
+        for row in rows_df.to_dict(orient="records")
+    )
+    st.markdown(
+        f"""
+        <div class="home-kpi-board">
+          <div class="home-kpi-head">
+            <div>Speler</div>
+            <div>Readiness</div>
+            <div>Wellness</div>
+            <div>RPE</div>
+            <div>GPS</div>
+            <div>ACWR TD</div>
+          </div>
+          {row_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 if DIAG_MODE:
@@ -641,21 +1042,12 @@ maintenance_banner()
 if SAFE_MODE:
     st.warning("Safe mode actief (minimale UI). Zet uit door ?safe=0 te gebruiken.")
 
-home_modules = modules_for_role(role)
-render_home_hero(role, st.session_state.get("user_email", ""), home_modules)
+access_scope = f"{role}:{profile.get('user_id', 'anon')}"
+home_df = assemble_home_rows(sb, access_scope)
+home_df = filter_home_rows_for_profile(home_df, role, profile)
+if home_df.empty:
+    st.warning("Geen readiness-KPI's beschikbaar voor deze gebruiker.")
+    st.stop()
 
-available_count = sum(1 for module in home_modules if module.get("target_page") and not module.get("disabled"))
-st.markdown(
-    f"""
-    <div class="home-section-head">
-      <div>
-        <div class="home-section-kicker">Modules</div>
-        <div class="home-section-title">Kies de juiste werkruimte voor je volgende actie</div>
-      </div>
-      <div class="home-section-note">{available_count} direct beschikbaar</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-render_module_grid(home_modules, 2 if role == "player" else 3)
+render_home_hero(role, st.session_state.get("user_email", ""), home_df)
+render_home_kpi_board(home_df)

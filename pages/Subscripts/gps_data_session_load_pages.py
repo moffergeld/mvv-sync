@@ -108,6 +108,28 @@ def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> da
     return picked
 
 
+def _session_types_for_day(df: pd.DataFrame, selected_day: date) -> list[str]:
+    if df.empty or COL_DATE not in df.columns or COL_TYPE not in df.columns:
+        return []
+
+    day_df = df.copy()
+    day_df[COL_DATE] = pd.to_datetime(day_df[COL_DATE], errors="coerce")
+    day_df = day_df[day_df[COL_DATE].dt.date == selected_day].copy()
+    if day_df.empty:
+        return []
+
+    types = (
+        day_df[COL_TYPE]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    return sorted(types)
+
+
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -467,6 +489,29 @@ def session_load_pages_main(
     if df_day.empty:
         st.info("Geen data op deze datum.")
         return
+
+    session_types = _session_types_for_day(df, selected_day)
+    session_type_options = ["Alle sessies"] + session_types
+    selected_session_type = st.selectbox(
+        "Sessie op deze dag",
+        options=session_type_options,
+        index=0,
+        key=f"sl_session_type_{selected_day.isoformat()}",
+        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Practice (1) en Practice (2).",
+    )
+
+    if selected_session_type != "Alle sessies" and COL_TYPE in df_day.columns:
+        df_day = df_day[df_day[COL_TYPE].astype(str).str.strip() == selected_session_type].copy()
+        if df_day.empty:
+            st.info("Geen data gevonden voor deze sessie op de gekozen datum.")
+            return
+
+    filter_caption = (
+        f"Actieve sessie: {selected_session_type}"
+        if selected_session_type != 'Alle sessies'
+        else "Actieve sessie: alle Summary-sessies van deze dag"
+    )
+    st.caption(filter_caption)
 
     df_agg = _agg_by_player(df_day)
     if df_agg.empty:
