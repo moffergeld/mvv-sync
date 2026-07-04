@@ -113,10 +113,6 @@ def render_home_css() -> None:
             color: var(--mvv-text);
           }
 
-          [data-testid="stSidebarNav"] {
-            display: none;
-          }
-
           .block-container {
             padding-top: 1.25rem;
             padding-bottom: 2.5rem;
