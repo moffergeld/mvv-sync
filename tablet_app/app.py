@@ -39,6 +39,7 @@ TABLET_PLAYER_CACHE_TTL_SECONDS = 120
 TABLET_COMPLETION_CACHE_TTL_SECONDS = 45
 TABLET_FORM_CACHE_TTL_SECONDS = 300
 RPE_DURATION_OPTIONS = list(range(30, 111, 5))
+RPE_BULK_DURATION_DEFAULT = 60
 
 
 st.set_page_config(
@@ -316,6 +317,14 @@ st.markdown(
         background: linear-gradient(90deg, rgba(255, 255, 255, 0.72) 0%, #ffffff 100%);
       }
 
+      .mvv-kpi-hint {
+        margin: 0.1rem 0 0.55rem 0;
+        text-align: center;
+        font-size: 0.88rem;
+        font-weight: 800;
+        color: rgba(20, 7, 10, 0.68) !important;
+      }
+
       .mvv-mini-stat {
         min-height: 110px;
         padding: 0.95rem 1rem;
@@ -396,6 +405,21 @@ st.markdown(
         font-size: 0.9rem;
         font-weight: 800;
         color: rgba(20, 7, 10, 0.78) !important;
+      }
+
+      .mvv-bulk-player-name {
+        margin: 0.2rem 0 0.12rem 0;
+        font-size: 1.2rem;
+        line-height: 1.1;
+        font-weight: 900;
+        color: var(--mvv-deep) !important;
+      }
+
+      .mvv-bulk-player-note {
+        margin: 0 0 0.45rem 0;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: rgba(20, 7, 10, 0.72) !important;
       }
 
       .mvv-load-pill {
@@ -607,19 +631,22 @@ st.markdown(
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"],
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"],
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] {
         margin: 0.15rem 0 1rem;
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"],
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"],
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] {
         width: 100%;
         gap: 0.42rem;
         flex-wrap: wrap;
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label {
         flex: 0 0 calc(25% - 0.35rem);
         min-width: 4.25rem;
         min-height: 3.25rem;
@@ -630,25 +657,30 @@ st.markdown(
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type,
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type,
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
         display: none !important;
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type,
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type,
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
         justify-content: center;
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label p,
       [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label p,
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label span,
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label span {
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label span,
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label p,
+      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label span {
         font-size: 0.98rem !important;
       }
 
       @media (max-width: 1100px) {
         [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
-        [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label {
+        [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
+        [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label {
           flex-basis: calc(33.333% - 0.35rem);
         }
       }
@@ -898,6 +930,44 @@ st.markdown(
         opacity: 0 !important;
         font-size: 0 !important;
         margin: 0 !important;
+      }
+
+      [class*="st-key-tablet_kpi_action_rpe"] {
+        margin-top: -122px;
+        margin-bottom: 0.15rem;
+        position: relative;
+        z-index: 2;
+      }
+
+      [class*="st-key-tablet_kpi_action_rpe"] button {
+        min-height: 122px !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: transparent !important;
+        font-size: 0 !important;
+      }
+
+      [class*="st-key-tablet_kpi_action_rpe"] button:hover,
+      [class*="st-key-tablet_kpi_action_rpe"] button:active {
+        transform: none !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      [class*="st-key-tablet_kpi_action_rpe"] button p,
+      [class*="st-key-tablet_kpi_action_rpe"] button span,
+      [class*="st-key-tablet_kpi_action_rpe"] button [data-testid="stMarkdownContainer"] {
+        opacity: 0 !important;
+        font-size: 0 !important;
+        margin: 0 !important;
+      }
+
+      [class*="st-key-tablet_bulk_back"] button {
+        min-height: 3.35rem !important;
+        border-radius: 18px !important;
+        font-size: 0.98rem !important;
       }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
@@ -1528,6 +1598,11 @@ def render_player_picker(sb) -> None:
         render_kpi_card("Wellness", wellness_completed, total_players, tone="wellness")
     with stat_2:
         render_kpi_card("RPE", rpe_completed, total_players, tone="rpe")
+        if st.button("open_rpe_bulk", use_container_width=True, key="tablet_kpi_action_rpe"):
+            clear_selected_player_state()
+            st.session_state["tablet_bulk_rpe_mode"] = True
+            st.rerun()
+        st.markdown('<div class="mvv-kpi-hint">Tik hier voor groeps-RPE</div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     for idx, player in enumerate(players):
@@ -1543,6 +1618,7 @@ def render_player_picker(sb) -> None:
         with cols[idx % 3]:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
             if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
+                st.session_state["tablet_bulk_rpe_mode"] = False
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
                 st.session_state["tablet_player_has_wellness"] = wellness_done
@@ -1550,6 +1626,144 @@ def render_player_picker(sb) -> None:
                 # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
                 st.session_state["tablet_active_form"] = "RPE" if wellness_done else "Wellness"
                 st.rerun()
+
+
+def render_bulk_rpe_page(sb) -> None:
+    entry_date = amsterdam_today()
+    entry_date_iso = entry_date.isoformat()
+    players = get_cached_active_players(sb)
+    if not players:
+        st.warning("Geen actieve spelers gevonden.")
+        return
+
+    completion = get_cached_daily_completion(sb, entry_date_iso)
+    asrm_ids = set(completion.get("asrm_ids", []))
+    rpe_ids = set(completion.get("rpe_ids", []))
+    ready_players = [
+        player
+        for player in players
+        if str(player.get("player_id")) in asrm_ids and str(player.get("player_id")) not in rpe_ids
+    ]
+    waiting_for_wellness = [
+        player for player in players if str(player.get("player_id")) not in asrm_ids
+    ]
+
+    render_top_actions(show_back=False)
+    show_flash()
+
+    render_hero(
+        "RPE groepsinvoer",
+        f"Vul meerdere spelers tegelijk in ({entry_date.strftime('%d-%m-%Y')}).",
+        kicker=f"{CLUB_NAME} · snelle RPE",
+    )
+
+    if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_bulk_back"):
+        st.session_state["tablet_bulk_rpe_mode"] = False
+        st.rerun()
+
+    st.markdown(
+        f'<div class="mvv-load-pill"><strong>{len(ready_players)}</strong> spelers klaar voor snelle RPE-invoer.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="mvv-note">Deze pagina is voor snelle RPE. Voor injury, 2e sessie of extra notities gebruik je nog steeds de losse spelerkaart.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if waiting_for_wellness:
+        st.markdown(
+            f'<div class="mvv-muted-box">{len(waiting_for_wellness)} spelers staan hier nog niet tussen omdat wellness nog open staat.</div>',
+            unsafe_allow_html=True,
+        )
+
+    if not ready_players:
+        st.success("Alle spelers die klaar zijn voor RPE zijn al ingevuld.")
+        return
+
+    bulk_entries: List[Dict[str, Any]] = []
+    with st.form("tablet_bulk_rpe_form", clear_on_submit=False):
+        cols = st.columns(2, gap="large")
+        for idx, player in enumerate(ready_players):
+            player_id = str(player["player_id"])
+            player_name = str(player["full_name"])
+            with cols[idx % 2]:
+                st.markdown(
+                    f'<div class="mvv-bulk-player-name">{html.escape(player_name)}</div>'
+                    '<div class="mvv-bulk-player-note">Snelle RPE voor 1 sessie.</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
+                duration_value = st.radio(
+                    f"Duration (min) {player_name}",
+                    options=RPE_DURATION_OPTIONS,
+                    index=RPE_DURATION_OPTIONS.index(RPE_BULK_DURATION_DEFAULT),
+                    format_func=lambda value: str(value),
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key=f"tablet_bulk_rpe_dur_{player_id}",
+                )
+                rpe_value = st.slider(
+                    f"RPE (1-10) {player_name}",
+                    1,
+                    10,
+                    value=5,
+                    key=f"tablet_bulk_rpe_rpe_{player_id}",
+                )
+                bulk_entries.append(
+                    {
+                        "player_id": player_id,
+                        "player_name": player_name,
+                        "duration_min": int(duration_value),
+                        "rpe": int(rpe_value),
+                    }
+                )
+                st.divider()
+
+        bulk_submit = st.form_submit_button("RPE voor alle zichtbare spelers opslaan", use_container_width=True)
+
+    if bulk_submit:
+        try:
+            saved_count = 0
+            for entry in bulk_entries:
+                sessions_payload = [
+                    {
+                        "session_index": 1,
+                        "duration_min": int(entry["duration_min"]),
+                        "rpe": int(entry["rpe"]),
+                    }
+                ]
+                saved_rpe_entry_id = save_rpe_tablet(
+                    sb,
+                    player_id=entry["player_id"],
+                    entry_date=entry_date,
+                    injury=False,
+                    injury_type=None,
+                    injury_pain=None,
+                    notes="",
+                    sessions=sessions_payload,
+                    existing_rpe_entry_id=None,
+                )
+                set_cached_rpe_detail(
+                    entry["player_id"],
+                    entry_date,
+                    {
+                        "id": saved_rpe_entry_id,
+                        "player_id": entry["player_id"],
+                        "entry_date": entry_date_iso,
+                        "injury": False,
+                        "injury_type": None,
+                        "injury_pain": None,
+                        "notes": "",
+                    },
+                    sessions_payload,
+                )
+                update_cached_daily_completion(sb, entry["player_id"], entry_date_iso, has_rpe=True)
+                saved_count += 1
+
+            st.session_state["tablet_flash"] = f"RPE opgeslagen voor {saved_count} spelers."
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Opslaan faalde: {exc}")
 
 
 def _session_value(rpe_sessions: List[Dict[str, Any]], idx: int, key: str, default: int) -> int:
@@ -1917,9 +2131,12 @@ def main() -> None:
 
     selected_player_id = str(st.session_state.get("tablet_player_id") or "").strip()
     selected_player_name = str(st.session_state.get("tablet_player_name") or "").strip()
+    bulk_rpe_mode = bool(st.session_state.get("tablet_bulk_rpe_mode", False))
 
     if selected_player_id and selected_player_name:
         render_player_forms(sb, selected_player_id, selected_player_name)
+    elif bulk_rpe_mode:
+        render_bulk_rpe_page(sb)
     else:
         render_player_picker(sb)
 
