@@ -620,13 +620,11 @@ def render_reports_intro(matches_df: pd.DataFrame) -> None:
         ("Tegenstanders", str(opponent_count), "Unieke opponenten in deze rapportage"),
     ]
     summary_markup = "".join(
-        f"""
-        <div class="mr-summary-card">
-          <div class="mr-summary-label">{label}</div>
-          <div class="mr-summary-value">{value}</div>
-          <div class="mr-summary-foot">{foot}</div>
-        </div>
-        """
+        f"""<div class="mr-summary-card">
+<div class="mr-summary-label">{label}</div>
+<div class="mr-summary-value">{value}</div>
+<div class="mr-summary-foot">{foot}</div>
+</div>"""
         for label, value, foot in summary_cards
     )
 

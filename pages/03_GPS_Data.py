@@ -710,13 +710,11 @@ summary_cards = [
     ("Modules", "4", "Session Load, ACWR, FFP en Benchmarks"),
 ]
 summary_markup = "".join(
-    f"""
-    <div class="gps-summary-card">
-        <div class="gps-summary-label">{label}</div>
-        <div class="gps-summary-value">{value}</div>
-        <div class="gps-summary-foot">{foot}</div>
-    </div>
-    """
+    f"""<div class="gps-summary-card">
+<div class="gps-summary-label">{label}</div>
+<div class="gps-summary-value">{value}</div>
+<div class="gps-summary-foot">{foot}</div>
+</div>"""
     for label, value, foot in summary_cards
 )
 hero_logo_markup = (

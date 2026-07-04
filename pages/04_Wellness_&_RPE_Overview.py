@@ -404,13 +404,11 @@ def render_staff_wellness_rpe_page():
         ("Focus", "RPE + Wellness", "Dagelijkse monitoring en teamoverzicht"),
     ]
     summary_markup = "".join(
-        f"""
-        <div class="mvv-summary-card">
-          <div class="mvv-summary-label">{label}</div>
-          <div class="mvv-summary-value">{value}</div>
-          <div class="mvv-summary-foot">{foot}</div>
-        </div>
-        """
+        f"""<div class="mvv-summary-card">
+<div class="mvv-summary-label">{label}</div>
+<div class="mvv-summary-value">{value}</div>
+<div class="mvv-summary-foot">{foot}</div>
+</div>"""
         for label, value, foot in summary_cards
     )
 

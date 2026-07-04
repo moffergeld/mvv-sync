@@ -859,13 +859,11 @@ def render_home_hero(role: str, email: str, df: pd.DataFrame) -> None:
         ("RPE vandaag", str(rpe_today_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
     ]
     summary_markup = "".join(
-        f"""
-        <div class="home-summary-card">
-          <div class="home-summary-label">{label}</div>
-          <div class="home-summary-value">{value}</div>
-          <div class="home-summary-foot">{foot}</div>
-        </div>
-        """
+        f"""<div class="home-summary-card">
+<div class="home-summary-label">{label}</div>
+<div class="home-summary-value">{value}</div>
+<div class="home-summary-foot">{foot}</div>
+</div>"""
         for label, value, foot in summary_cards
     )
 
@@ -932,36 +930,34 @@ def render_home_kpi_board(df: pd.DataFrame) -> None:
 
     rows_df = df.sort_values(["readiness_rank", "full_name"], ascending=[True, True]).reset_index(drop=True)
     row_markup = "".join(
-        f"""
-        <div class="home-kpi-row" data-readiness="{html.escape(str(row['readiness_label']))}">
-          <div class="home-player-cell">
-            <div class="home-player-name">{html.escape(str(row['full_name']))}</div>
-            <div class="home-player-meta">{html.escape(build_player_meta(row))}</div>
-          </div>
-          <div class="home-kpi-cell">
-            <span class="home-kpi-mobile-label">Readiness</span>
-            <span class="home-ready-badge" style="background:{html.escape(str(row['readiness_color']))};">
-              {html.escape(str(row['readiness_label']))}
-            </span>
-          </div>
-          <div class="home-kpi-cell">
-            <span class="home-kpi-mobile-label">Wellness</span>
-            {html.escape(format_metric_value(row.get('wellness_value')))}
-          </div>
-          <div class="home-kpi-cell">
-            <span class="home-kpi-mobile-label">RPE</span>
-            {html.escape(format_metric_value(row.get('rpe_value')))}
-          </div>
-          <div class="home-kpi-cell">
-            <span class="home-kpi-mobile-label">GPS</span>
-            {html.escape(format_metric_value(row.get('gps_value'), ' m'))}
-          </div>
-          <div class="home-kpi-cell home-kpi-cell-muted">
-            <span class="home-kpi-mobile-label">ACWR TD</span>
-            {html.escape(format_acwr_value(row.get('total_distance_acwr')))}
-          </div>
-        </div>
-        """
+        f"""<div class="home-kpi-row" data-readiness="{html.escape(str(row['readiness_label']))}">
+<div class="home-player-cell">
+<div class="home-player-name">{html.escape(str(row['full_name']))}</div>
+<div class="home-player-meta">{html.escape(build_player_meta(row))}</div>
+</div>
+<div class="home-kpi-cell">
+<span class="home-kpi-mobile-label">Readiness</span>
+<span class="home-ready-badge" style="background:{html.escape(str(row['readiness_color']))};">
+{html.escape(str(row['readiness_label']))}
+</span>
+</div>
+<div class="home-kpi-cell">
+<span class="home-kpi-mobile-label">Wellness</span>
+{html.escape(format_metric_value(row.get('wellness_value')))}
+</div>
+<div class="home-kpi-cell">
+<span class="home-kpi-mobile-label">RPE</span>
+{html.escape(format_metric_value(row.get('rpe_value')))}
+</div>
+<div class="home-kpi-cell">
+<span class="home-kpi-mobile-label">GPS</span>
+{html.escape(format_metric_value(row.get('gps_value'), ' m'))}
+</div>
+<div class="home-kpi-cell home-kpi-cell-muted">
+<span class="home-kpi-mobile-label">ACWR TD</span>
+{html.escape(format_acwr_value(row.get('total_distance_acwr')))}
+</div>
+</div>"""
         for row in rows_df.to_dict(orient="records")
     )
     st.markdown(

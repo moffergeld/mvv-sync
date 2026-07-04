@@ -1160,13 +1160,11 @@ def render_hero(df: pd.DataFrame) -> None:
         ("Readiness", str(ready_count), f"<strong>{alert_count}</strong> spelers vragen extra aandacht"),
     ]
     summary_markup = "".join(
-        f"""
-        <div class="team-summary-card">
-          <div class="team-summary-label">{label}</div>
-          <div class="team-summary-value">{value}</div>
-          <div class="team-summary-foot">{foot}</div>
-        </div>
-        """
+        f"""<div class="team-summary-card">
+<div class="team-summary-label">{label}</div>
+<div class="team-summary-value">{value}</div>
+<div class="team-summary-foot">{foot}</div>
+</div>"""
         for label, value, foot in summary_cards
     )
 
