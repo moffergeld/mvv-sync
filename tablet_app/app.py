@@ -38,6 +38,7 @@ ACCESS_COOKIE_SECONDS = 60 * 60 * 24 * 30
 TABLET_PLAYER_CACHE_TTL_SECONDS = 120
 TABLET_COMPLETION_CACHE_TTL_SECONDS = 45
 TABLET_FORM_CACHE_TTL_SECONDS = 300
+RPE_DURATION_OPTIONS = list(range(30, 111, 5))
 
 
 st.set_page_config(
@@ -390,6 +391,13 @@ st.markdown(
         color: rgba(20, 7, 10, 0.72) !important;
       }
 
+      .mvv-duration-title {
+        margin: 0.3rem 0 0.5rem 0;
+        font-size: 0.9rem;
+        font-weight: 800;
+        color: rgba(20, 7, 10, 0.78) !important;
+      }
+
       .mvv-load-pill {
         margin: 0.6rem 0 0.35rem 0;
         padding: 0.72rem 0.85rem;
@@ -596,6 +604,53 @@ st.markdown(
         align-items: center;
         justify-content: center;
         text-align: center;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"],
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] {
+        margin: 0.15rem 0 1rem;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"],
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] {
+        width: 100%;
+        gap: 0.42rem;
+        flex-wrap: wrap;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label {
+        flex: 0 0 calc(25% - 0.35rem);
+        min-width: 4.25rem;
+        min-height: 3.25rem;
+        padding: 0.45rem 0.5rem;
+        border-radius: 16px;
+        justify-content: center;
+        gap: 0;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type,
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
+        display: none !important;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type,
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
+        justify-content: center;
+      }
+
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label p,
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label p,
+      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label span,
+      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label span {
+        font-size: 0.98rem !important;
+      }
+
+      @media (max-width: 1100px) {
+        [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label,
+        [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label {
+          flex-basis: calc(33.333% - 0.35rem);
+        }
       }
 
 
@@ -1419,8 +1474,10 @@ def clear_selected_player_state(player_id: str | None = None) -> None:
                 f"tablet_rpe_enable_s2_{player_id}",
                 f"tablet_rpe_injury_{player_id}",
                 f"tablet_rpe_s1_dur_{player_id}",
+                f"tablet_rpe_s1_dur_choice_{player_id}",
                 f"tablet_rpe_s1_rpe_{player_id}",
                 f"tablet_rpe_s2_dur_{player_id}",
+                f"tablet_rpe_s2_dur_choice_{player_id}",
                 f"tablet_rpe_s2_rpe_{player_id}",
                 f"tablet_rpe_loc_{player_id}",
                 f"tablet_rpe_pain_{player_id}",
@@ -1501,6 +1558,18 @@ def _session_value(rpe_sessions: List[Dict[str, Any]], idx: int, key: str, defau
         return default
     value = hit.get(key)
     return int(value) if value is not None else default
+
+
+def _normalize_duration_choice(value: int) -> int:
+    try:
+        duration = int(value)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration in RPE_DURATION_OPTIONS:
+        return duration
+    if duration <= 0:
+        return RPE_DURATION_OPTIONS[0]
+    return min(RPE_DURATION_OPTIONS, key=lambda option: abs(option - duration))
 
 
 def render_player_forms(sb, player_id: str, player_name: str) -> None:
@@ -1594,8 +1663,8 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     },
                 )
                 update_cached_daily_completion(sb, player_id, entry_date_iso, has_asrm=True)
-                st.session_state["tablet_active_form"] = "RPE"
-                st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}. RPE is nu geopend."
+                st.session_state["tablet_flash"] = f"Wellness opgeslagen voor {player_name}."
+                clear_selected_player_state(player_id)
                 st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
@@ -1639,6 +1708,8 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         s1_default_rpe = _session_value(rpe_sessions, 1, "rpe", 5)
         s2_default_dur = _session_value(rpe_sessions, 2, "duration_min", 0)
         s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
+        s1_duration_choice = _normalize_duration_choice(s1_default_dur)
+        s2_duration_choice = _normalize_duration_choice(s2_default_dur)
         notes_default = str(rpe_header.get("notes") or "")
         injury_pain_default = int(rpe_header.get("injury_pain", 0) or 0)
         enable_s2_key = f"tablet_rpe_enable_s2_{player_id}"
@@ -1691,13 +1762,15 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     """,
                     unsafe_allow_html=True,
                 )
-                s1_dur = st.number_input(
+                st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
+                s1_dur = st.radio(
                     "Duration (min)",
-                    min_value=0,
-                    max_value=600,
-                    value=s1_default_dur,
-                    step=5,
-                    key=f"tablet_rpe_s1_dur_{player_id}",
+                    options=RPE_DURATION_OPTIONS,
+                    index=RPE_DURATION_OPTIONS.index(s1_duration_choice),
+                    format_func=lambda value: str(value),
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key=f"tablet_rpe_s1_dur_choice_{player_id}",
                 )
                 s1_rpe = st.slider(
                     "RPE (1-10)",
@@ -1715,13 +1788,15 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                         """,
                         unsafe_allow_html=True,
                     )
-                    s2_dur = st.number_input(
+                    st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
+                    s2_dur = st.radio(
                         "2e Duration (min)",
-                        min_value=0,
-                        max_value=600,
-                        value=s2_default_dur,
-                        step=5,
-                        key=f"tablet_rpe_s2_dur_{player_id}",
+                        options=RPE_DURATION_OPTIONS,
+                        index=RPE_DURATION_OPTIONS.index(s2_duration_choice),
+                        format_func=lambda value: str(value),
+                        horizontal=True,
+                        label_visibility="collapsed",
+                        key=f"tablet_rpe_s2_dur_choice_{player_id}",
                     )
                     s2_rpe = st.slider(
                         "2e RPE (1-10)",
