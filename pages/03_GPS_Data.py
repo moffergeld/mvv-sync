@@ -697,30 +697,6 @@ except Exception as exc:
     st.error(f"Kon de GPS-kalender niet laden: {exc}")
     st.stop()
 
-session_days = (
-    int(calendar_df_all["Datum"].dropna().nunique())
-    if not calendar_df_all.empty and "Datum" in calendar_df_all.columns
-    else 0
-)
-session_types = (
-    int(calendar_df_all["Type"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique())
-    if not calendar_df_all.empty and "Type" in calendar_df_all.columns
-    else 0
-)
-summary_cards = [
-    ("Sessiedagen", str(session_days), "Unieke dagen met Summary-data"),
-    ("Kalenderitems", str(len(calendar_df_all)), "Records beschikbaar in de GPS-kalender"),
-    ("Datatypen", str(session_types), "Trainings- en wedstrijdbuckets in de dataset"),
-    ("Modules", "4", "Session Load, ACWR, FFP en Benchmarks"),
-]
-summary_markup = "".join(
-    f"""<div class="gps-summary-card">
-<div class="gps-summary-label">{label}</div>
-<div class="gps-summary-value">{value}</div>
-<div class="gps-summary-foot">{foot}</div>
-</div>"""
-    for label, value, foot in summary_cards
-)
 hero_logo_markup = (
     f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="gps-hero-logo" />'
     if TEAM_LOGO_URI
@@ -736,17 +712,14 @@ st.markdown(
             <div class="gps-title">GPS Data Overview</div>
             <div class="gps-subtitle">
                 Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
-                De dataflow blijft gelijk, maar de pagina leest nu visueel mee met de rest van de MVV-omgeving.
+                De dataflow blijft gelijk, maar operationele datakwaliteit en import/export zitten nu onder Management.
             </div>
             <div class="gps-pill-row">
                 <div class="gps-pill">Summary-only analyses</div>
                 <div class="gps-pill">ACWR thresholds per week</div>
                 <div class="gps-pill">FFP laadt altijd alle Summary-data</div>
-                <div class="gps-pill">Benchmarks uit match events</div>
+                <div class="gps-pill">Management bevat datakwaliteit en import/export</div>
             </div>
-        </div>
-        <div class="gps-summary-grid">
-            {summary_markup}
         </div>
     </div>
     """,

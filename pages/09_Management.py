@@ -1,0 +1,507 @@
+from __future__ import annotations
+
+import pandas as pd
+import requests
+import streamlit as st
+
+from pages.Subscripts.gps_import_common import (
+    ALLOWED_IMPORT,
+    SUPABASE_URL,
+    get_access_token,
+    get_players_map,
+    get_profile_role,
+    rest_headers,
+)
+from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
+from pages.Subscripts.gps_import_tab_export import tab_export_main
+from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
+from pages.Subscripts.gps_import_tab_matches import tab_matches_main
+from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from roles import get_profile, get_sb, is_staff_user
+
+
+st.set_page_config(page_title="Management | MVV Dashboard", layout="wide")
+
+PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
+TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
+
+
+def rest_get_paged(
+    access_token: str,
+    table: str,
+    base_query: str,
+    page_size: int = 5000,
+    timeout: int = 120,
+) -> pd.DataFrame:
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{base_query}"
+    headers = rest_headers(access_token) | {"Range-Unit": "items"}
+
+    all_rows: list[dict] = []
+    start = 0
+
+    while True:
+        end = start + page_size - 1
+        h = headers | {"Range": f"{start}-{end}"}
+        response = requests.get(url, headers=h, timeout=timeout)
+        if not response.ok:
+            raise RuntimeError(f"GET {table} failed ({response.status_code}): {response.text}")
+
+        batch = response.json()
+        if not batch:
+            break
+
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        start += page_size
+
+    return pd.DataFrame(all_rows)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_calendar_quality_cached(access_token: str) -> pd.DataFrame:
+    raw = rest_get_paged(
+        access_token=access_token,
+        table="gps_records",
+        base_query="select=datum,type,event&event=eq.Summary&order=datum.desc",
+        page_size=5000,
+        timeout=120,
+    )
+    if raw.empty:
+        return pd.DataFrame(columns=["Datum", "Type", "Event"])
+
+    df = raw.rename(columns={"datum": "Datum", "type": "Type", "event": "Event"}).copy()
+    df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce").dt.date
+    for col in ["Type", "Event"]:
+        df[col] = df[col].astype(str).str.strip()
+    return df.dropna(subset=["Datum"]).copy()
+
+
+def render_management_css() -> None:
+    background = (
+        f"linear-gradient(180deg, rgba(6, 10, 20, 0.82) 0%, rgba(6, 10, 20, 0.80) 100%), "
+        f"radial-gradient(circle at top left, rgba(200, 16, 46, 0.16), rgba(200, 16, 46, 0.02) 24%, transparent 46%), "
+        f"radial-gradient(circle at top right, rgba(234, 51, 81, 0.10), rgba(234, 51, 81, 0.02) 18%, transparent 42%), "
+        f"url('{PAGE_BG_URI}')"
+        if PAGE_BG_URI
+        else "radial-gradient(circle at top left, rgba(200, 16, 46, 0.28), rgba(200, 16, 46, 0.03) 26%, transparent 48%), radial-gradient(circle at top right, rgba(234, 51, 81, 0.18), rgba(234, 51, 81, 0.03) 18%, transparent 44%), linear-gradient(180deg, #070c18 0%, #0a1020 100%)"
+    )
+    st.markdown(
+        """
+        <style>
+        .stApp {
+          background: __MANAGEMENT_BACKGROUND__ !important;
+          background-size: cover !important;
+          background-position: center top !important;
+          background-attachment: fixed !important;
+        }
+
+        [data-testid="stSidebar"] {
+          background: linear-gradient(180deg, rgba(16, 23, 38, 0.98), rgba(9, 13, 23, 0.98)) !important;
+          border-right: 1px solid rgba(255,255,255,0.06) !important;
+        }
+
+        .block-container {
+          padding-top: 1.2rem !important;
+          padding-bottom: 2.4rem !important;
+          max-width: 1380px !important;
+        }
+
+        .mgmt-hero-shell {
+          display: flex;
+          flex-direction: column;
+          gap: 1.1rem;
+          margin-bottom: 1.4rem;
+        }
+
+        .mgmt-hero,
+        .mgmt-card,
+        .mgmt-tab-shell {
+          border-radius: 8px;
+          border: 1px solid rgba(234, 51, 81, 0.14);
+          background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+        }
+
+        .mgmt-hero {
+          min-height: 280px;
+          padding: 2rem 1.75rem 1.85rem 1.75rem;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
+        }
+
+        .mgmt-logo {
+          width: 82px;
+          height: 82px;
+          object-fit: contain;
+          margin-bottom: 0.9rem;
+          filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+        }
+
+        .mgmt-kicker {
+          color: rgba(255,255,255,0.76);
+          font-size: 0.74rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.18em;
+          margin-bottom: 0.35rem;
+        }
+
+        .mgmt-title {
+          margin: 0;
+          font-size: 2.55rem;
+          line-height: 1;
+          font-weight: 800;
+          color: #ffffff;
+        }
+
+        .mgmt-copy {
+          margin-top: 0.8rem;
+          max-width: 74ch;
+          color: rgba(255,255,255,0.84);
+          line-height: 1.62;
+        }
+
+        .mgmt-pill-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.55rem;
+          margin-top: 1rem;
+        }
+
+        .mgmt-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.42rem 0.76rem;
+          border-radius: 999px;
+          font-size: 0.78rem;
+          font-weight: 800;
+          border: 1px solid rgba(234, 51, 81, 0.22);
+          background: rgba(255,255,255,0.06);
+          color: rgba(255,255,255,0.92);
+        }
+
+        .mgmt-summary-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 1rem;
+        }
+
+        .mgmt-card {
+          min-height: 120px;
+          padding: 1rem 1.05rem 0.95rem 1.05rem;
+        }
+
+        .mgmt-label {
+          color: rgba(255,255,255,0.68);
+          font-size: 0.8rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+
+        .mgmt-value {
+          margin-top: 0.55rem;
+          font-size: 1.95rem;
+          line-height: 1.1;
+          font-weight: 800;
+          color: #ffffff;
+        }
+
+        .mgmt-foot {
+          margin-top: 0.65rem;
+          color: rgba(255,255,255,0.8);
+          font-size: 0.86rem;
+          line-height: 1.4;
+        }
+
+        .mgmt-tab-shell {
+          padding: 1rem 1rem 1.15rem 1rem;
+          margin-bottom: 1rem;
+        }
+
+        .mgmt-section-label {
+          color: rgba(255,255,255,0.62);
+          font-size: 0.75rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .mgmt-section-title {
+          margin-top: 0.25rem;
+          color: #ffffff;
+          font-size: 1.05rem;
+          font-weight: 700;
+        }
+
+        .mgmt-empty {
+          padding: 1.4rem 1.2rem;
+          border-radius: 8px;
+          border: 1px dashed rgba(234, 51, 81, 0.22);
+          background: rgba(255,255,255,0.03);
+          color: rgba(255,255,255,0.82);
+        }
+
+        @media (max-width: 1100px) {
+          .mgmt-summary-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+
+        @media (max-width: 768px) {
+          .mgmt-hero {
+            min-height: auto;
+            padding: 1.55rem 1rem;
+          }
+
+          .mgmt-title {
+            font-size: 2rem;
+          }
+
+          .mgmt-summary-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+        </style>
+        """.replace("__MANAGEMENT_BACKGROUND__", background),
+        unsafe_allow_html=True,
+    )
+
+
+def render_management_hero(role_ui: str) -> None:
+    logo_markup = (
+        f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="mgmt-logo" />'
+        if TEAM_LOGO_URI
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="mgmt-hero-shell">
+          <div class="mgmt-hero">
+            {logo_markup}
+            <div class="mgmt-kicker">MVV Maastricht | Management | Staff</div>
+            <h1 class="mgmt-title">Management</h1>
+            <div class="mgmt-copy">
+              Centrale beheeromgeving voor datakwaliteit, GPS import/export en toekomstige instellingen.
+              Zo blijven de analysepagina's compact en zitten operationele workflows op een plek.
+            </div>
+            <div class="mgmt-pill-row">
+              <span class="mgmt-pill">Rol: {role_ui.title()}</span>
+              <span class="mgmt-pill">Datakwaliteit en import gebundeld</span>
+              <span class="mgmt-pill">Settings alvast voorbereid</span>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_quality_tab(access_token: str) -> None:
+    try:
+        calendar_df = fetch_calendar_quality_cached(access_token)
+    except Exception as exc:
+        st.error(f"Kon datakwaliteit niet laden: {exc}")
+        return
+
+    if calendar_df.empty:
+        st.info("Nog geen Summary-data gevonden voor datakwaliteit.")
+        return
+
+    sessions_df = calendar_df[["Datum", "Type", "Event"]].drop_duplicates().copy()
+    sessions_df = sessions_df.sort_values(["Datum", "Type", "Event"], ascending=[False, True, True]).reset_index(drop=True)
+
+    session_days = int(sessions_df["Datum"].nunique())
+    unique_sessions = int(len(sessions_df))
+    session_types = int(
+        sessions_df["Type"].astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+    )
+    multi_session_days = int(
+        sessions_df.groupby("Datum")["Type"].nunique().gt(1).sum()
+    )
+    latest_session_day = sessions_df["Datum"].max()
+
+    summary_cards = [
+        ("Sessiedagen", str(session_days), "Unieke dagen met Summary-sessies"),
+        ("Sessies", str(unique_sessions), "Unieke datum/type/event-combinaties"),
+        ("Datatypen", str(session_types), "Trainings- en wedstrijdbuckets in de dataset"),
+        (
+            "Dubbelsessies",
+            str(multi_session_days),
+            f"Laatste sessiedag: {latest_session_day.strftime('%d-%m-%Y') if latest_session_day else '--'}",
+        ),
+    ]
+    summary_markup = "".join(
+        f"""<div class="mgmt-card">
+<div class="mgmt-label">{label}</div>
+<div class="mgmt-value">{value}</div>
+<div class="mgmt-foot">{foot}</div>
+</div>"""
+        for label, value, foot in summary_cards
+    )
+
+    st.markdown(
+        f"""
+        <div class="mgmt-summary-grid">
+          {summary_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="mgmt-tab-shell">
+          <div class="mgmt-section-label">Datakwaliteit</div>
+          <div class="mgmt-section-title">Sessie-overzicht per type en recente kalenderitems</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    type_summary = (
+        sessions_df.groupby("Type", dropna=False)
+        .size()
+        .reset_index(name="Sessies")
+        .sort_values(["Sessies", "Type"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+    type_summary["Type"] = type_summary["Type"].replace("", "Onbekend")
+
+    multi_day_df = (
+        sessions_df.groupby("Datum", as_index=False)
+        .agg(
+            aantal_sessies=("Type", "nunique"),
+            types=("Type", lambda values: " | ".join(sorted({str(v).strip() for v in values if str(v).strip()}))),
+        )
+        .sort_values("Datum", ascending=False)
+        .reset_index(drop=True)
+    )
+    multi_day_df = multi_day_df[multi_day_df["aantal_sessies"] > 1].copy()
+
+    recent_sessions = sessions_df.rename(
+        columns={"Datum": "Datum", "Type": "Type", "Event": "Event"}
+    ).copy()
+    recent_sessions["Datum"] = recent_sessions["Datum"].apply(
+        lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
+    )
+
+    col_left, col_right = st.columns(2, gap="large")
+    with col_left:
+        st.dataframe(type_summary, use_container_width=True, hide_index=True)
+    with col_right:
+        if multi_day_df.empty:
+            st.info("Geen dagen met meerdere Summary-sessies gevonden.")
+        else:
+            multi_day_df["Datum"] = multi_day_df["Datum"].apply(
+                lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
+            )
+            st.dataframe(
+                multi_day_df.rename(columns={"aantal_sessies": "Sessies", "types": "Typen"}),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    st.dataframe(
+        recent_sessions.head(30),
+        use_container_width=True,
+        hide_index=True,
+        height=460,
+    )
+
+
+def render_import_export_tab(access_token: str, role_ui: str) -> None:
+    st.markdown(
+        """
+        <div class="mgmt-tab-shell">
+          <div class="mgmt-section-label">Import & Export</div>
+          <div class="mgmt-section-title">Beheer GPS-workflows vanuit een centrale managementomgeving</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if role_ui not in ALLOWED_IMPORT:
+        st.warning("Je rol heeft geen rechten voor import/export in deze omgeving.")
+        return
+
+    name_to_id, player_options = get_players_map(access_token)
+    workflow = st.radio(
+        "Workflow",
+        options=["Import (Excel)", "Manual add", "Export", "Matches"],
+        horizontal=True,
+        key="management_workflow",
+    )
+
+    if workflow == "Import (Excel)":
+        tab_import_excel_main(access_token=access_token, name_to_id=name_to_id)
+
+    elif workflow == "Manual add":
+        tab_manual_add_main(
+            access_token=access_token,
+            name_to_id=name_to_id,
+            player_options=player_options,
+        )
+
+    elif workflow == "Export":
+        tab_export_main(access_token=access_token, player_options=player_options)
+
+    elif workflow == "Matches":
+        tab_matches_main(access_token=access_token)
+
+
+def render_settings_tab() -> None:
+    st.markdown(
+        """
+        <div class="mgmt-tab-shell">
+          <div class="mgmt-section-label">Settings</div>
+          <div class="mgmt-section-title">Lege managementpagina voor toekomstige instellingen</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <div class="mgmt-empty">
+          Settings is alvast aangemaakt binnen Management.
+          Hier kunnen later applicatie-instellingen, datadrempels, mappings en beheeropties komen.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+render_management_css()
+
+sb = get_sb()
+profile = get_profile(sb) if sb is not None else None
+if not is_staff_user(profile):
+    st.error("Geen toegang: deze pagina is alleen voor staff.")
+    st.stop()
+
+access_token = get_access_token()
+if not access_token:
+    st.error("Niet ingelogd (access_token ontbreekt).")
+    st.stop()
+
+try:
+    _, _, role, _ = get_profile_role(access_token)
+except Exception:
+    role = st.session_state.get("role", "staff")
+
+role_ui = str(role or st.session_state.get("role") or "staff").strip().lower()
+render_management_hero(role_ui)
+
+tab_quality, tab_import, tab_settings = st.tabs(
+    ["Datakwaliteit", "Import & Export", "Settings"]
+)
+
+with tab_quality:
+    render_quality_tab(access_token)
+
+with tab_import:
+    render_import_export_tab(access_token, role_ui)
+
+with tab_settings:
+    render_settings_tab()
