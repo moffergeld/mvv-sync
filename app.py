@@ -486,6 +486,10 @@ def logout_button() -> None:
         st.rerun()
 
 
+def role_label_for_home(role: str) -> str:
+    return "Staff" if (role or "").lower() != "player" else "Speler"
+
+
 def build_status(score: Optional[float]) -> tuple[str, str]:
     if score is None or pd.isna(score):
         return "No data", "#6b7280"
@@ -841,6 +845,41 @@ def filter_home_rows_for_profile(df: pd.DataFrame, role: str, profile: dict) -> 
     return filtered.reset_index(drop=True)
 
 
+def render_home_summary(df: pd.DataFrame, role: str) -> None:
+    role_label = role_label_for_home(role)
+    ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
+    watch_count = int((df["readiness_label"] == "Watch").sum()) if not df.empty else 0
+    alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
+    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
+    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
+
+    summary_cards = [
+        ("Rol", role_label, "Actieve toegangslaag voor deze sessie"),
+        ("Spelers", str(len(df)), "Compact overzicht op basis van de actuele selectie"),
+        ("Wellness vandaag", str(wellness_today_count), "Spelers met wellness-invoer vandaag"),
+        ("RPE vandaag", str(rpe_today_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
+    ]
+    summary_markup = "".join(
+        f"""<div class="home-summary-card">
+<div class="home-summary-label">{label}</div>
+<div class="home-summary-value">{value}</div>
+<div class="home-summary-foot">{foot}</div>
+</div>"""
+        for label, value, foot in summary_cards
+    )
+
+    st.markdown(
+        f"""
+        <div class="home-hero-shell">
+          <div class="home-summary-grid">
+            {summary_markup}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def build_player_meta(row: dict) -> str:
     parts: list[str] = []
     position_value = str(row.get("position") or "").strip()
@@ -990,4 +1029,5 @@ if home_df.empty:
     st.warning("Geen readiness-KPI's beschikbaar voor deze gebruiker.")
     st.stop()
 
+render_home_summary(home_df, role)
 render_home_kpi_board(home_df)
