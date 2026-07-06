@@ -179,12 +179,12 @@ MVV_CSS += """
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-  margin-bottom: 1.55rem;
+  margin-bottom: 0.15rem;
 }
 
 .mvv-hero {
   min-height: 320px;
-  padding: 2rem 1.75rem 1.9rem 1.75rem;
+  padding: 2rem 1.75rem 4.6rem 1.75rem;
   border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.08);
   background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
@@ -231,6 +231,14 @@ MVV_CSS += """
   line-height: 1;
   letter-spacing: 0;
   color: #FFFFFF;
+}
+
+.mvv-hero-tabs-note {
+  margin-top: 0.95rem;
+  color: rgba(255,255,255,0.78);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .mvv-page-copy {
@@ -351,6 +359,14 @@ MVV_CSS += """
   font-weight: 800;
 }
 
+div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab-list"] {
+  margin-top: -3.65rem;
+  margin-left: auto;
+  margin-right: auto;
+  position: relative;
+  z-index: 3;
+}
+
 @media (max-width: 1100px) {
   .mvv-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -360,7 +376,7 @@ MVV_CSS += """
 @media (max-width: 768px) {
   .mvv-hero {
     min-height: auto;
-    padding: 1.55rem 1rem;
+    padding: 1.55rem 1rem 4.2rem 1rem;
   }
 
   .mvv-page-head {
@@ -376,17 +392,18 @@ MVV_CSS += """
     font-size: 2rem;
   }
 
+  .mvv-hero-tabs-note {
+    margin-top: 0.8rem;
+    text-align: center;
+  }
+
   .mvv-summary-grid {
     grid-template-columns: 1fr;
   }
 
-  .mvv-section-head {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .mvv-section-note {
-    text-align: left;
+  div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab-list"] {
+    margin-top: -3.3rem;
+    margin-bottom: 1rem;
   }
 }
 </style>
@@ -438,14 +455,8 @@ def render_staff_wellness_rpe_page():
                 <div class="mvv-page-kicker">MVV Maastricht | Wellness & RPE | Staff</div>
               </div>
             </div>
+            <div class="mvv-hero-tabs-note">{len(players)} spelers actief in deze omgeving</div>
           </div>
-        </div>
-        <div class="mvv-section-head">
-          <div>
-            <div class="mvv-section-label">Overzicht</div>
-            <div class="mvv-section-title">Kies de juiste laag voor je wellness- en RPE-analyse</div>
-          </div>
-          <div class="mvv-section-note">{len(players)} spelers actief in deze omgeving</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -453,19 +464,22 @@ def render_staff_wellness_rpe_page():
 
     # Tabs with custom styling
     tab_labels = ["Dag", "Week", "Injury", "Checklist"]
-    tabs = st.tabs(tab_labels)
+    tabs_shell = st.container()
+    with tabs_shell:
+        st.markdown('<div class="mvv-hero-tabs-anchor"></div>', unsafe_allow_html=True)
+        tabs = st.tabs(tab_labels)
 
-    with tabs[0]:
-        render_wellness_rpe_tab_day(sb, sb_url_key, pid_to_name)
+        with tabs[0]:
+            render_wellness_rpe_tab_day(sb, sb_url_key, pid_to_name)
 
-    with tabs[1]:
-        render_wellness_rpe_tab_week(sb, sb_url_key, pid_to_name)
+        with tabs[1]:
+            render_wellness_rpe_tab_week(sb, sb_url_key, pid_to_name)
 
-    with tabs[2]:
-        render_wellness_rpe_tab_injury(sb, sb_url_key, pid_to_name)
+        with tabs[2]:
+            render_wellness_rpe_tab_injury(sb, sb_url_key, pid_to_name)
 
-    with tabs[3]:
-        render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
+        with tabs[3]:
+            render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
 
     render_sidebar_footer(profile)
 
