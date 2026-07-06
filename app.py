@@ -9,6 +9,7 @@ import extra_streamlit_components as stx  # noqa: F401
 import pandas as pd
 import streamlit as st
 
+from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 from roles import (
     clear_tokens_in_cookie,
     cookie_mgr,
@@ -748,6 +749,7 @@ def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[s
     if weekly_df.empty:
         return current_week_label, {}
 
+    acwr_meta = get_acwr_mode_meta()
     df = weekly_df.copy()
     df["week_key"] = pd.to_numeric(df["week_key"], errors="coerce").astype("Int64")
     df = df.dropna(subset=["player_id", "week_key"]).sort_values(["player_id", "week_key"]).copy()
@@ -756,9 +758,7 @@ def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[s
 
     metric_cols = [metric for metric, _ in ACWR_HOME_METRICS]
     for metric in metric_cols:
-        chronic = df.groupby("player_id")[metric].transform(
-            lambda series: series.shift(1).rolling(window=4, min_periods=2).mean()
-        )
+        chronic = df.groupby("player_id")[metric].transform(lambda series: compute_chronic_series(series, acwr_meta["mode"]))
         df[f"{metric}_acwr"] = df[metric].div(chronic.where(chronic != 0))
 
     current_df = df[df["week_key"] == current_week_key].copy()
@@ -911,6 +911,7 @@ def render_home_kpi_board(df: pd.DataFrame) -> None:
         st.info("Nog geen spelerdata beschikbaar voor deze startpagina.")
         return
 
+    acwr_meta = get_acwr_mode_meta()
     current_week_label = (
         str(df["acwr_week_label"].dropna().iloc[0])
         if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
@@ -923,7 +924,7 @@ def render_home_kpi_board(df: pd.DataFrame) -> None:
             <div class="home-section-kicker">Selectie</div>
             <div class="home-section-title">Compact readiness-overzicht per speler</div>
           </div>
-          <div class="home-section-note">Gesorteerd op aandacht | ACWR week {current_week_label}</div>
+          <div class="home-section-note">Gesorteerd op aandacht | ACWR week {current_week_label} | {acwr_meta['short_label']}</div>
         </div>
         """,
         unsafe_allow_html=True,

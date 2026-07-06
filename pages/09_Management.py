@@ -4,6 +4,13 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from acwr_settings import (
+    ACWR_MODE_LOG_6W,
+    ACWR_MODE_STANDARD,
+    get_acwr_mode,
+    get_acwr_mode_meta,
+    set_acwr_mode,
+)
 from pages.Subscripts.gps_import_common import (
     ALLOWED_IMPORT,
     SUPABASE_URL,
@@ -452,20 +459,49 @@ def render_import_export_tab(access_token: str, role_ui: str) -> None:
 
 
 def render_settings_tab() -> None:
+    acwr_mode = get_acwr_mode()
+    acwr_meta = get_acwr_mode_meta(acwr_mode)
+    mode_labels = {
+        ACWR_MODE_STANDARD: "Standaard 4 weken gemiddelde",
+        ACWR_MODE_LOG_6W: "Logaritmisch gewogen 6 weken",
+    }
+    mode_by_label = {label: mode for mode, label in mode_labels.items()}
+
     st.markdown(
         """
         <div class="mgmt-tab-shell">
           <div class="mgmt-section-label">Settings</div>
-          <div class="mgmt-section-title">Lege managementpagina voor toekomstige instellingen</div>
+          <div class="mgmt-section-title">Globale instellingen voor ACWR en toekomstige beheeropties</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    with st.form("management_acwr_settings"):
+        selected_label = st.radio(
+            "ACWR-model",
+            options=list(mode_by_label.keys()),
+            index=list(mode_by_label.values()).index(acwr_mode),
+        )
+        selected_mode = mode_by_label[selected_label]
+        selected_meta = get_acwr_mode_meta(selected_mode)
+
+        st.info(
+            f"Huidig model: {selected_meta['label']}. {selected_meta['description']}"
+        )
+        st.caption("Deze instelling wordt in je browser opgeslagen en gebruikt op Home, Team Page Beta en GPS ACWR.")
+
+        save_clicked = st.form_submit_button("ACWR-instelling opslaan", use_container_width=True)
+
+    if save_clicked:
+        set_acwr_mode(selected_mode)
+        st.success(f"ACWR-model opgeslagen: {selected_meta['label']}.")
+        st.rerun()
+
     st.markdown(
         """
-        <div class="mgmt-empty">
-          Settings is alvast aangemaakt binnen Management.
-          Hier kunnen later applicatie-instellingen, datadrempels, mappings en beheeropties komen.
+        <div class="mgmt-empty" style="margin-top: 1rem;">
+          Settings is nu actief voor ACWR. Hier kunnen later ook andere applicatie-instellingen, mappings en beheeropties komen.
         </div>
         """,
         unsafe_allow_html=True,

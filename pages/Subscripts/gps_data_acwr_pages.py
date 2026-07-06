@@ -19,6 +19,12 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from acwr_settings import (
+    compute_chronic_reference_value,
+    compute_chronic_series,
+    get_acwr_mode,
+    get_acwr_mode_meta,
+)
 from roles import get_sb
 
 
@@ -324,14 +330,16 @@ def compute_acwr(
     metrics: List[str],
     group_col: str = "player",
     week_col: str = "week_key",
+    mode: Optional[str] = None,
 ) -> pd.DataFrame:
+    resolved_mode = mode or get_acwr_mode()
     df = df.copy()
     df[week_col] = pd.to_numeric(df[week_col], errors="coerce").astype("Int64")
     df = df.dropna(subset=[week_col]).sort_values([group_col, week_col])
 
     for m in metrics:
         grp = df.groupby(group_col)[m]
-        chronic = grp.shift(1).rolling(window=4, min_periods=2).mean()
+        chronic = grp.transform(lambda series: compute_chronic_series(series, resolved_mode))
         df[f"{m}_ACWR"] = df[m] / chronic
 
     return df
@@ -344,24 +352,27 @@ def make_team_level(df: pd.DataFrame, metrics: List[str], week_col: str = "week_
     return team[cols]
 
 
-def compute_chronic_last4weeks(
+def compute_chronic_reference(
     df: pd.DataFrame,
     metrics: List[str],
     group_col: str = "player",
     week_col: str = "week_key",
+    mode: Optional[str] = None,
 ) -> pd.DataFrame:
+    resolved_mode = mode or get_acwr_mode()
     rows = []
     for g, df_g in df.groupby(group_col):
         df_g = df_g.copy()
         df_g[week_col] = pd.to_numeric(df_g[week_col], errors="coerce").astype("Int64")
         df_g = df_g.dropna(subset=[week_col]).sort_values(week_col)
-        last4 = df_g.tail(4)
-        if len(last4) == 0:
-            continue
-        chronic = last4[metrics].mean()
         row = {group_col: g}
-        row.update(chronic.to_dict())
-        rows.append(row)
+        has_values = False
+        for metric in metrics:
+            chronic_value = compute_chronic_reference_value(df_g[metric], resolved_mode)
+            row[metric] = chronic_value
+            has_values = has_values or chronic_value is not None
+        if has_values:
+            rows.append(row)
 
     if not rows:
         return pd.DataFrame(columns=[group_col] + metrics)
@@ -480,11 +491,13 @@ def _compute_player_targets(
     metrics: List[str],
     ratios_by_metric: Dict[str, Tuple[float, float]],
 ) -> pd.DataFrame:
-    chronic_players = compute_chronic_last4weeks(df_weekly, metrics, group_col="player", week_col="week_key")
+    chronic_players = compute_chronic_reference(df_weekly, metrics, group_col="player", week_col="week_key")
     rows = []
     for _, row in chronic_players.iterrows():
         p = row["player"]
         for m in metrics:
+            if row.get(m) is None or pd.isna(row.get(m)):
+                continue
             chronic_val = float(row[m])
             rlow, rhigh = ratios_by_metric.get(m, (0.8, 1.0))
             rows.append(
@@ -511,10 +524,12 @@ def _compute_team_targets(
     ratios_by_metric: Dict[str, Tuple[float, float]],
 ) -> pd.DataFrame:
     team_full = make_team_level(df_weekly, metrics, week_col="week_key")
-    chronic_team = compute_chronic_last4weeks(team_full, metrics, group_col="player", week_col="week_key")
+    chronic_team = compute_chronic_reference(team_full, metrics, group_col="player", week_col="week_key")
     rows = []
     for _, row in chronic_team.iterrows():
         for m in metrics:
+            if row.get(m) is None or pd.isna(row.get(m)):
+                continue
             chronic_val = float(row[m])
             rlow, rhigh = ratios_by_metric.get(m, (0.8, 1.0))
             rows.append(
@@ -697,6 +712,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     sb = _get_supabase_client()
     _sb_auth_if_possible(sb)
     access_scope = _acwr_cache_scope()
+    acwr_meta = get_acwr_mode_meta()
 
     metrics = detect_metrics_from_gps(df_gps)
     if not metrics:
@@ -708,9 +724,9 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         st.warning("Geen Summary-data gevonden.")
         return
 
-    df_acwr_players = compute_acwr(df_weekly, metrics, group_col="player", week_col="week_key")
+    df_acwr_players = compute_acwr(df_weekly, metrics, group_col="player", week_col="week_key", mode=acwr_meta["mode"])
     df_team = make_team_level(df_weekly, metrics, week_col="week_key")
-    df_acwr_team = compute_acwr(df_team, metrics, group_col="player", week_col="week_key")
+    df_acwr_team = compute_acwr(df_team, metrics, group_col="player", week_col="week_key", mode=acwr_meta["mode"])
 
     df_weeks = df_weekly[["week_key", "week_label"]].dropna().drop_duplicates().copy()
     df_weeks["week_key"] = pd.to_numeric(df_weeks["week_key"], errors="coerce").astype("Int64")
@@ -781,6 +797,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     with tab_dashboard:
         st.header("ACWR Dashboard")
         st.caption("Zones: rood < 0.80, groen 0.80-1.30, amber 1.30-1.50, rood > 1.50.")
+        st.caption(f"ACWR-model: {acwr_meta['label']} | {acwr_meta['description']}")
 
         c1, c2 = st.columns([1.1, 1.9])
         with c1:
@@ -912,31 +929,33 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                             else:
                                 st.error(msg)
 
-                st.subheader("Targets per speler (absolute waarden)")
+                st.subheader(f"Targets per speler ({acwr_meta['short_label']})")
 
-                chronic_players = compute_chronic_last4weeks(
+                chronic_players = compute_chronic_reference(
                     df=df_weekly,
                     metrics=thr_params,
                     group_col="player",
                     week_col="week_key",
+                    mode=acwr_meta["mode"],
                 )
-
                 if chronic_players.empty:
-                    st.info("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
+                    st.info(f"Onvoldoende data om chronic te berekenen met model '{acwr_meta['label']}'.")
                 else:
                     low_used = float(st.session_state.get("thr_last_low", 0.80))
                     high_used = float(st.session_state.get("thr_last_high", 1.00))
-
                     rows = []
                     for _, r in chronic_players.iterrows():
                         player = r["player"]
                         for m in thr_params:
-                            chronic_val = float(r[m])
+                            value = r.get(m)
+                            if value is None or pd.isna(value):
+                                continue
+                            chronic_val = float(value)
                             rows.append(
                                 {
                                     "Speler": player,
                                     "Parameter": m,
-                                    "Chronic (mean last4w)": chronic_val,
+                                    f"Chronic ({acwr_meta['short_label']})": chronic_val,
                                     "Target low": chronic_val * low_used,
                                     "Target high": chronic_val * high_used,
                                 }
@@ -946,7 +965,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                     st.dataframe(
                         df_targets.style.format(
                             {
-                                "Chronic (mean last4w)": "{:.2f}",
+                                f"Chronic ({acwr_meta['short_label']})": "{:.2f}",
                                 "Target low": "{:.2f}",
                                 "Target high": "{:.2f}",
                             }
@@ -1027,7 +1046,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                     targets_team = _compute_team_targets(df_weekly, tvw_params, ratios_by_metric)
 
                     if targets_players.empty and targets_team.empty:
-                        st.warning("Onvoldoende data om chronic (laatste 4 weken) te berekenen.")
+                        st.warning(f"Onvoldoende data om chronic te berekenen met model '{acwr_meta['label']}'.")
                     else:
                         cols = st.columns(2)
                         dfs_for_table: List[Tuple[str, pd.DataFrame]] = []

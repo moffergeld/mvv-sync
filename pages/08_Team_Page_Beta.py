@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-
+from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 THIS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = THIS_DIR.parent
 ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
@@ -1031,6 +1031,7 @@ def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[s
     if weekly_df.empty:
         return current_week_label, {}
 
+    acwr_meta = get_acwr_mode_meta()
     df = weekly_df.copy()
     df["week_key"] = pd.to_numeric(df["week_key"], errors="coerce").astype("Int64")
     df = df.dropna(subset=["player_id", "week_key"]).sort_values(["player_id", "week_key"]).copy()
@@ -1039,9 +1040,7 @@ def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[s
 
     metric_cols = [metric for metric, _ in ACWR_METRICS]
     for metric in metric_cols:
-        chronic = df.groupby("player_id")[metric].transform(
-            lambda series: series.shift(1).rolling(window=4, min_periods=2).mean()
-        )
+        chronic = df.groupby("player_id")[metric].transform(lambda series: compute_chronic_series(series, acwr_meta["mode"]))
         df[f"{metric}_acwr"] = df[metric].div(chronic.where(chronic != 0))
 
     current_df = df[df["week_key"] == current_week_key].copy()
@@ -1142,6 +1141,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
 
 
 def render_hero(df: pd.DataFrame) -> None:
+    acwr_meta = get_acwr_mode_meta()
     current_week_label = (
         str(df["acwr_week_label"].dropna().iloc[0])
         if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
@@ -1182,7 +1182,7 @@ def render_hero(df: pd.DataFrame) -> None:
               </div>
               <div class="team-pill-row">
                 <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
-                <span class="team-pill">ACWR week {current_week_label} op TD, running, sprint en high sprint</span>
+                <span class="team-pill">ACWR {acwr_meta['short_label']} week {current_week_label} op TD, running, sprint en high sprint</span>
               </div>
             </div>
           </div>
@@ -1322,7 +1322,7 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
               <div class="team-list-week-badge">{current_week_label}</div>
               <div class="team-list-name">ACWR overzicht</div>
               <div class="team-list-copy">
-                Huidige week gedeeld door gemiddelde van de vorige 4 weken
+                {acwr_meta['description']}
               </div>
               <div class="team-list-acwr-grid">
                 {acwr_grid}
@@ -1358,12 +1358,13 @@ def render_group_section(df: pd.DataFrame, group_name: str, label_en: str) -> No
 
 
 def render_list_view(df: pd.DataFrame) -> None:
+    acwr_meta = get_acwr_mode_meta()
     current_week_label = (
         str(df["acwr_week_label"].dropna().iloc[0])
         if "acwr_week_label" in df.columns and df["acwr_week_label"].notna().any()
         else current_week_context()[1]
     )
-    st.caption(f"ACWR {current_week_label} | huidige week gedeeld door gemiddelde van de vorige 4 weken")
+    st.caption(f"ACWR {current_week_label} | {acwr_meta['description']}")
 
     for group_name, label_en in GROUP_ORDER:
         group_df = df[df["group"] == group_name].copy()
