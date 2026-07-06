@@ -438,14 +438,6 @@ def render_staff_wellness_rpe_page():
                 <div class="mvv-page-kicker">MVV Maastricht | Wellness & RPE | Staff</div>
               </div>
             </div>
-            <div class="mvv-page-copy">
-              Teamoverzicht voor dagelijkse wellness-invoer, RPE-opvolging en medische signalen.
-              Gebruik de tabs om snel tussen de dag-, week-, injury- en checklistweergave te schakelen.
-            </div>
-            <div class="mvv-pill-row">
-              <span class="mvv-pill">Dagelijkse wellness en RPE-monitoring</span>
-              <span class="mvv-pill">Teamoverzicht voor stafbeslissingen</span>
-            </div>
           </div>
         </div>
         <div class="mvv-section-head">
