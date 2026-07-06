@@ -278,17 +278,7 @@ def main() -> None:
         f"""
         <div class="acwr-beta-hero">
           {logo_markup}
-          <div class="acwr-beta-kicker">MVV Maastricht | ACWR Beta | Staff</div>
           <h1 class="acwr-beta-title">ACWR</h1>
-          <div class="acwr-beta-copy">
-            Beta-route voor directe toegang tot ACWR buiten de bredere GPS Data pagina.
-            De berekeningen en onderliggende workflow blijven gelijk aan de bestaande ACWR-module.
-          </div>
-          <div class="acwr-beta-pill-row">
-            <span class="acwr-beta-pill">Zelfde ACWR-berekeningen als GPS Data</span>
-            <span class="acwr-beta-pill">Scope instelbaar op deze pagina</span>
-            <span class="acwr-beta-pill">Bestaande GPS Data pagina blijft onveranderd</span>
-          </div>
         </div>
         """,
         unsafe_allow_html=True,

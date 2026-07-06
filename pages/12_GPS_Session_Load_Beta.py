@@ -374,18 +374,7 @@ def main() -> None:
         f"""
         <div class="session-load-beta-hero">
           {logo_markup}
-          <div class="session-load-beta-kicker">MVV Maastricht | GPS Beta | Staff</div>
           <h1 class="session-load-beta-title">Session Load</h1>
-          <div class="session-load-beta-copy">
-            Compacte GPS beta-route voor alleen Session Load. ACWR en Fitness-Fatigue-Performance
-            zijn in de Data hub nu eigen routes, zodat deze workflow gericht blijft op dagselectie,
-            teamvergelijking en sessiefilters zoals Practice (1) en Practice (2).
-          </div>
-          <div class="session-load-beta-pill-row">
-            <span class="session-load-beta-pill">Alleen Session Load in deze beta-route</span>
-            <span class="session-load-beta-pill">Dag- en sessiefilter blijven actief</span>
-            <span class="session-load-beta-pill">ACWR en FFP lopen nu los via Data Beta</span>
-          </div>
         </div>
         """,
         unsafe_allow_html=True,

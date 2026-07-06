@@ -201,11 +201,6 @@ def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
         for page_path, label in SIDEBAR_PAGE_LINKS:
             st.page_link(page_path, label=label)
 
-        if SIDEBAR_BETA_PAGE_LINKS:
-            with st.expander("Beta pagina's", expanded=False):
-                for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
-                    st.page_link(page_path, label=label)
-
 
 def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: bool = False) -> None:
     resolved_profile = profile or {}
@@ -218,6 +213,11 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
 
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-footer-anchor"></div>', unsafe_allow_html=True)
+        if SIDEBAR_BETA_PAGE_LINKS:
+            with st.expander("Beta pagina's", expanded=False):
+                for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
+                    st.page_link(page_path, label=label)
+
         st.markdown('<div class="mvv-sidebar-nav-label">Account</div>', unsafe_allow_html=True)
         with st.expander("Account info", expanded=False):
             st.markdown(

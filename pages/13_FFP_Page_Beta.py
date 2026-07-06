@@ -352,17 +352,7 @@ def main() -> None:
         f"""
         <div class="ffp-beta-hero">
           {logo_markup}
-          <div class="ffp-beta-kicker">MVV Maastricht | FFP Beta | Staff</div>
           <h1 class="ffp-beta-title">Fitness-Fatigue-Performance</h1>
-          <div class="ffp-beta-copy">
-            Losse beta-route voor het Fitness-Fatigue-Performance model. Zo staat FFP niet meer
-            in dezelfde GPS beta-flow als Session Load en kun je dit model als eigen analysepagina openen.
-          </div>
-          <div class="ffp-beta-pill-row">
-            <span class="ffp-beta-pill">FFP als eigen route binnen Data Beta</span>
-            <span class="ffp-beta-pill">Zelfde modelinstellingen als bestaande FFP-module</span>
-            <span class="ffp-beta-pill">Gebruikt alle Summary-data</span>
-          </div>
         </div>
         """,
         unsafe_allow_html=True,
