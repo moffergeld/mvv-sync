@@ -397,20 +397,6 @@ def render_staff_wellness_rpe_page():
         if TEAM_LOGO_URI
         else ""
     )
-    summary_cards = [
-        ("Selectiespelers", str(len(players)), "Actieve spelers in deze wellness-overview"),
-        ("Views", "4", "Dag, Week, Injury en Checklist"),
-        ("Rol", "Staff", "Deze pagina is alleen beschikbaar voor de staf"),
-        ("Focus", "RPE + Wellness", "Dagelijkse monitoring en teamoverzicht"),
-    ]
-    summary_markup = "".join(
-        f"""<div class="mvv-summary-card">
-<div class="mvv-summary-label">{label}</div>
-<div class="mvv-summary-value">{value}</div>
-<div class="mvv-summary-foot">{foot}</div>
-</div>"""
-        for label, value, foot in summary_cards
-    )
 
     st.markdown(
         f"""
@@ -427,9 +413,6 @@ def render_staff_wellness_rpe_page():
               <span class="mvv-pill">Dagelijkse wellness en RPE-monitoring</span>
               <span class="mvv-pill">Teamoverzicht voor stafbeslissingen</span>
             </div>
-          </div>
-          <div class="mvv-summary-grid">
-            {summary_markup}
           </div>
         </div>
         <div class="mvv-section-head">

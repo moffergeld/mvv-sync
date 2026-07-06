@@ -531,20 +531,6 @@ logo_markup = (
     if TEAM_LOGO_URI
     else ""
 )
-summary_cards = [
-    ("Rol", role_ui.title(), "Autorisatie voor import, export en matchbeheer"),
-    ("Spelers", str(len(player_options)), "Beschikbare spelers voor handmatige invoer"),
-    ("Modules", "4", "Import, Manual add, Export en Matches"),
-    ("Workflow", "GPS Import", "Dagelijkse data-ingang voor de performance-omgeving"),
-]
-summary_markup = "".join(
-    f"""<div class="mvv-summary-card">
-<div class="mvv-summary-label">{label}</div>
-<div class="mvv-summary-value">{value}</div>
-<div class="mvv-summary-foot">{foot}</div>
-</div>"""
-    for label, value, foot in summary_cards
-)
 
 st.markdown(
 f"""
@@ -561,9 +547,6 @@ f"""
       <span class="mvv-pill">Import via Excel of handmatige invoer</span>
       <span class="mvv-pill">Matchbeheer en export in dezelfde omgeving</span>
     </div>
-  </div>
-  <div class="mvv-summary-grid">
-    {summary_markup}
   </div>
 </div>
 """,

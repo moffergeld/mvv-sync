@@ -609,24 +609,6 @@ def render_reports_intro(matches_df: pd.DataFrame) -> None:
         if TEAM_LOGO_URI
         else ""
     )
-    total_matches = len(matches_df)
-    regular_count = int((matches_df["match_bucket"] == MATCH_FILTER_REGULAR).sum()) if not matches_df.empty else 0
-    friendly_count = int((matches_df["match_bucket"] == MATCH_FILTER_FRIENDLY).sum()) if not matches_df.empty else 0
-    opponent_count = matches_df["opponent"].dropna().astype(str).str.strip().replace("", np.nan).dropna().nunique()
-    summary_cards = [
-        ("Wedstrijden", str(total_matches), "Totaal beschikbare match reports"),
-        ("Normaal", str(regular_count), "Competitie, beker en overige officiele duels"),
-        ("Oefen", str(friendly_count), "Oefenwedstrijden en vriendschappelijke duels"),
-        ("Tegenstanders", str(opponent_count), "Unieke opponenten in deze rapportage"),
-    ]
-    summary_markup = "".join(
-        f"""<div class="mr-summary-card">
-<div class="mr-summary-label">{label}</div>
-<div class="mr-summary-value">{value}</div>
-<div class="mr-summary-foot">{foot}</div>
-</div>"""
-        for label, value, foot in summary_cards
-    )
 
     st.markdown(
         f"""
@@ -643,9 +625,6 @@ def render_reports_intro(matches_df: pd.DataFrame) -> None:
               <span class="mr-hero-pill">Filter op oefenwedstrijd of normale wedstrijd</span>
               <span class="mr-hero-pill">Analyse per fase: full match, first half, second half</span>
             </div>
-          </div>
-          <div class="mr-summary-grid">
-            {summary_markup}
           </div>
         </div>
         """,

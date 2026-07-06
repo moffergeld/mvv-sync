@@ -24,6 +24,7 @@ from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from pages.Subscripts.wr_common import fetch_active_players_cached
 from roles import get_profile, get_sb, is_staff_user
 
 
@@ -31,6 +32,8 @@ st.set_page_config(page_title="Management | MVV Dashboard", layout="wide")
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
+MATCH_FILTER_REGULAR = "Normale wedstrijd"
+MATCH_FILTER_FRIENDLY = "Oefenwedstrijd"
 
 
 def rest_get_paged(
@@ -82,6 +85,66 @@ def fetch_calendar_quality_cached(access_token: str) -> pd.DataFrame:
     for col in ["Type", "Event"]:
         df[col] = df[col].astype(str).str.strip()
     return df.dropna(subset=["Datum"]).copy()
+
+
+def _match_type_bucket(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if any(token in normalized for token in ["oefen", "friendly", "vriend", "test"]):
+        return MATCH_FILTER_FRIENDLY
+    return MATCH_FILTER_REGULAR
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_match_reports_quality_cached(access_token: str) -> pd.DataFrame:
+    raw = rest_get_paged(
+        access_token=access_token,
+        table="matches",
+        base_query="select=match_id,match_date,opponent,match_type&order=match_date.desc",
+        page_size=5000,
+        timeout=120,
+    )
+    if raw.empty:
+        return pd.DataFrame(columns=["match_id", "match_date", "opponent", "match_type", "match_bucket"])
+
+    df = raw.copy()
+    df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce").dt.date
+    df["opponent"] = df["opponent"].fillna("").astype(str).str.strip()
+    df["match_type"] = df["match_type"].fillna("").astype(str).str.strip()
+    df["match_bucket"] = df["match_type"].apply(_match_type_bucket)
+    return df.dropna(subset=["match_id", "match_date"]).copy()
+
+
+def render_summary_cards(cards: list[tuple[str, str, str]]) -> None:
+    summary_markup = "".join(
+        f"""<div class="mgmt-card">
+<div class="mgmt-label">{label}</div>
+<div class="mgmt-value">{value}</div>
+<div class="mgmt-foot">{foot}</div>
+</div>"""
+        for label, value, foot in cards
+    )
+
+    st.markdown(
+        f"""
+        <div class="mgmt-summary-grid">
+          {summary_markup}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_summary_section(section_label: str, section_title: str, cards: list[tuple[str, str, str]]) -> None:
+    st.markdown(
+        f"""
+        <div class="mgmt-tab-shell" style="margin-bottom: 0.85rem;">
+          <div class="mgmt-section-label">{section_label}</div>
+          <div class="mgmt-section-title">{section_title}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_summary_cards(cards)
 
 
 def render_management_css() -> None:
@@ -309,113 +372,167 @@ def render_quality_tab(access_token: str) -> None:
     try:
         calendar_df = fetch_calendar_quality_cached(access_token)
     except Exception as exc:
-        st.error(f"Kon datakwaliteit niet laden: {exc}")
-        return
+        st.warning(f"Kon GPS Summary-datakwaliteit niet laden: {exc}")
+        calendar_df = pd.DataFrame(columns=["Datum", "Type", "Event"])
 
     if calendar_df.empty:
-        st.info("Nog geen Summary-data gevonden voor datakwaliteit.")
-        return
+        st.info("Nog geen Summary-data gevonden voor GPS-datakwaliteit.")
+    else:
+        sessions_df = calendar_df[["Datum", "Type", "Event"]].drop_duplicates().copy()
+        sessions_df = sessions_df.sort_values(["Datum", "Type", "Event"], ascending=[False, True, True]).reset_index(drop=True)
 
-    sessions_df = calendar_df[["Datum", "Type", "Event"]].drop_duplicates().copy()
-    sessions_df = sessions_df.sort_values(["Datum", "Type", "Event"], ascending=[False, True, True]).reset_index(drop=True)
+        session_days = int(sessions_df["Datum"].nunique())
+        unique_sessions = int(len(sessions_df))
+        session_types = int(
+            sessions_df["Type"].astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+        )
+        multi_session_days = int(
+            sessions_df.groupby("Datum")["Type"].nunique().gt(1).sum()
+        )
+        latest_session_day = sessions_df["Datum"].max()
 
-    session_days = int(sessions_df["Datum"].nunique())
-    unique_sessions = int(len(sessions_df))
-    session_types = int(
-        sessions_df["Type"].astype(str).str.strip().replace("", pd.NA).dropna().nunique()
-    )
-    multi_session_days = int(
-        sessions_df.groupby("Datum")["Type"].nunique().gt(1).sum()
-    )
-    latest_session_day = sessions_df["Datum"].max()
+        summary_cards = [
+            ("Sessiedagen", str(session_days), "Unieke dagen met Summary-sessies"),
+            ("Sessies", str(unique_sessions), "Unieke datum/type/event-combinaties"),
+            ("Datatypen", str(session_types), "Trainings- en wedstrijdbuckets in de dataset"),
+            (
+                "Dubbelsessies",
+                str(multi_session_days),
+                f"Laatste sessiedag: {latest_session_day.strftime('%d-%m-%Y') if latest_session_day else '--'}",
+            ),
+        ]
+        render_summary_cards(summary_cards)
 
-    summary_cards = [
-        ("Sessiedagen", str(session_days), "Unieke dagen met Summary-sessies"),
-        ("Sessies", str(unique_sessions), "Unieke datum/type/event-combinaties"),
-        ("Datatypen", str(session_types), "Trainings- en wedstrijdbuckets in de dataset"),
-        (
-            "Dubbelsessies",
-            str(multi_session_days),
-            f"Laatste sessiedag: {latest_session_day.strftime('%d-%m-%Y') if latest_session_day else '--'}",
-        ),
-    ]
-    summary_markup = "".join(
-        f"""<div class="mgmt-card">
-<div class="mgmt-label">{label}</div>
-<div class="mgmt-value">{value}</div>
-<div class="mgmt-foot">{foot}</div>
-</div>"""
-        for label, value, foot in summary_cards
-    )
+        st.markdown(
+            """
+            <div class="mgmt-tab-shell">
+              <div class="mgmt-section-label">Datakwaliteit</div>
+              <div class="mgmt-section-title">Sessie-overzicht per type en recente kalenderitems</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    st.markdown(
-        f"""
-        <div class="mgmt-summary-grid">
-          {summary_markup}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        type_summary = (
+            sessions_df.groupby("Type", dropna=False)
+            .size()
+            .reset_index(name="Sessies")
+            .sort_values(["Sessies", "Type"], ascending=[False, True])
+            .reset_index(drop=True)
+        )
+        type_summary["Type"] = type_summary["Type"].replace("", "Onbekend")
+
+        multi_day_df = (
+            sessions_df.groupby("Datum", as_index=False)
+            .agg(
+                aantal_sessies=("Type", "nunique"),
+                types=("Type", lambda values: " | ".join(sorted({str(v).strip() for v in values if str(v).strip()}))),
+            )
+            .sort_values("Datum", ascending=False)
+            .reset_index(drop=True)
+        )
+        multi_day_df = multi_day_df[multi_day_df["aantal_sessies"] > 1].copy()
+
+        recent_sessions = sessions_df.rename(
+            columns={"Datum": "Datum", "Type": "Type", "Event": "Event"}
+        ).copy()
+        recent_sessions["Datum"] = recent_sessions["Datum"].apply(
+            lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
+        )
+
+        col_left, col_right = st.columns(2, gap="large")
+        with col_left:
+            st.dataframe(type_summary, use_container_width=True, hide_index=True)
+        with col_right:
+            if multi_day_df.empty:
+                st.info("Geen dagen met meerdere Summary-sessies gevonden.")
+            else:
+                multi_day_df["Datum"] = multi_day_df["Datum"].apply(
+                    lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
+                )
+                st.dataframe(
+                    multi_day_df.rename(columns={"aantal_sessies": "Sessies", "types": "Typen"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        st.dataframe(
+            recent_sessions.head(30),
+            use_container_width=True,
+            hide_index=True,
+            height=460,
+        )
 
     st.markdown(
         """
-        <div class="mgmt-tab-shell">
-          <div class="mgmt-section-label">Datakwaliteit</div>
-          <div class="mgmt-section-title">Sessie-overzicht per type en recente kalenderitems</div>
+        <div class="mgmt-tab-shell" style="margin-top: 1rem;">
+          <div class="mgmt-section-label">Module-overzichten</div>
+          <div class="mgmt-section-title">Samenvattingskaarten verplaatst uit de losse pagina's</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    type_summary = (
-        sessions_df.groupby("Type", dropna=False)
-        .size()
-        .reset_index(name="Sessies")
-        .sort_values(["Sessies", "Type"], ascending=[False, True])
-        .reset_index(drop=True)
-    )
-    type_summary["Type"] = type_summary["Type"].replace("", "Onbekend")
-
-    multi_day_df = (
-        sessions_df.groupby("Datum", as_index=False)
-        .agg(
-            aantal_sessies=("Type", "nunique"),
-            types=("Type", lambda values: " | ".join(sorted({str(v).strip() for v in values if str(v).strip()}))),
+    try:
+        matches_df = fetch_match_reports_quality_cached(access_token)
+    except Exception as exc:
+        st.warning(f"Match Reports samenvatting kon niet geladen worden: {exc}")
+    else:
+        total_matches = len(matches_df)
+        regular_count = int((matches_df["match_bucket"] == MATCH_FILTER_REGULAR).sum()) if not matches_df.empty else 0
+        friendly_count = int((matches_df["match_bucket"] == MATCH_FILTER_FRIENDLY).sum()) if not matches_df.empty else 0
+        opponent_count = (
+            matches_df["opponent"].replace("", pd.NA).dropna().nunique()
+            if "opponent" in matches_df
+            else 0
         )
-        .sort_values("Datum", ascending=False)
-        .reset_index(drop=True)
-    )
-    multi_day_df = multi_day_df[multi_day_df["aantal_sessies"] > 1].copy()
+        render_summary_section(
+            "Match Reports",
+            "Verplaatste samenvatting van de rapportagepagina",
+            [
+                ("Wedstrijden", str(total_matches), "Totaal beschikbare match reports"),
+                ("Normaal", str(regular_count), "Competitie, beker en overige officiele duels"),
+                ("Oefen", str(friendly_count), "Oefenwedstrijden en vriendschappelijke duels"),
+                ("Tegenstanders", str(opponent_count), "Unieke opponenten in deze rapportage"),
+            ]
+        )
 
-    recent_sessions = sessions_df.rename(
-        columns={"Datum": "Datum", "Type": "Type", "Event": "Event"}
-    ).copy()
-    recent_sessions["Datum"] = recent_sessions["Datum"].apply(
-        lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
-    )
-
-    col_left, col_right = st.columns(2, gap="large")
-    with col_left:
-        st.dataframe(type_summary, use_container_width=True, hide_index=True)
-    with col_right:
-        if multi_day_df.empty:
-            st.info("Geen dagen met meerdere Summary-sessies gevonden.")
+    sb = get_sb()
+    if sb is None:
+        st.warning("Wellness samenvatting kon niet geladen worden: Supabase client niet beschikbaar.")
+    else:
+        sb_url_key = str(st.secrets.get("SUPABASE_URL", "sb"))
+        try:
+            wellness_players = fetch_active_players_cached(sb_url_key, sb, ttl_salt="management_quality")
+        except Exception as exc:
+            st.warning(f"Wellness samenvatting kon niet geladen worden: {exc}")
         else:
-            multi_day_df["Datum"] = multi_day_df["Datum"].apply(
-                lambda value: value.strftime("%d-%m-%Y") if pd.notna(value) else "--"
-            )
-            st.dataframe(
-                multi_day_df.rename(columns={"aantal_sessies": "Sessies", "types": "Typen"}),
-                use_container_width=True,
-                hide_index=True,
+            render_summary_section(
+                "Wellness & RPE",
+                "Verplaatste samenvatting van de wellness-overview",
+                [
+                    ("Selectiespelers", str(len(wellness_players)), "Actieve spelers in deze wellness-overview"),
+                    ("Views", "4", "Dag, Week, Injury en Checklist"),
+                    ("Rol", "Staff", "Deze pagina is alleen beschikbaar voor de staf"),
+                    ("Focus", "RPE + Wellness", "Dagelijkse monitoring en teamoverzicht"),
+                ]
             )
 
-    st.dataframe(
-        recent_sessions.head(30),
-        use_container_width=True,
-        hide_index=True,
-        height=460,
-    )
+    try:
+        _, player_options = get_players_map(access_token)
+    except Exception as exc:
+        st.warning(f"GPS Import samenvatting kon niet geladen worden: {exc}")
+    else:
+        render_summary_section(
+            "GPS Import",
+            "Verplaatste samenvatting van de importomgeving",
+            [
+                ("Rol", "Staff", "Autorisatie voor import, export en matchbeheer"),
+                ("Spelers", str(len(player_options)), "Beschikbare spelers voor handmatige invoer"),
+                ("Modules", "4", "Import, Manual add, Export en Matches"),
+                ("Workflow", "GPS Import", "Dagelijkse data-ingang voor de performance-omgeving"),
+            ]
+        )
 
 
 def render_import_export_tab(access_token: str, role_ui: str) -> None:
