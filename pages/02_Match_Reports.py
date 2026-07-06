@@ -188,7 +188,7 @@ st.markdown(
         display: flex;
         flex-direction: column;
         justify-content: center;
-        gap: 0.35rem;
+        gap: 0.12rem;
         text-align: left;
     }
 
