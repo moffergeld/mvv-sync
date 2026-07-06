@@ -66,6 +66,7 @@ SIDEBAR_PAGE_LINKS = [
 ]
 
 SIDEBAR_BETA_PAGE_LINKS = [
+    ("pages/10_Data_Page_Beta.py", "Data Page Beta"),
     ("pages/07_Player_Page_Beta.py", "Player Page Beta"),
     ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
 ]
