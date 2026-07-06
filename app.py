@@ -33,6 +33,7 @@ MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk tijdelijk ui
 
 ROOT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
+TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
@@ -119,6 +120,38 @@ def render_home_css() -> None:
             padding-top: 1.25rem;
             padding-bottom: 2.5rem;
             max-width: 1380px;
+          }
+
+          .home-brand-shell {
+            display: flex;
+            align-items: flex-end;
+            gap: 1rem;
+            margin-bottom: 1.2rem;
+          }
+
+          .home-brand-logo {
+            width: 78px;
+            height: 78px;
+            object-fit: contain;
+            flex-shrink: 0;
+            filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+          }
+
+          .home-brand-kicker {
+            color: rgba(255,255,255,0.76);
+            font-size: 0.74rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            margin-bottom: 0.3rem;
+          }
+
+          .home-brand-title {
+            margin: 0;
+            font-size: 2.3rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #ffffff;
           }
 
           .home-summary-wrap {
@@ -315,19 +348,24 @@ def render_home_css() -> None:
           }
 
           @media (max-width: 1100px) {
+            .home-brand-shell {
+              align-items: center;
+            }
+
             .home-summary-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
           }
 
           @media (max-width: 768px) {
-            .home-hero {
-              min-height: auto;
-              padding: 1.55rem 1rem;
+            .home-brand-shell {
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 0.8rem;
             }
 
-            .home-title {
-              font-size: 2rem;
+            .home-brand-title {
+              font-size: 1.9rem;
             }
 
             .home-summary-grid {
@@ -783,6 +821,24 @@ def filter_home_rows_for_profile(df: pd.DataFrame, role: str, profile: dict) -> 
     return filtered.reset_index(drop=True)
 
 
+def render_home_brand() -> None:
+    logo_uri = build_image_data_uri(TEAM_LOGO) if TEAM_LOGO.exists() else ""
+    logo_markup = f'<img src="{logo_uri}" alt="MVV Maastricht" class="home-brand-logo" />' if logo_uri else ""
+
+    st.markdown(
+        f"""
+        <div class="home-brand-shell">
+          {logo_markup}
+          <div>
+            <div class="home-brand-kicker">MVV Maastricht | Dashboard | Readiness overview</div>
+            <h1 class="home-brand-title">Selectie KPI's</h1>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_home_summary(df: pd.DataFrame, role: str) -> None:
     role_label = role_label_for_home(role)
     ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
@@ -967,5 +1023,6 @@ if home_df.empty:
     st.warning("Geen readiness-KPI's beschikbaar voor deze gebruiker.")
     st.stop()
 
+render_home_brand()
 render_home_summary(home_df, role)
 render_home_kpi_board(home_df)
