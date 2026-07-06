@@ -26,6 +26,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
+from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores  # noqa: E402
 from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
@@ -917,11 +918,7 @@ def fetch_wellness_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str
         return df
 
     df["entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce").dt.date
-    metric_cols = ["muscle_soreness", "fatigue", "sleep_quality", "stress", "mood"]
-    for col in metric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["wellness_avg"] = df[metric_cols].mean(axis=1)
-    return df
+    return enrich_wellness_scores(df)
 
 
 @st.cache_data(show_spinner=False, ttl=120)
@@ -1123,7 +1120,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
     gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
     acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
 
-    wellness_lookup = build_snapshot_lookup(wellness_df, "entry_date", "wellness_avg")
+    wellness_lookup = build_wellness_snapshot_lookup(wellness_df, "entry_date")
     rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
     gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
     current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
@@ -1137,7 +1134,8 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
         rpe = rpe_lookup.get(player_id, {})
         gps = gps_lookup.get(player_id, {})
         acwr = acwr_lookup.get(player_id, {})
-        readiness_label, readiness_color = build_status(wellness.get("value"))
+        readiness_score = wellness.get("readiness_score")
+        readiness_label, readiness_color = build_status(readiness_score)
 
         rows.append(
             {
@@ -1146,7 +1144,9 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
                 "position": player_position,
                 "group": resolve_group(player_position),
                 "photo_path": resolve_player_image(player_name),
-                "wellness_value": wellness.get("value"),
+                "wellness_value": wellness.get("overall"),
+                "wellness_physical": wellness.get("physical"),
+                "wellness_mental": wellness.get("mental"),
                 "wellness_date": wellness.get("date"),
                 "wellness_today": bool(wellness.get("is_today", False)),
                 "rpe_value": rpe.get("value"),
@@ -1159,6 +1159,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
                 "running_acwr": acwr.get("running_acwr"),
                 "sprint_acwr": acwr.get("sprint_acwr"),
                 "high_sprint_acwr": acwr.get("high_sprint_acwr"),
+                "readiness_score": readiness_score,
                 "readiness_label": readiness_label,
                 "readiness_color": readiness_color,
                 "readiness_rank": {"Alert": 0, "Watch": 1, "Ready": 2, "No data": 3}.get(readiness_label, 3),
@@ -1209,11 +1210,11 @@ def render_hero(df: pd.DataFrame) -> None:
                 </div>
               </div>
               <div class="team-sub">
-                Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
+                Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste fysieke en mentale wellnesscheck,
                 aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.
               </div>
               <div class="team-pill-row">
-                <span class="team-pill">Readiness op basis van de laatste wellness-invoer</span>
+                <span class="team-pill">Readiness op basis van fysieke + mentale wellness-invoer</span>
                 <span class="team-pill">ACWR {acwr_meta['short_label']} week {current_week_label} op TD, running, sprint en high sprint</span>
               </div>
             </div>
@@ -1246,7 +1247,7 @@ def render_player_card(player: Dict[str, Any]) -> None:
           <div class="team-card-role">{position_label}</div>
           <div class="team-card-title">{player['full_name']}</div>
           <div class="team-card-meta">
-            Wellness {format_metric_value(player.get('wellness_value'))} | RPE {format_metric_value(player.get('rpe_value'))}
+            Physical {format_metric_value(player.get('wellness_physical'))} | Mental {format_metric_value(player.get('wellness_mental'))} | RPE {format_metric_value(player.get('rpe_value'))}
           </div>
           <div class="team-card-meta">
             GPS {format_metric_value(player.get('gps_value'), ' m')} | Laatste update {player['wellness_date'].strftime("%d-%m") if player.get('wellness_date') else '--'}
@@ -1315,7 +1316,8 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
     with info_col:
         status_grid = "".join(
             [
-                f'<div class="team-list-main-item"><div class="team-list-main-label">Wellness</div><div class="team-list-main-value">{format_metric_value(player.get("wellness_value"))}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">Physical</div><div class="team-list-main-value">{format_metric_value(player.get("wellness_physical"))}</div></div>',
+                f'<div class="team-list-main-item"><div class="team-list-main-label">Mental</div><div class="team-list-main-value">{format_metric_value(player.get("wellness_mental"))}</div></div>',
                 f'<div class="team-list-main-item"><div class="team-list-main-label">RPE</div><div class="team-list-main-value">{format_metric_value(player.get("rpe_value"))}</div></div>',
                 f'<div class="team-list-main-item"><div class="team-list-main-label">GPS load</div><div class="team-list-main-value">{format_metric_value(player.get("gps_value"), " m")}</div></div>',
                 f'<div class="team-list-main-item"><div class="team-list-main-label">GPS update</div><div class="team-list-main-value">{latest_gps_update}</div></div>',
@@ -1335,7 +1337,7 @@ def render_list_player_row(player: Dict[str, Any]) -> None:
                   {player['readiness_label']}
                 </span>
                 <div class="team-list-status-copy">
-                  Actuele readiness op basis van de laatste wellness-invoer in de app
+                  Actuele readiness op basis van de laatste fysieke en mentale wellness-invoer in de app
                 </div>
               </div>
               <div class="team-list-main-grid">

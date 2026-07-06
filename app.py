@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
+from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores
 from roles import (
     clear_tokens_in_cookie,
     cookie_mgr,
@@ -249,7 +250,7 @@ def render_home_css() -> None:
           .home-kpi-head,
           .home-kpi-row {
             display: grid;
-            grid-template-columns: minmax(220px, 2fr) 0.95fr 0.85fr 0.85fr 1fr 0.9fr;
+            grid-template-columns: minmax(220px, 2fr) 0.95fr 0.8fr 0.8fr 0.8fr 1fr 0.9fr;
             gap: 0.85rem;
             align-items: center;
           }
@@ -569,11 +570,7 @@ def fetch_wellness_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str
         return df
 
     df["entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce").dt.date
-    metric_cols = ["muscle_soreness", "fatigue", "sleep_quality", "stress", "mood"]
-    for col in metric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["wellness_avg"] = df[metric_cols].mean(axis=1)
-    return df
+    return enrich_wellness_scores(df)
 
 
 @st.cache_data(show_spinner=False, ttl=120)
@@ -775,7 +772,7 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
     gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
     acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
 
-    wellness_lookup = build_snapshot_lookup(wellness_df, "entry_date", "wellness_avg")
+    wellness_lookup = build_wellness_snapshot_lookup(wellness_df, "entry_date")
     rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
     gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
     current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
@@ -787,14 +784,17 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
         rpe = rpe_lookup.get(player_id, {})
         gps = gps_lookup.get(player_id, {})
         acwr = acwr_lookup.get(player_id, {})
-        readiness_label, readiness_color = build_status(wellness.get("value"))
+        readiness_score = wellness.get("readiness_score")
+        readiness_label, readiness_color = build_status(readiness_score)
 
         rows.append(
             {
                 "player_id": player_id,
                 "full_name": player["full_name"],
                 "position": player.get("position"),
-                "wellness_value": wellness.get("value"),
+                "wellness_value": wellness.get("overall"),
+                "wellness_physical": wellness.get("physical"),
+                "wellness_mental": wellness.get("mental"),
                 "wellness_date": wellness.get("date"),
                 "wellness_today": bool(wellness.get("is_today", False)),
                 "rpe_value": rpe.get("value"),
@@ -804,6 +804,7 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
                 "gps_date": gps.get("date"),
                 "acwr_week_label": acwr.get("week_label", current_week_label),
                 "total_distance_acwr": acwr.get("total_distance_acwr"),
+                "readiness_score": readiness_score,
                 "readiness_label": readiness_label,
                 "readiness_color": readiness_color,
                 "readiness_rank": {"Alert": 0, "Watch": 1, "Ready": 2, "No data": 3}.get(readiness_label, 3),
@@ -928,8 +929,12 @@ def render_home_kpi_board(df: pd.DataFrame) -> None:
 </span>
 </div>
 <div class="home-kpi-cell">
-<span class="home-kpi-mobile-label">Wellness</span>
-{html.escape(format_metric_value(row.get('wellness_value')))}
+<span class="home-kpi-mobile-label">Physical</span>
+{html.escape(format_metric_value(row.get('wellness_physical')))}
+</div>
+<div class="home-kpi-cell">
+<span class="home-kpi-mobile-label">Mental</span>
+{html.escape(format_metric_value(row.get('wellness_mental')))}
 </div>
 <div class="home-kpi-cell">
 <span class="home-kpi-mobile-label">RPE</span>
@@ -952,7 +957,8 @@ def render_home_kpi_board(df: pd.DataFrame) -> None:
           <div class="home-kpi-head">
             <div>Speler</div>
             <div>Readiness</div>
-            <div>Wellness</div>
+            <div>Physical</div>
+            <div>Mental</div>
             <div>RPE</div>
             <div>GPS</div>
             <div>ACWR TD</div>
