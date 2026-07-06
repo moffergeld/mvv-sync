@@ -252,12 +252,12 @@ def main() -> None:
           <h1 class="data-beta-title">Data</h1>
           <div class="data-beta-copy">
             Beta-opzet voor een centrale data-ingang. Vanuit deze pagina kun je straks sneller kiezen
-            tussen GPS, ACWR, Wellness/RPE en Compare zonder dat alles los in de hoofdstructuur hoeft te staan.
+            tussen Session Load, ACWR, FFP, Wellness/RPE en Compare zonder dat alles los in de hoofdstructuur hoeft te staan.
           </div>
           <div class="data-beta-pill-row">
             <span class="data-beta-pill">Bestaande pagina's blijven actief</span>
             <span class="data-beta-pill">Nieuwe structuur alleen als beta</span>
-            <span class="data-beta-pill">ACWR opent alvast als eigen beta-route</span>
+            <span class="data-beta-pill">ACWR en FFP openen als eigen beta-routes</span>
           </div>
         </div>
         <div class="data-beta-section-head">
@@ -265,22 +265,22 @@ def main() -> None:
             <div class="data-beta-section-kicker">Modules</div>
             <div class="data-beta-section-title">Kies welke data-omgeving je wilt openen</div>
           </div>
-          <div class="data-beta-section-note">Conceptpagina, huidige navigatie blijft onaangetast</div>
+          <div class="data-beta-section-note">5 beta-routes, huidige navigatie blijft onaangetast</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    row_one = st.columns(2, gap="large")
+    row_one = st.columns(3, gap="large")
     with row_one[0]:
         render_tile(
-            key="data_beta_gps",
+            key="data_beta_session_load",
             kicker="Load",
-            title="GPS Data",
-            copy="Open Session Load, FFP en Benchmarks vanuit de bestaande GPS-omgeving.",
-            meta="Huidige route: GPS Data",
-            button_label="Open GPS Data",
-            target_page="pages/03_GPS_Data.py",
+            title="Session Load",
+            copy="Open een compacte GPS beta-route die alleen de Session Load workflow toont, inclusief dag- en sessiefilter.",
+            meta="Nieuwe beta-route voor GPS Session Load",
+            button_label="Open Session Load Beta",
+            target_page="pages/12_GPS_Session_Load_Beta.py",
         )
     with row_one[1]:
         render_tile(
@@ -291,6 +291,16 @@ def main() -> None:
             meta="Beta-route, bestaande GPS ACWR blijft ook bestaan",
             button_label="Open ACWR Beta",
             target_page="pages/11_ACWR_Page_Beta.py",
+        )
+    with row_one[2]:
+        render_tile(
+            key="data_beta_ffp",
+            kicker="Model",
+            title="Fitness-Fatigue-Performance",
+            copy="Open direct de beta-route voor het FFP-model met dezelfde onderliggende Summary-data en modelinstellingen.",
+            meta="Losse beta-route voor FFP",
+            button_label="Open FFP Beta",
+            target_page="pages/13_FFP_Page_Beta.py",
         )
 
     row_two = st.columns(2, gap="large")
