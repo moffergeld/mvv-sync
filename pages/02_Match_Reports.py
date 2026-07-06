@@ -600,8 +600,8 @@ def render_reports_intro() -> None:
         <div class="mr-page-header-row">
           {logo_markup}
           <div class="mr-page-header-copy">
-            <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
             <h1 class="mr-page-title">Match Reports</h1>
+            <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
           </div>
         </div>
         """,
