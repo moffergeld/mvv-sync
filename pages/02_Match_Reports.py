@@ -171,8 +171,25 @@ st.markdown(
         width: 82px;
         height: 82px;
         object-fit: contain;
-        margin-bottom: 0.9rem;
+        margin-bottom: 0;
+        flex-shrink: 0;
         filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+    }
+
+    .mr-page-header-row {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 1.1rem;
+    }
+
+    .mr-page-header-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.35rem;
+        text-align: left;
     }
 
     .mr-kicker {
@@ -181,7 +198,7 @@ st.markdown(
         text-transform: uppercase;
         font-weight: 800;
         color: rgba(255,255,255,.76);
-        margin-bottom: 6px;
+        margin-bottom: 0;
     }
 
     .mr-page-title {
@@ -399,6 +416,15 @@ st.markdown(
             padding: 1.55rem 1rem 1.1rem 1rem;
         }
 
+        .mr-page-header-row {
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .mr-page-header-copy {
+            text-align: center;
+        }
+
         .mr-page-title {
             font-size: 34px;
         }
@@ -571,9 +597,13 @@ def render_reports_intro() -> None:
     st.markdown(
         f"""
         <div class="mr-page-hero-anchor"></div>
-        {logo_markup}
-        <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
-        <h1 class="mr-page-title">Match Reports</h1>
+        <div class="mr-page-header-row">
+          {logo_markup}
+          <div class="mr-page-header-copy">
+            <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
+            <h1 class="mr-page-title">Match Reports</h1>
+          </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
