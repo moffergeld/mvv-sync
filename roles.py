@@ -156,10 +156,9 @@ def _render_sidebar_css() -> None:
 
         [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > div:has(.mvv-sidebar-footer-anchor) {
           margin-top: auto;
-          padding-top: 0.95rem;
+          padding-top: 0;
           padding-bottom: 0.35rem;
-          border-top: 1px solid rgba(255,255,255,0.08);
-          background: linear-gradient(180deg, rgba(9,13,23,0) 0%, rgba(9,13,23,0.94) 18%, rgba(9,13,23,0.99) 100%);
+          background: linear-gradient(180deg, rgba(9,13,23,0) 0%, rgba(9,13,23,0.90) 16%, rgba(9,13,23,0.98) 100%);
           position: sticky;
           bottom: 0;
           z-index: 5;
@@ -187,6 +186,12 @@ def _render_sidebar_css() -> None:
           color: rgba(255,255,255,0.76);
           font-size: 0.84rem;
           line-height: 1.45;
+        }
+
+        [data-testid="stSidebar"] .mvv-sidebar-divider {
+          height: 1px;
+          margin: 0.9rem 0 0.95rem 0;
+          background: rgba(255,255,255,0.08);
         }
         </style>
         """,
@@ -218,6 +223,7 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
                 for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
                     st.page_link(page_path, label=label)
 
+        st.markdown('<div class="mvv-sidebar-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="mvv-sidebar-nav-label">Account</div>', unsafe_allow_html=True)
         with st.expander("Account info", expanded=False):
             st.markdown(
