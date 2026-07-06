@@ -23,8 +23,10 @@ from pages.Subscripts.compare_page_common import (
     prepare_gps_compare_df,
     prepare_rpe_compare_df,
 )
+from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="Compare", layout="wide")
+apply_streamlit_chrome()
 
 
 COMPARE_CSS = """

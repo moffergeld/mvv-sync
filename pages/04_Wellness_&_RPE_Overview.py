@@ -10,8 +10,10 @@ from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
 from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
 from pages.Subscripts.wr_tab_injury import render_wellness_rpe_tab_injury
+from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="Wellness & RPE Overview", layout="wide")
+apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)

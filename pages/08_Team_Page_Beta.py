@@ -27,9 +27,11 @@ if str(ROOT_DIR) not in sys.path:
 
 
 from roles import get_profile, get_sb, require_auth  # noqa: E402
+from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 
 st.set_page_config(page_title="Team Page Beta", layout="wide")
+apply_streamlit_chrome()
 
 
 GROUP_ORDER = [

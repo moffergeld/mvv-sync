@@ -22,6 +22,7 @@ if str(ROOT_DIR) not in sys.path:
 
 
 from roles import get_profile, get_sb, require_auth  # noqa: E402
+from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 from Subscripts.player_tab_data import (  # noqa: E402
     ASRM_COLS,
     fetch_asrm_14d,
@@ -36,6 +37,7 @@ from Subscripts.player_tab_forms import render_forms_tab  # noqa: E402
 
 
 st.set_page_config(page_title="Player Page Beta", layout="wide")
+apply_streamlit_chrome()
 
 
 @st.cache_data(show_spinner=False, ttl=300)

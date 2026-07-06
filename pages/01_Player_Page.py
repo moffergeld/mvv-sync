@@ -30,6 +30,10 @@ if str(ROOT_DIR) not in sys.path:
 from roles import get_sb, require_auth, get_profile  # noqa: E402
 from Subscripts.player_tab_data import render_data_tab  # noqa: E402
 from Subscripts.player_tab_forms import render_forms_tab  # noqa: E402
+from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
+
+
+apply_streamlit_chrome()
 
 
 # ============================================================

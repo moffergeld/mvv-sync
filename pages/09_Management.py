@@ -26,9 +26,11 @@ from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.wr_common import fetch_active_players_cached
 from roles import get_profile, get_sb, is_staff_user
+from utils.streamlit_ui import apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Management | MVV Dashboard", layout="wide")
+apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)

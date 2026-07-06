@@ -18,9 +18,11 @@ from roles import (
     set_tokens_in_cookie,
     try_restore_or_refresh_session,
 )
+from utils.streamlit_ui import apply_streamlit_chrome
 
 
 st.set_page_config(page_title="MVV Dashboard", layout="wide")
+apply_streamlit_chrome()
 
 DIAG_MODE = st.query_params.get("diag") == "1"
 SAFE_MODE = st.query_params.get("safe") == "1"

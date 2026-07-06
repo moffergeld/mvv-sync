@@ -18,8 +18,10 @@ from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
 from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
+from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="GPS Import | MVV Dashboard", layout="wide")
+apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
