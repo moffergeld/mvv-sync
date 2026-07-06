@@ -183,8 +183,8 @@ MVV_CSS += """
 }
 
 .mvv-hero {
-  min-height: 320px;
-  padding: 2rem 1.75rem 4.6rem 1.75rem;
+  min-height: 240px;
+  padding: 1.65rem 1.75rem 2.55rem 1.75rem;
   border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.08);
   background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
@@ -205,7 +205,7 @@ MVV_CSS += """
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.45rem;
 }
 
 .mvv-page-head-copy {
@@ -234,7 +234,7 @@ MVV_CSS += """
 }
 
 .mvv-hero-tabs-note {
-  margin-top: 0.95rem;
+  margin-top: 0.2rem;
   color: rgba(255,255,255,0.78);
   font-size: 0.88rem;
   font-weight: 700;
@@ -360,7 +360,7 @@ MVV_CSS += """
 }
 
 div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab-list"] {
-  margin-top: -3.65rem;
+  margin-top: -2.15rem;
   margin-left: auto;
   margin-right: auto;
   position: relative;
@@ -376,7 +376,7 @@ div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab
 @media (max-width: 768px) {
   .mvv-hero {
     min-height: auto;
-    padding: 1.55rem 1rem 4.2rem 1rem;
+    padding: 1.35rem 1rem 2.2rem 1rem;
   }
 
   .mvv-page-head {
@@ -393,7 +393,7 @@ div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab
   }
 
   .mvv-hero-tabs-note {
-    margin-top: 0.8rem;
+    margin-top: 0.3rem;
     text-align: center;
   }
 
@@ -402,7 +402,7 @@ div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab
   }
 
   div[data-testid="stVerticalBlock"]:has(.mvv-hero-tabs-anchor) [data-baseweb="tab-list"] {
-    margin-top: -3.3rem;
+    margin-top: -1.8rem;
     margin-bottom: 1rem;
   }
 }
