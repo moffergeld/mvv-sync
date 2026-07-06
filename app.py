@@ -33,7 +33,6 @@ MAINTENANCE_TEXT = "Er wordt onderhoud uitgevoerd. Je kunt mogelijk tijdelijk ui
 
 ROOT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
-TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
@@ -487,10 +486,6 @@ def logout_button() -> None:
         st.rerun()
 
 
-def role_label_for_home(role: str) -> str:
-    return "Staff" if (role or "").lower() != "player" else "Speler"
-
-
 def build_status(score: Optional[float]) -> tuple[str, str]:
     if score is None or pd.isna(score):
         return "No data", "#6b7280"
@@ -846,56 +841,6 @@ def filter_home_rows_for_profile(df: pd.DataFrame, role: str, profile: dict) -> 
     return filtered.reset_index(drop=True)
 
 
-def render_home_hero(role: str, email: str, df: pd.DataFrame) -> None:
-    logo_uri = build_image_data_uri(TEAM_LOGO) if TEAM_LOGO.exists() else ""
-    logo_markup = f'<img src="{logo_uri}" alt="MVV Maastricht" class="home-hero-logo" />' if logo_uri else ""
-    role_label = role_label_for_home(role)
-    ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
-    watch_count = int((df["readiness_label"] == "Watch").sum()) if not df.empty else 0
-    alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
-    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
-    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
-    summary_cards = [
-        ("Rol", role_label, "Actieve toegangslaag voor deze sessie"),
-        ("Spelers", str(len(df)), "Compact overzicht op basis van de actuele selectie"),
-        ("Wellness vandaag", str(wellness_today_count), "Spelers met wellness-invoer vandaag"),
-        ("RPE vandaag", str(rpe_today_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
-    ]
-    summary_markup = "".join(
-        f"""<div class="home-summary-card">
-<div class="home-summary-label">{label}</div>
-<div class="home-summary-value">{value}</div>
-<div class="home-summary-foot">{foot}</div>
-</div>"""
-        for label, value, foot in summary_cards
-    )
-
-    st.markdown(
-        f"""
-          <div class="home-hero-shell">
-          <div class="home-hero">
-            {logo_markup}
-            <div class="home-kicker">MVV Maastricht | Dashboard | Readiness overview</div>
-            <h1 class="home-title">Selectie KPI's</h1>
-            <div class="home-copy">
-              Compact overzicht van de actuele spelerstatus op basis van de laatste wellness-, RPE- en GPS-data.
-              De hoofdpagina focust nu alleen op readiness en de belangrijkste KPI's per speler.
-            </div>
-            <div class="home-pill-row">
-              <span class="home-pill">Compacte readiness-focus</span>
-              <span class="home-pill">Wellness, RPE, GPS en ACWR TD in 1 overzicht</span>
-              <span class="home-pill">Account: {html.escape(email or '--')}</span>
-            </div>
-          </div>
-          <div class="home-summary-grid">
-            {summary_markup}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def build_player_meta(row: dict) -> str:
     parts: list[str] = []
     position_value = str(row.get("position") or "").strip()
@@ -1045,5 +990,4 @@ if home_df.empty:
     st.warning("Geen readiness-KPI's beschikbaar voor deze gebruiker.")
     st.stop()
 
-render_home_hero(role, st.session_state.get("user_email", ""), home_df)
 render_home_kpi_board(home_df)
