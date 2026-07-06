@@ -150,12 +150,19 @@ def _render_sidebar_css() -> None:
 
         [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
           min-height: 100vh;
+          display: flex;
+          flex-direction: column;
         }
 
         [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > div:has(.mvv-sidebar-footer-anchor) {
           margin-top: auto;
           padding-top: 0.95rem;
+          padding-bottom: 0.35rem;
           border-top: 1px solid rgba(255,255,255,0.08);
+          background: linear-gradient(180deg, rgba(9,13,23,0) 0%, rgba(9,13,23,0.94) 18%, rgba(9,13,23,0.99) 100%);
+          position: sticky;
+          bottom: 0;
+          z-index: 5;
         }
 
         [data-testid="stSidebar"] .mvv-sidebar-nav-label {
@@ -211,6 +218,7 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
 
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-footer-anchor"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="mvv-sidebar-nav-label">Account</div>', unsafe_allow_html=True)
         with st.expander("Account info", expanded=False):
             st.markdown(
                 f"""
