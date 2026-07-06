@@ -121,70 +121,8 @@ def render_home_css() -> None:
             max-width: 1380px;
           }
 
-          .home-hero-shell {
-            display: flex;
-            flex-direction: column;
-            gap: 1.1rem;
+          .home-summary-wrap {
             margin-bottom: 1.55rem;
-          }
-
-          .home-hero {
-            min-height: 320px;
-            padding: 2rem 1.75rem 1.9rem 1.75rem;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.08);
-            background: linear-gradient(135deg, rgba(18, 25, 42, 0.88), rgba(10, 15, 27, 0.84));
-            box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
-          }
-
-          .home-hero-logo {
-            width: 82px;
-            height: 82px;
-            object-fit: contain;
-            margin-bottom: 0.9rem;
-            filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
-          }
-
-          .home-kicker {
-            color: rgba(255,255,255,0.76);
-            font-size: 0.74rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.18em;
-            margin-bottom: 0.35rem;
-          }
-
-          .home-title {
-            margin: 0;
-            font-size: 2.55rem;
-            line-height: 1;
-            font-weight: 800;
-          }
-
-          .home-copy {
-            margin-top: 0.8rem;
-            max-width: 74ch;
-            color: rgba(255,255,255,0.84);
-            line-height: 1.62;
-          }
-
-          .home-pill-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.55rem;
-            margin-top: 1rem;
-          }
-
-          .home-pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.42rem 0.76rem;
-            border-radius: 999px;
-            font-size: 0.78rem;
-            font-weight: 800;
-            border: 1px solid rgba(234, 51, 81, 0.22);
-            background: rgba(255,255,255,0.06);
-            color: rgba(255,255,255,0.92);
           }
 
           .home-summary-grid {
@@ -870,7 +808,7 @@ def render_home_summary(df: pd.DataFrame, role: str) -> None:
 
     st.markdown(
         f"""
-        <div class="home-hero-shell">
+        <div class="home-summary-wrap">
           <div class="home-summary-grid">
             {summary_markup}
           </div>
