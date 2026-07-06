@@ -70,8 +70,16 @@ def render_css() -> None:
           width: 78px;
           height: 78px;
           object-fit: contain;
-          margin-bottom: 0.8rem;
+          margin-bottom: 0;
+          flex-shrink: 0;
           filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+        }
+
+        .ffp-beta-head {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
         }
 
         .ffp-beta-kicker {
@@ -153,8 +161,14 @@ def render_css() -> None:
         }
 
         @media (max-width: 768px) {
+          .ffp-beta-head {
+            flex-direction: column;
+            gap: 0.8rem;
+          }
+
           .ffp-beta-title {
             font-size: 2rem;
+            text-align: center;
           }
 
           .ffp-beta-panel-head {
@@ -351,8 +365,10 @@ def main() -> None:
     st.markdown(
         f"""
         <div class="ffp-beta-hero">
-          {logo_markup}
-          <h1 class="ffp-beta-title">Fitness-Fatigue-Performance</h1>
+          <div class="ffp-beta-head">
+            {logo_markup}
+            <h1 class="ffp-beta-title">Fitness-Fatigue-Performance</h1>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,

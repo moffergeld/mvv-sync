@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
+from pages.Subscripts.mvv_branding import TEAM_LOGO, build_data_uri
 from roles import get_access_token, get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from pages.Subscripts.compare_page_common import (
     apply_metric_view,
@@ -28,6 +29,7 @@ from utils.streamlit_ui import apply_streamlit_chrome
 st.set_page_config(page_title="Compare", layout="wide")
 apply_streamlit_chrome()
 
+TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
 
 COMPARE_CSS = """
 <style>
@@ -76,13 +78,38 @@ COMPARE_CSS = """
   box-shadow: 0 18px 42px rgba(0,0,0,0.22);
 }
 
+.compare-logo {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+  margin-bottom: 0;
+  flex-shrink: 0;
+  filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+}
+
+.compare-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.compare-head-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+  text-align: left;
+}
+
 .compare-kicker {
   font-size: 11px;
   letter-spacing: 0.24em;
   font-weight: 800;
   text-transform: uppercase;
   color: rgba(255,255,255,0.74);
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .compare-title {
@@ -90,7 +117,7 @@ COMPARE_CSS = """
   font-weight: 800;
   line-height: 1.05;
   color: #FFFFFF;
-  margin: 0 0 8px 0;
+  margin: 0;
 }
 
 .compare-subtitle {
@@ -177,6 +204,21 @@ div[data-baseweb="select"] > div,
 .stMultiSelect div[data-baseweb="select"] > div {
   border-radius: 14px !important;
 }
+
+@media (max-width: 768px) {
+  .compare-head {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .compare-head-copy {
+    text-align: center;
+  }
+
+  .compare-title {
+    font-size: 34px;
+  }
+}
 </style>
 """
 
@@ -260,13 +302,19 @@ def main() -> None:
 
     access_token = get_access_token()
     sb_url_key = str(supabase_url)
+    logo_markup = f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="compare-logo" />' if TEAM_LOGO_URI else ""
 
     st.markdown(COMPARE_CSS, unsafe_allow_html=True)
     st.markdown(
-        """
+        f"""
         <div class="compare-hero">
-          <div class="compare-kicker">MVV Performance Dashboard</div>
-          <div class="compare-title">Compare</div>
+          <div class="compare-head">
+            {logo_markup}
+            <div class="compare-head-copy">
+              <div class="compare-title">Compare</div>
+              <div class="compare-kicker">MVV Performance Dashboard</div>
+            </div>
+          </div>
           <div class="compare-subtitle">
             Vergelijk GPS, Wellness en RPE over meerdere sessies in een flow.
             Schakel tussen absolute waardes, relatieve aandelen en intensity waar de metric dat ondersteunt.

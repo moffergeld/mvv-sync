@@ -195,8 +195,25 @@ MVV_CSS += """
   width: 82px;
   height: 82px;
   object-fit: contain;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0;
+  flex-shrink: 0;
   filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+}
+
+.mvv-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.mvv-page-head-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+  text-align: left;
 }
 
 .mvv-page-kicker {
@@ -205,7 +222,7 @@ MVV_CSS += """
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0;
 }
 
 .mvv-page-title {
@@ -346,6 +363,15 @@ MVV_CSS += """
     padding: 1.55rem 1rem;
   }
 
+  .mvv-page-head {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .mvv-page-head-copy {
+    text-align: center;
+  }
+
   .mvv-page-title {
     font-size: 2rem;
   }
@@ -405,9 +431,13 @@ def render_staff_wellness_rpe_page():
         f"""
         <div class="mvv-hero-shell">
           <div class="mvv-hero">
-            {logo_markup}
-            <div class="mvv-page-kicker">MVV Maastricht | Wellness & RPE | Staff</div>
-            <div class="mvv-page-title">Wellness & RPE Overview</div>
+            <div class="mvv-page-head">
+              {logo_markup}
+              <div class="mvv-page-head-copy">
+                <div class="mvv-page-title">Wellness & RPE Overview</div>
+                <div class="mvv-page-kicker">MVV Maastricht | Wellness & RPE | Staff</div>
+              </div>
+            </div>
             <div class="mvv-page-copy">
               Teamoverzicht voor dagelijkse wellness-invoer, RPE-opvolging en medische signalen.
               Gebruik de tabs om snel tussen de dag-, week-, injury- en checklistweergave te schakelen.

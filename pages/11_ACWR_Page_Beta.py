@@ -61,8 +61,16 @@ def render_css() -> None:
           width: 78px;
           height: 78px;
           object-fit: contain;
-          margin-bottom: 0.8rem;
+          margin-bottom: 0;
+          flex-shrink: 0;
           filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+        }
+
+        .acwr-beta-head {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
         }
 
         .acwr-beta-kicker {
@@ -106,6 +114,18 @@ def render_css() -> None:
           border: 1px solid rgba(234, 51, 81, 0.22);
           background: rgba(255,255,255,0.06);
           color: rgba(255,255,255,0.92);
+        }
+
+        @media (max-width: 768px) {
+          .acwr-beta-head {
+            flex-direction: column;
+            gap: 0.8rem;
+          }
+
+          .acwr-beta-title {
+            font-size: 2rem;
+            text-align: center;
+          }
         }
         </style>
         """.replace("__ACWR_BETA_BG__", background),
@@ -277,8 +297,10 @@ def main() -> None:
     st.markdown(
         f"""
         <div class="acwr-beta-hero">
-          {logo_markup}
-          <h1 class="acwr-beta-title">ACWR</h1>
+          <div class="acwr-beta-head">
+            {logo_markup}
+            <h1 class="acwr-beta-title">ACWR</h1>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,

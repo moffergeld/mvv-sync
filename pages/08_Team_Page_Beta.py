@@ -362,8 +362,25 @@ def render_css(page_bg_uri: str = "") -> None:
             width: 84px;
             height: 84px;
             object-fit: contain;
-            margin-bottom: 0.9rem;
+            margin-bottom: 0;
+            flex-shrink: 0;
             filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+          }
+
+          .team-hero-head {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+          }
+
+          .team-hero-copy {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 0.12rem;
+            text-align: left;
           }
 
           .team-kicker {
@@ -372,7 +389,7 @@ def render_css(page_bg_uri: str = "") -> None:
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.18em;
-            margin-bottom: 0.35rem;
+            margin-bottom: 0;
           }
 
           .team-title {
@@ -848,6 +865,15 @@ def render_css(page_bg_uri: str = "") -> None:
               padding: 1.55rem 1rem;
             }
 
+            .team-hero-head {
+              flex-direction: column;
+              gap: 0.8rem;
+            }
+
+            .team-hero-copy {
+              text-align: center;
+            }
+
             .team-title {
               font-size: 2rem;
             }
@@ -1175,9 +1201,13 @@ def render_hero(df: pd.DataFrame) -> None:
         <div class="team-hero-shell">
           <div class="team-hero">
             <div class="team-hero-inner">
-              {logo_markup}
-              <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
-              <h1 class="team-title">Selectieoverzicht</h1>
+              <div class="team-hero-head">
+                {logo_markup}
+                <div class="team-hero-copy">
+                  <h1 class="team-title">Selectieoverzicht</h1>
+                  <div class="team-kicker">MVV Maastricht | Eerste Elftal | Beta</div>
+                </div>
+              </div>
               <div class="team-sub">
                 Overzicht van de selectie met per linie de foto, naam en actuele readiness op basis van de laatste wellnesscheck,
                 aangevuld met RPE, laatste GPS-belasting en ACWR voor de huidige week.

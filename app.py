@@ -126,7 +126,8 @@ def render_home_css() -> None:
 
           .home-brand-shell {
             display: flex;
-            align-items: flex-end;
+            align-items: center;
+            justify-content: center;
             gap: 1rem;
             margin-bottom: 1.2rem;
           }
@@ -139,13 +140,21 @@ def render_home_css() -> None:
             filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
           }
 
+          .home-brand-copy {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 0.12rem;
+            text-align: left;
+          }
+
           .home-brand-kicker {
             color: rgba(255,255,255,0.76);
             font-size: 0.74rem;
             font-weight: 800;
             text-transform: uppercase;
             letter-spacing: 0.18em;
-            margin-bottom: 0.3rem;
+            margin-bottom: 0;
           }
 
           .home-brand-title {
@@ -362,8 +371,12 @@ def render_home_css() -> None:
           @media (max-width: 768px) {
             .home-brand-shell {
               flex-direction: column;
-              align-items: flex-start;
+              align-items: center;
               gap: 0.8rem;
+            }
+
+            .home-brand-copy {
+              text-align: center;
             }
 
             .home-brand-title {
@@ -820,9 +833,9 @@ def render_home_brand() -> None:
         f"""
         <div class="home-brand-shell">
           {logo_markup}
-          <div>
-            <div class="home-brand-kicker">MVV Maastricht | Dashboard | Readiness overview</div>
+          <div class="home-brand-copy">
             <h1 class="home-brand-title">Selectie KPI's</h1>
+            <div class="home-brand-kicker">MVV Maastricht | Dashboard | Readiness overview</div>
           </div>
         </div>
         """,

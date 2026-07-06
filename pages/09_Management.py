@@ -206,8 +206,25 @@ def render_management_css() -> None:
           width: 82px;
           height: 82px;
           object-fit: contain;
-          margin-bottom: 0.9rem;
+          margin-bottom: 0;
+          flex-shrink: 0;
           filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+        }
+
+        .mgmt-hero-head {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          margin-bottom: 1rem;
+        }
+
+        .mgmt-hero-copy {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 0.12rem;
+          text-align: left;
         }
 
         .mgmt-kicker {
@@ -216,7 +233,7 @@ def render_management_css() -> None:
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.18em;
-          margin-bottom: 0.35rem;
+          margin-bottom: 0;
         }
 
         .mgmt-title {
@@ -327,6 +344,15 @@ def render_management_css() -> None:
             padding: 1.55rem 1rem;
           }
 
+          .mgmt-hero-head {
+            flex-direction: column;
+            gap: 0.8rem;
+          }
+
+          .mgmt-hero-copy {
+            text-align: center;
+          }
+
           .mgmt-title {
             font-size: 2rem;
           }
@@ -351,9 +377,13 @@ def render_management_hero(role_ui: str) -> None:
         f"""
         <div class="mgmt-hero-shell">
           <div class="mgmt-hero">
-            {logo_markup}
-            <div class="mgmt-kicker">MVV Maastricht | Management | Staff</div>
-            <h1 class="mgmt-title">Management</h1>
+            <div class="mgmt-hero-head">
+              {logo_markup}
+              <div class="mgmt-hero-copy">
+                <h1 class="mgmt-title">Management</h1>
+                <div class="mgmt-kicker">MVV Maastricht | Management | Staff</div>
+              </div>
+            </div>
             <div class="mgmt-copy">
               Centrale beheeromgeving voor datakwaliteit, GPS import/export en toekomstige instellingen.
               Zo blijven de analysepagina's compact en zitten operationele workflows op een plek.

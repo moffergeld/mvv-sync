@@ -334,8 +334,8 @@ def render_hero(
         st.markdown(
             f"""
             <div class="mvv-beta-shell">
-              <div class="mvv-beta-kicker">MVV Maastricht | Player Experience | Beta</div>
               <h1 class="mvv-beta-title">{player_name}</h1>
+              <div class="mvv-beta-kicker">MVV Maastricht | Player Experience | Beta</div>
               <div class="mvv-beta-sub">
                 Nieuwe branded playeromgeving met snellere focus op readiness, laatste belasting en check-in.
               </div>

@@ -254,8 +254,25 @@ st.markdown(
         width: 82px;
         height: 82px;
         object-fit: contain;
-        margin-bottom: 0.9rem;
+        margin-bottom: 0;
+        flex-shrink: 0;
         filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+    }
+
+    .gps-hero-head {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .gps-hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.12rem;
+        text-align: left;
     }
 
     .gps-kicker {
@@ -264,7 +281,7 @@ st.markdown(
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.18em;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0;
     }
 
     .gps-title {
@@ -410,6 +427,15 @@ st.markdown(
 
         .gps-title {
             font-size: 2rem;
+        }
+
+        .gps-hero-head {
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .gps-hero-copy {
+            text-align: center;
         }
 
         .gps-summary-grid {
@@ -710,9 +736,13 @@ st.markdown(
     f"""
     <div class="gps-hero-shell">
         <div class="gps-hero">
-            {hero_logo_markup}
-            <div class="gps-kicker">MVV Performance Dashboard | GPS Data</div>
-            <div class="gps-title">GPS Data Overview</div>
+            <div class="gps-hero-head">
+                {hero_logo_markup}
+                <div class="gps-hero-copy">
+                    <div class="gps-title">GPS Data Overview</div>
+                    <div class="gps-kicker">MVV Performance Dashboard | GPS Data</div>
+                </div>
+            </div>
             <div class="gps-subtitle">
                 Summary-only analyses voor Session Load, ACWR, FFP en benchmarks.
                 De dataflow blijft gelijk, maar operationele datakwaliteit en import/export zitten nu onder Management.

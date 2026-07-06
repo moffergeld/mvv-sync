@@ -54,8 +54,25 @@ def render_css() -> None:
           width: 78px;
           height: 78px;
           object-fit: contain;
-          margin-bottom: 0.8rem;
+          margin-bottom: 0;
+          flex-shrink: 0;
           filter: drop-shadow(0 8px 22px rgba(0,0,0,0.28));
+        }
+
+        .data-beta-head {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          margin-bottom: 1rem;
+        }
+
+        .data-beta-copyhead {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 0.12rem;
+          text-align: left;
         }
 
         .data-beta-kicker {
@@ -64,7 +81,7 @@ def render_css() -> None:
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.18em;
-          margin-bottom: 0.35rem;
+          margin-bottom: 0;
         }
 
         .data-beta-title {
@@ -179,6 +196,15 @@ def render_css() -> None:
             font-size: 2rem;
           }
 
+          .data-beta-head {
+            flex-direction: column;
+            gap: 0.8rem;
+          }
+
+          .data-beta-copyhead {
+            text-align: center;
+          }
+
           .data-beta-section-head {
             flex-direction: column;
             align-items: flex-start;
@@ -247,9 +273,13 @@ def main() -> None:
     st.markdown(
         f"""
         <div class="data-beta-hero">
-          {logo_markup}
-          <div class="data-beta-kicker">MVV Maastricht | Data Beta | Staff</div>
-          <h1 class="data-beta-title">Data</h1>
+          <div class="data-beta-head">
+            {logo_markup}
+            <div class="data-beta-copyhead">
+              <h1 class="data-beta-title">Data</h1>
+              <div class="data-beta-kicker">MVV Maastricht | Data Beta | Staff</div>
+            </div>
+          </div>
           <div class="data-beta-copy">
             Beta-opzet voor een centrale data-ingang. Vanuit deze pagina kun je straks sneller kiezen
             tussen Session Load, ACWR, FFP, Wellness/RPE en Compare zonder dat alles los in de hoofdstructuur hoeft te staan.
