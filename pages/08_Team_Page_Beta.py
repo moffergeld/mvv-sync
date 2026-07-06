@@ -26,7 +26,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-from roles import get_profile, get_sb, require_auth  # noqa: E402
+from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 
@@ -1394,6 +1394,7 @@ def main() -> None:
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
     access_scope = f"{role}:{profile.get('user_id', 'anon')}"
+    render_sidebar_navigation(profile)
     if role == "player":
         st.info("Deze teamweergave toont alleen spelers waarvoor je app-toegang hebt.")
 
@@ -1428,6 +1429,8 @@ def main() -> None:
 
     with list_tab:
         render_list_view(squad_df)
+
+    render_sidebar_footer(profile)
 
 
 if __name__ == "__main__":

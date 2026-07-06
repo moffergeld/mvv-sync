@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from roles import get_access_token, get_profile, get_sb, is_staff_user, require_auth
+from roles import get_access_token, get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from pages.Subscripts.compare_page_common import (
     apply_metric_view,
     build_compare_chart,
@@ -250,6 +250,7 @@ def main() -> None:
     if not is_staff_user(profile):
         st.error("Geen toegang: deze pagina is alleen voor staff.")
         st.stop()
+    render_sidebar_navigation(profile)
 
     supabase_url = st.secrets.get("SUPABASE_URL", "").strip()
     supabase_anon_key = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
@@ -437,6 +438,8 @@ def main() -> None:
         else:
             st.caption("Geen spelers geselecteerd")
         st.markdown("</div>", unsafe_allow_html=True)
+
+    render_sidebar_footer(profile)
 
     plot_df = build_player_plot_df(
         metric_df,

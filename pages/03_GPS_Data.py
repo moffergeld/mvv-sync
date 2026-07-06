@@ -27,7 +27,7 @@ import pages.Subscripts.gps_data_benchmarks_pages as benchmarks_pages
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 
 from auth_session import ensure_auth_restored, get_sb_client
-from roles import get_profile, is_staff_user
+from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="GPS Data", layout="wide")
@@ -449,6 +449,7 @@ profile = get_profile(sb)
 if not is_staff_user(profile):
     st.error("Geen toegang.")
     st.stop()
+render_sidebar_navigation(profile)
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
@@ -845,3 +846,5 @@ with tab_bench:
         access_token=access_token,
         user_id=st.session_state.get("user_id", ""),
     )
+
+render_sidebar_footer(profile)

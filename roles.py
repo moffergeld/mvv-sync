@@ -56,6 +56,18 @@ REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
 # Kleine settle voor cookie refresh (zet naar 0 als je wil testen)
 COOKIE_SETTLE_SECONDS = 0.10
 
+SIDEBAR_PAGE_LINKS = [
+    ("app.py", "Dashboard"),
+    ("pages/01_Player_Page.py", "Player Page"),
+    ("pages/02_Match_Reports.py", "Match Reports"),
+    ("pages/03_GPS_Data.py", "GPS Data"),
+    ("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE Overview"),
+    ("pages/05_Compare.py", "Compare"),
+    ("pages/07_Player_Page_Beta.py", "Player Page Beta"),
+    ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
+    ("pages/09_Management.py", "Management"),
+]
+
 
 def normalize_role(v: Any) -> str:
     if v is None:
@@ -67,6 +79,11 @@ def normalize_role(v: Any) -> str:
         s = s.split("::")[0]
     s = s.strip()
     return s or "player"
+
+
+def _format_role_label(v: Any) -> str:
+    role = normalize_role(v)
+    return role.replace("_", " ").title()
 
 
 # ============================================================
@@ -106,6 +123,106 @@ def clear_tokens_in_cookie() -> None:
     cm.set("sb_access", "", max_age=1, key="clear_sb_access")
     cm.set("sb_refresh", "", max_age=1, key="clear_sb_refresh")
     cm.set("sb_email", "", max_age=1, key="clear_sb_email")
+
+
+def _sidebar_logout_action() -> None:
+    try:
+        sb = get_sb()
+        if sb is not None:
+            sb.auth.sign_out()
+    except Exception:
+        pass
+    clear_tokens_in_cookie()
+    st.session_state.clear()
+    st.rerun()
+
+
+def _render_sidebar_css() -> None:
+    st.sidebar.markdown(
+        """
+        <style>
+        [data-testid="stSidebarUserContent"] > div {
+          min-height: 100%;
+        }
+
+        [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
+          min-height: 100vh;
+        }
+
+        [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > div:has(.mvv-sidebar-footer-anchor) {
+          margin-top: auto;
+          padding-top: 0.95rem;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+
+        [data-testid="stSidebar"] .mvv-sidebar-nav-label {
+          color: rgba(255,255,255,0.62);
+          font-size: 0.74rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin: 0.1rem 0 0.55rem 0;
+        }
+
+        [data-testid="stSidebar"] div[data-testid="stPageLink"] {
+          margin-bottom: 0.15rem;
+        }
+
+        [data-testid="stSidebar"] div[data-testid="stPageLink"] a,
+        [data-testid="stSidebar"] div[data-testid="stPageLink"] span {
+          border-radius: 8px !important;
+        }
+
+        [data-testid="stSidebar"] .mvv-sidebar-account-copy {
+          color: rgba(255,255,255,0.76);
+          font-size: 0.84rem;
+          line-height: 1.45;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
+    _render_sidebar_css()
+    with st.sidebar:
+        st.markdown('<div class="mvv-sidebar-nav-label">Navigatie</div>', unsafe_allow_html=True)
+        for page_path, label in SIDEBAR_PAGE_LINKS:
+            st.page_link(page_path, label=label)
+
+
+def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: bool = False) -> None:
+    resolved_profile = profile or {}
+    email = str(
+        st.session_state.get("user_email")
+        or resolved_profile.get("email")
+        or ""
+    ).strip() or "--"
+    role_label = _format_role_label(resolved_profile.get("role") or st.session_state.get("role"))
+
+    with st.sidebar:
+        st.markdown('<div class="mvv-sidebar-footer-anchor"></div>', unsafe_allow_html=True)
+        with st.expander("Account info", expanded=False):
+            st.markdown(
+                f"""
+                <div class="mvv-sidebar-account-copy"><strong>Email</strong><br>{email}</div>
+                <div style="height:0.7rem;"></div>
+                <div class="mvv-sidebar-account-copy"><strong>Rol</strong><br>{role_label}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if st.button("Logout", use_container_width=True, key="sidebar_logout_btn"):
+            _sidebar_logout_action()
+
+        if show_debug:
+            with st.expander("Auth debug", expanded=True):
+                cm = cookie_mgr()
+                st.write("session access:", bool(st.session_state.get("access_token")))
+                st.write("cookie access:", bool(cm.get("sb_access")))
+                st.write("cookie refresh:", bool(cm.get("sb_refresh")))
+                st.write("auth_err:", st.session_state.get("auth_err"))
 
 
 # ============================================================

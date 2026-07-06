@@ -25,7 +25,7 @@ from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.wr_common import fetch_active_players_cached
-from roles import get_profile, get_sb, is_staff_user
+from roles import get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
@@ -634,6 +634,7 @@ profile = get_profile(sb) if sb is not None else None
 if not is_staff_user(profile):
     st.error("Geen toegang: deze pagina is alleen voor staff.")
     st.stop()
+render_sidebar_navigation(profile)
 
 access_token = get_access_token()
 if not access_token:
@@ -660,3 +661,5 @@ with tab_import:
 
 with tab_settings:
     render_settings_tab()
+
+render_sidebar_footer(profile)

@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from roles import get_sb, require_auth, get_profile  # noqa: E402
+from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 # -----------------------------
@@ -1143,7 +1143,8 @@ def main() -> None:
         st.error("Supabase client niet beschikbaar.")
         st.stop()
 
-    _ = get_profile(sb)
+    profile = get_profile(sb)
+    render_sidebar_navigation(profile)
 
     matches_df = fetch_matches_rows(limit=1000)
     if matches_df.empty:
@@ -1248,6 +1249,7 @@ def main() -> None:
 
     st.markdown("### Tables")
     render_tables_row(df_phase)
+    render_sidebar_footer(profile)
 
 
 if __name__ == "__main__":

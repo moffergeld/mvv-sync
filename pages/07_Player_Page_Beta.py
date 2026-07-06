@@ -21,7 +21,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
-from roles import get_profile, get_sb, require_auth  # noqa: E402
+from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 from Subscripts.player_tab_data import (  # noqa: E402
     ASRM_COLS,
@@ -456,6 +456,7 @@ def main() -> None:
     role = str(profile.get("role") or "").lower()
     my_player_id = profile.get("player_id")
     cache_scope = f"{role}:{profile.get('user_id', 'anon')}"
+    render_sidebar_navigation(profile)
 
     if role == "player":
         if not my_player_id:
@@ -510,6 +511,8 @@ def main() -> None:
 
     with tabs[2]:
         render_forms_tab(sb, target_player_id)
+
+    render_sidebar_footer(profile)
 
 
 if __name__ == "__main__":

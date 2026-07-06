@@ -15,6 +15,8 @@ from roles import (
     cookie_mgr,
     get_profile,
     get_sb,
+    render_sidebar_footer,
+    render_sidebar_navigation,
     set_tokens_in_cookie,
     try_restore_or_refresh_session,
 )
@@ -449,17 +451,6 @@ def login_ui() -> None:
 
     except Exception as exc:
         st.error(f"Sign in mislukt: {exc}")
-
-
-def logout_button() -> None:
-    if st.button("Logout", use_container_width=True, key="btn_logout"):
-        try:
-            get_sb().auth.sign_out()
-        except Exception:
-            pass
-        clear_tokens_in_cookie()
-        st.session_state.clear()
-        st.rerun()
 
 
 def role_label_for_home(role: str) -> str:
@@ -998,18 +989,12 @@ if not profile:
 
 
 role = str(st.session_state.get("role") or profile.get("role") or "").lower()
-st.sidebar.success(f"Ingelogd: {st.session_state.get('user_email', '')}")
-st.sidebar.info(f"Role: {role}")
-with st.sidebar:
-    logout_button()
+render_sidebar_navigation(profile)
 
 if DIAG_MODE:
-    with st.sidebar.expander("Auth debug", expanded=True):
-        cm = cookie_mgr()
-        st.write("session access:", bool(st.session_state.get("access_token")))
-        st.write("cookie access:", bool(cm.get("sb_access")))
-        st.write("cookie refresh:", bool(cm.get("sb_refresh")))
-        st.write("auth_err:", st.session_state.get("auth_err"))
+    render_sidebar_footer(profile, show_debug=True)
+else:
+    render_sidebar_footer(profile)
 
 maintenance_banner()
 

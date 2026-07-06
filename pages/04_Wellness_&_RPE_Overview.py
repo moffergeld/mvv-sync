@@ -4,7 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
-from roles import require_auth, get_sb, get_profile
+from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth
 from pages.Subscripts.wr_common import fetch_active_players_cached
 from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
@@ -375,6 +375,7 @@ def render_staff_wellness_rpe_page():
 
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
+    render_sidebar_navigation(profile)
 
     # Staff-only
     if role == "player":
@@ -443,6 +444,8 @@ def render_staff_wellness_rpe_page():
 
     with tabs[3]:
         render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
+
+    render_sidebar_footer(profile)
 
 
 if __name__ == "__main__":

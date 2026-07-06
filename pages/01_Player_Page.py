@@ -27,7 +27,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))              # so "roles" works
 
 
-from roles import get_sb, require_auth, get_profile  # noqa: E402
+from roles import get_sb, get_profile, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from Subscripts.player_tab_data import render_data_tab  # noqa: E402
 from Subscripts.player_tab_forms import render_forms_tab  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
@@ -106,6 +106,7 @@ def main():
     profile = get_profile(sb) or {}
     role = str(profile.get("role") or "").lower()
     my_player_id = profile.get("player_id")
+    render_sidebar_navigation(profile)
 
     if role == "player":
         if not my_player_id:
@@ -139,6 +140,8 @@ def main():
 
     with tabs[1]:
         render_forms_tab(sb, target_player_id)
+
+    render_sidebar_footer(profile)
 
 
 if __name__ == "__main__":

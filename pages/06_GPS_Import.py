@@ -18,6 +18,7 @@ from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
 from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
+from roles import render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="GPS Import | MVV Dashboard", layout="wide")
@@ -516,6 +517,7 @@ if role_ui == "player":
     st.stop()
 
 st.session_state["role"] = role_ui
+render_sidebar_navigation({"role": role_ui})
 
 if role_ui not in ALLOWED_IMPORT:
     st.error("Geen rechten voor GPS import/export.")
@@ -637,4 +639,6 @@ if main_page == "Import GPS":
 elif main_page == "Matches":
     st.divider()
     tab_matches_main(access_token=access_token)
+
+render_sidebar_footer({"role": role_ui, "email": email})
 
