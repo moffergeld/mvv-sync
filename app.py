@@ -529,6 +529,7 @@ def current_week_context() -> tuple[int, str]:
 def fetch_active_players_cached(_sb, cache_scope: str = "default") -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     select_variants = [
+        "player_id,full_name,is_active,position",
         'player_id,full_name,is_active,"Position"',
         "player_id,full_name,is_active",
     ]

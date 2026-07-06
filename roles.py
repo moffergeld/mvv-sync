@@ -315,8 +315,17 @@ def is_staff_user(profile: Optional[Dict[str, Any]]) -> bool:
 # PLAYER HELPERS (staff dropdown)
 # ============================================================
 
+def _player_cache_scope() -> str:
+    profile = st.session_state.get("_profile_cache")
+    if not isinstance(profile, dict):
+        profile = {}
+
+    user_id = str(profile.get("user_id") or st.session_state.get("user_id") or "anon")
+    role = normalize_role(profile.get("role") or st.session_state.get("role"))
+    return f"{user_id}:{role}"
+
 @st.cache_data(show_spinner=False, ttl=300)
-def _list_players_cached(_cache_buster: str = "v1") -> List[Dict[str, Any]]:
+def _list_players_cached(access_scope: str, _cache_buster: str = "v2") -> List[Dict[str, Any]]:
     sb = get_sb()
     if sb is None:
         return []
@@ -335,11 +344,11 @@ def _list_players_cached(_cache_buster: str = "v1") -> List[Dict[str, Any]]:
 
 
 def list_players(sb) -> List[Dict[str, Any]]:
-    return _list_players_cached("v1")
+    return _list_players_cached(_player_cache_scope(), "v2")
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _get_player_name_cached(player_id: str, _cache_buster: str = "v1") -> str:
+def _get_player_name_cached(player_id: str, access_scope: str, _cache_buster: str = "v2") -> str:
     sb = get_sb()
     if sb is None:
         return "Onbekend"
@@ -352,7 +361,7 @@ def _get_player_name_cached(player_id: str, _cache_buster: str = "v1") -> str:
 
 
 def get_player_name(sb, player_id: str) -> str:
-    return _get_player_name_cached(str(player_id), "v1")
+    return _get_player_name_cached(str(player_id), _player_cache_scope(), "v2")
 
 
 def pick_target_player(

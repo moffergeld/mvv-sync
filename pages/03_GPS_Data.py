@@ -689,18 +689,22 @@ if not access_token:
     st.error("Niet ingelogd (access_token ontbreekt).")
     st.stop()
 
-u = auth_get_user(access_token)
-st.session_state["user_id"] = u.get("id") or ""
+st.session_state["user_id"] = str(profile.get("user_id") or st.session_state.get("user_id") or "")
 
-calendar_df_all = fetch_calendar_dates_all_cached(access_token)
+try:
+    calendar_df_all = fetch_calendar_dates_all_cached(access_token)
+except Exception as exc:
+    st.error(f"Kon de GPS-kalender niet laden: {exc}")
+    st.stop()
+
 session_days = (
-    int(calendar_df_all["datum"].dropna().nunique())
-    if not calendar_df_all.empty and "datum" in calendar_df_all.columns
+    int(calendar_df_all["Datum"].dropna().nunique())
+    if not calendar_df_all.empty and "Datum" in calendar_df_all.columns
     else 0
 )
 session_types = (
-    int(calendar_df_all["type"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique())
-    if not calendar_df_all.empty and "type" in calendar_df_all.columns
+    int(calendar_df_all["Type"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+    if not calendar_df_all.empty and "Type" in calendar_df_all.columns
     else 0
 )
 summary_cards = [
@@ -775,12 +779,27 @@ with scope_col:
         index=0,
         key="gps_scope",
     )
+
+calendar_df_scope = calendar_df_all.copy()
+if not calendar_df_scope.empty and "Datum" in calendar_df_scope.columns:
+    scope_start, scope_end = _scope_to_dates(scope_key)
+    scope_dates = pd.to_datetime(calendar_df_scope["Datum"], errors="coerce").dt.date
+    if scope_start and scope_end:
+        calendar_df_scope = calendar_df_scope[(scope_dates >= scope_start) & (scope_dates <= scope_end)].copy()
+    calendar_df_scope = calendar_df_scope.dropna(subset=["Datum"]).copy()
+
+scope_session_days = (
+    int(calendar_df_scope["Datum"].dropna().nunique())
+    if not calendar_df_scope.empty and "Datum" in calendar_df_scope.columns
+    else 0
+)
+
 with note_col:
     st.markdown(
         f"""
         <div class="gps-badge-row" style="justify-content:flex-end; margin-top: 1.95rem;">
             <div class="gps-badge">Actieve scope: {scope_key}</div>
-            <div class="gps-badge">{session_days} sessiedagen in de kalender</div>
+            <div class="gps-badge">{scope_session_days} sessiedagen in scope</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -794,27 +813,31 @@ tab_session, tab_acwr, tab_ffp, tab_bench = st.tabs(
 # Session Load
 # --------------------------------------------------
 with tab_session:
-    with st.spinner(f"Summary data laden ({scope_key})..."):
-        df_scope = fetch_summary_scope_cached(access_token, scope_key)
+    try:
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_summary_scope_cached(access_token, scope_key)
+    except Exception as exc:
+        st.error(f"Kon Session Load data niet laden: {exc}")
+        df_scope = pd.DataFrame()
 
     if df_scope.empty:
         st.info("Geen Summary GPS data gevonden in deze scope.")
     else:
-        def _fetch_day(day_iso: str) -> pd.DataFrame:
-            return fetch_summary_day_cached(access_token, day_iso)
-
         session_load_pages.session_load_pages_main(
             df_gps_scope=df_scope,
-            calendar_df_all=calendar_df_all,
-            fetch_day_fn=_fetch_day,
+            calendar_df_all=calendar_df_scope,
         )
 
 # --------------------------------------------------
 # ACWR
 # --------------------------------------------------
 with tab_acwr:
-    with st.spinner(f"Summary data laden ({scope_key})..."):
-        df_scope = fetch_summary_scope_cached(access_token, scope_key)
+    try:
+        with st.spinner(f"Summary data laden ({scope_key})..."):
+            df_scope = fetch_summary_scope_cached(access_token, scope_key)
+    except Exception as exc:
+        st.error(f"Kon ACWR data niet laden: {exc}")
+        df_scope = pd.DataFrame()
 
     if df_scope.empty:
         st.info("Geen Summary GPS data gevonden in deze scope.")
@@ -825,8 +848,12 @@ with tab_acwr:
 # FFP
 # --------------------------------------------------
 with tab_ffp:
-    with st.spinner("FFP: Summary data laden (ALLES)..."):
-        df_ffp_all = fetch_summary_all_cached(access_token)
+    try:
+        with st.spinner("FFP: Summary data laden (ALLES)..."):
+            df_ffp_all = fetch_summary_all_cached(access_token)
+    except Exception as exc:
+        st.error(f"Kon FFP data niet laden: {exc}")
+        df_ffp_all = pd.DataFrame()
 
     if df_ffp_all.empty:
         st.info("Geen Summary GPS data gevonden.")

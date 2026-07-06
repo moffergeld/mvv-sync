@@ -19,11 +19,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-
-try:
-    from supabase import create_client  # type: ignore
-except Exception:
-    create_client = None
+from roles import get_sb
 
 
 # ------------------------------------------------------------
@@ -31,6 +27,7 @@ except Exception:
 # ------------------------------------------------------------
 SWEET_SPOT_LOW = 0.80
 SWEET_SPOT_HIGH = 1.30
+AMBER_SPOT_HIGH = 1.50
 
 COL_WEEK = "Week"
 COL_YEAR = "Year"
@@ -64,16 +61,8 @@ DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerload2D
 # ------------------------------------------------------------
 # SUPABASE
 # ------------------------------------------------------------
-@st.cache_resource(show_spinner=False)
 def _get_supabase_client():
-    if create_client is None:
-        return None
-    try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_ANON_KEY"]
-        return create_client(url, key)
-    except Exception:
-        return None
+    return get_sb()
 
 
 def _sb_auth_if_possible(sb):
@@ -88,7 +77,7 @@ def _sb_auth_if_possible(sb):
 
 
 @st.cache_data(show_spinner=False, ttl=30)
-def sb_get_thresholds_cached(team: str, week_key: int) -> pd.DataFrame:
+def sb_get_thresholds_cached(team: str, week_key: int, access_scope: str) -> pd.DataFrame:
     sb = _get_supabase_client()
     _sb_auth_if_possible(sb)
 
@@ -110,7 +99,7 @@ def sb_get_thresholds_cached(team: str, week_key: int) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False, ttl=30)
-def sb_saved_week_keys_cached(team: str) -> set[int]:
+def sb_saved_week_keys_cached(team: str, access_scope: str) -> set[int]:
     sb = _get_supabase_client()
     _sb_auth_if_possible(sb)
 
@@ -198,6 +187,16 @@ def ratios_from_threshold_df(
             hi = float(hi) if pd.notna(hi) else float(fallback_high)
             out[m] = (lo, hi)
     return out
+
+
+def _acwr_cache_scope() -> str:
+    profile = st.session_state.get("_profile_cache")
+    if not isinstance(profile, dict):
+        profile = {}
+
+    user_id = str(profile.get("user_id") or st.session_state.get("user_id") or "anon")
+    role = str(profile.get("role") or st.session_state.get("role") or "unknown")
+    return f"{user_id}:{role}"
 
 
 # ------------------------------------------------------------
@@ -437,7 +436,7 @@ def line_chart_acwr(
     y_vals = df_plot[acwr_col].astype(float).tolist()
 
     max_val = float(np.nanmax(y_vals)) if len(y_vals) else 1.0
-    max_y = max(1.6, max_val * 1.10)
+    max_y = max(1.8, AMBER_SPOT_HIGH + 0.1, max_val * 1.10)
 
     fig = go.Figure()
     fig.add_trace(
@@ -453,7 +452,8 @@ def line_chart_acwr(
 
     fig.add_hrect(y0=0.0, y1=SWEET_SPOT_LOW, line_width=0, fillcolor="#8B0000", opacity=0.25, layer="below")
     fig.add_hrect(y0=SWEET_SPOT_LOW, y1=SWEET_SPOT_HIGH, line_width=0, fillcolor="#006400", opacity=0.30, layer="below")
-    fig.add_hrect(y0=SWEET_SPOT_HIGH, y1=max_y, line_width=0, fillcolor="#8B0000", opacity=0.25, layer="below")
+    fig.add_hrect(y0=SWEET_SPOT_HIGH, y1=AMBER_SPOT_HIGH, line_width=0, fillcolor="#D97706", opacity=0.28, layer="below")
+    fig.add_hrect(y0=AMBER_SPOT_HIGH, y1=max_y, line_width=0, fillcolor="#8B0000", opacity=0.25, layer="below")
     fig.add_hline(y=1.0, line_dash="dot", line_width=1)
 
     if highlight_week is not None:
@@ -696,6 +696,7 @@ def _build_target_table(dfs_for_table: List[Tuple[str, pd.DataFrame]]) -> pd.Dat
 def acwr_pages_main(df_gps: pd.DataFrame):
     sb = _get_supabase_client()
     _sb_auth_if_possible(sb)
+    access_scope = _acwr_cache_scope()
 
     metrics = detect_metrics_from_gps(df_gps)
     if not metrics:
@@ -779,6 +780,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
     # ========================================================
     with tab_dashboard:
         st.header("ACWR Dashboard")
+        st.caption("Zones: rood < 0.80, groen 0.80-1.30, amber 1.30-1.50, rood > 1.50.")
 
         c1, c2 = st.columns([1.1, 1.9])
         with c1:
@@ -839,7 +841,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         if not thr_params:
             st.warning("Kies minimaal 1 parameter in de sidebar.")
         else:
-            saved_keys = sb_saved_week_keys_cached(team)
+            saved_keys = sb_saved_week_keys_cached(team, access_scope)
 
             if not df_weeks.empty:
                 max_wk = int(df_weeks["week_key"].astype(int).max())
@@ -968,7 +970,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         if not tvw_params:
             st.warning("Kies minimaal 1 parameter in de sidebar.")
         else:
-            saved_keys = sb_saved_week_keys_cached(team)
+            saved_keys = sb_saved_week_keys_cached(team, access_scope)
             options, opt_to_key, key_to_label = build_week_options(df_weeks, saved_keys) if not df_weeks.empty else ({}, {}, {})
 
             if not options:
@@ -1018,7 +1020,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                 elif tvw_low > tvw_high:
                     st.error("Fallback low mag niet groter zijn dan fallback high.")
                 else:
-                    df_thr_week = sb_get_thresholds_cached(team=team, week_key=tvw_week_key)
+                    df_thr_week = sb_get_thresholds_cached(team=team, week_key=tvw_week_key, access_scope=access_scope)
                     ratios_by_metric = ratios_from_threshold_df(df_thr_week, tvw_params, tvw_low, tvw_high)
 
                     targets_players = _compute_player_targets(df_weekly, tvw_params, ratios_by_metric)
