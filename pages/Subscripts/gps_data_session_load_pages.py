@@ -96,6 +96,12 @@ def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> da
     sel_key = f"{key_prefix}_selected"
     if sel_key not in st.session_state:
         st.session_state[sel_key] = days[-1]
+    else:
+        current_value = st.session_state.get(sel_key)
+        if current_value is None or current_value < days[0]:
+            st.session_state[sel_key] = days[0]
+        elif current_value > days[-1]:
+            st.session_state[sel_key] = days[-1]
 
     picked = st.date_input(
         "Datum",
@@ -106,6 +112,10 @@ def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> da
     )
     st.session_state[sel_key] = picked
     return picked
+
+
+def pick_day_from_calendar(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
+    return _pick_day_dateinput(df_calendar, key_prefix=key_prefix)
 
 
 def _session_types_for_day(df: pd.DataFrame, selected_day: date) -> list[str]:
@@ -457,13 +467,15 @@ def session_load_pages_main(
     df_gps_scope: pd.DataFrame,
     calendar_df_all: Optional[pd.DataFrame] = None,
     fetch_day_fn: Optional[Callable[[str], pd.DataFrame]] = None,
+    selected_day: Optional[date] = None,
 ):
     _card_title("Session Load", "Dagselectie, teamvergelijking en loadverdeling per speler.")
 
     cal_df = calendar_df_all if calendar_df_all is not None else df_gps_scope
 
-    with st.expander("Kalender", expanded=True):
-        selected_day = _pick_day_dateinput(cal_df, key_prefix="sl")
+    if selected_day is None:
+        with st.expander("Kalender", expanded=True):
+            selected_day = _pick_day_dateinput(cal_df, key_prefix="sl")
 
     st.caption(f"Geselecteerd: {selected_day.strftime('%d-%m-%Y')}")
 

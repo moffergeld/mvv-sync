@@ -66,6 +66,20 @@ def render_css() -> None:
           margin-bottom: 1rem;
         }
 
+        .session-load-beta-filter-label {
+          color: rgba(255,255,255,0.92);
+          font-size: 0.92rem;
+          font-weight: 700;
+          margin-bottom: 0.35rem;
+        }
+
+        .session-load-beta-filter-help {
+          color: rgba(255,255,255,0.62);
+          font-size: 0.78rem;
+          line-height: 1.4;
+          margin-top: 0.35rem;
+        }
+
         .session-load-beta-logo {
           width: 78px;
           height: 78px;
@@ -396,12 +410,23 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    scope_key = st.selectbox(
-        "Data scope (Summary-only)",
-        options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-        index=0,
-        key="session_load_beta_scope",
-    )
+    scope_col, calendar_col = st.columns(2, gap="large")
+    with scope_col:
+        st.markdown(
+            '<div class="session-load-beta-filter-label">Data scope (Summary-only)</div>',
+            unsafe_allow_html=True,
+        )
+        scope_key = st.selectbox(
+            "Data scope (Summary-only)",
+            options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+            index=0,
+            key="session_load_beta_scope",
+            label_visibility="collapsed",
+        )
+        st.markdown(
+            '<div class="session-load-beta-filter-help">Bepaalt welke Summary-periode actief is voor Session Load.</div>',
+            unsafe_allow_html=True,
+        )
 
     try:
         with st.spinner(f"Summary data laden ({scope_key})..."):
@@ -417,6 +442,17 @@ def main() -> None:
         if not calendar_df_scope.empty and "Datum" in calendar_df_scope.columns
         else 0
     )
+    with calendar_col:
+        st.markdown(
+            '<div class="session-load-beta-filter-label">Kalender</div>',
+            unsafe_allow_html=True,
+        )
+        selected_day = session_load_pages.pick_day_from_calendar(calendar_df_scope, key_prefix="sl_beta_hero")
+        st.markdown(
+            '<div class="session-load-beta-filter-help">Kies hier direct de trainingsdag binnen de actieve scope.</div>',
+            unsafe_allow_html=True,
+        )
+
     st.markdown(
         f"""
         <div class="session-load-beta-panel">
@@ -443,6 +479,7 @@ def main() -> None:
             df_gps_scope=df_scope,
             calendar_df_all=calendar_df_scope,
             fetch_day_fn=lambda day_iso: fetch_summary_day_cached(str(token), day_iso),
+            selected_day=selected_day,
         )
 
     render_sidebar_footer(profile)
