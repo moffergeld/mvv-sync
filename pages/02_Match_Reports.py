@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import sys
 from datetime import date
 from pathlib import Path
@@ -1073,6 +1074,19 @@ def render_match_header(match_row: pd.Series) -> None:
     right_logo = _logo_path_for_team(right_team)
 
     title_line = fixture or f"{left_team} - {right_team}"
+    chip_labels = [
+        str(home_away or "").strip(),
+        str(match_bucket or match_type or MATCH_FILTER_REGULAR or "").strip(),
+    ]
+    if match_type and match_type != match_bucket:
+        chip_labels.append(str(match_type).strip())
+    if season:
+        chip_labels.append(str(season).strip())
+    chips_markup = "".join(
+        f'<span class="mr-chip">{html.escape(label)}</span>'
+        for label in chip_labels
+        if label
+    )
 
     st.markdown('<div class="mr-hero">', unsafe_allow_html=True)
 
@@ -1090,10 +1104,7 @@ def render_match_header(match_row: pd.Series) -> None:
               <div class="mr-title">{title_line}</div>
               <div class="mr-score">{score_txt}</div>
               <div class="mr-chip-row">
-                <span class="mr-chip">{home_away}</span>
-                <span class="mr-chip">{match_bucket or match_type or MATCH_FILTER_REGULAR}</span>
-                {'<span class="mr-chip">' + match_type + '</span>' if match_type and match_type != match_bucket else ''}
-                <span class="mr-chip">{season}</span>
+                {chips_markup}
               </div>
             </div>
             """,
