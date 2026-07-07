@@ -422,6 +422,13 @@ st.markdown(
         color: rgba(20, 7, 10, 0.72) !important;
       }
 
+      .mvv-bulk-shared-title {
+        margin: 0.1rem 0 0.45rem 0;
+        font-size: 1rem;
+        font-weight: 900;
+        color: var(--mvv-deep) !important;
+      }
+
       .mvv-load-pill {
         margin: 0.6rem 0 0.35rem 0;
         padding: 0.72rem 0.85rem;
@@ -1671,88 +1678,99 @@ def render_bulk_rpe_page(sb) -> None:
         st.info("Geen spelers om RPE in te vullen.")
         return
 
-    bulk_entries: List[Dict[str, Any]] = []
+    shared_duration_key = "tablet_bulk_rpe_dur_shared"
     with st.form("tablet_bulk_rpe_form", clear_on_submit=False):
-        cols = st.columns(2, gap="large")
-        for idx, player in enumerate(ready_players):
+        st.markdown('<div class="mvv-bulk-shared-title">Minuten voor alle spelers</div>', unsafe_allow_html=True)
+        shared_duration = st.radio(
+            "Minuten voor alle spelers",
+            options=RPE_DURATION_OPTIONS,
+            index=RPE_DURATION_OPTIONS.index(RPE_BULK_DURATION_DEFAULT),
+            format_func=lambda value: str(value),
+            horizontal=True,
+            label_visibility="collapsed",
+            key=shared_duration_key,
+        )
+
+        for player in ready_players:
             player_id = str(player["player_id"])
             player_name = str(player["full_name"])
-            with cols[idx % 2]:
+            row_name_col, row_slider_col = st.columns([1.3, 3.2], gap="large")
+            with row_name_col:
                 st.markdown(
                     f'<div class="mvv-bulk-player-name">{html.escape(player_name)}</div>'
-                    '<div class="mvv-bulk-player-note">Snelle RPE voor 1 sessie.</div>',
+                    '<div class="mvv-bulk-player-note">RPE invoer</div>',
                     unsafe_allow_html=True,
                 )
-                st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
-                duration_value = st.radio(
-                    f"Duration (min) {player_name}",
-                    options=RPE_DURATION_OPTIONS,
-                    index=RPE_DURATION_OPTIONS.index(RPE_BULK_DURATION_DEFAULT),
-                    format_func=lambda value: str(value),
-                    horizontal=True,
-                    label_visibility="collapsed",
-                    key=f"tablet_bulk_rpe_dur_{player_id}",
-                )
-                rpe_value = st.slider(
+            with row_slider_col:
+                st.slider(
                     f"RPE (1-10) {player_name}",
                     1,
                     10,
                     value=5,
                     key=f"tablet_bulk_rpe_rpe_{player_id}",
                 )
-                bulk_entries.append(
-                    {
-                        "player_id": player_id,
-                        "player_name": player_name,
-                        "duration_min": int(duration_value),
-                        "rpe": int(rpe_value),
-                    }
-                )
-                st.divider()
+            st.divider()
 
         bulk_submit = st.form_submit_button("RPE voor alle zichtbare spelers opslaan", use_container_width=True)
 
     if bulk_submit:
         try:
             saved_count = 0
-            for entry in bulk_entries:
-                sessions_payload = [
-                    {
-                        "session_index": 1,
-                        "duration_min": int(entry["duration_min"]),
-                        "rpe": int(entry["rpe"]),
-                    }
-                ]
-                saved_rpe_entry_id = save_rpe_tablet(
-                    sb,
-                    player_id=entry["player_id"],
-                    entry_date=entry_date,
-                    injury=False,
-                    injury_type=None,
-                    injury_pain=None,
-                    notes="",
-                    sessions=sessions_payload,
-                    existing_rpe_entry_id=None,
-                )
-                set_cached_rpe_detail(
-                    entry["player_id"],
-                    entry_date,
-                    {
-                        "id": saved_rpe_entry_id,
-                        "player_id": entry["player_id"],
-                        "entry_date": entry_date_iso,
-                        "injury": False,
-                        "injury_type": None,
-                        "injury_pain": None,
-                        "notes": "",
-                    },
-                    sessions_payload,
-                )
-                update_cached_daily_completion(sb, entry["player_id"], entry_date_iso, has_rpe=True)
-                saved_count += 1
+            failed_players: List[str] = []
+            shared_duration_value = int(shared_duration)
+            for player in ready_players:
+                player_id = str(player["player_id"])
+                player_name = str(player["full_name"])
+                rpe_value = int(st.session_state.get(f"tablet_bulk_rpe_rpe_{player_id}", 5) or 5)
+                try:
+                    sessions_payload = [
+                        {
+                            "session_index": 1,
+                            "duration_min": shared_duration_value,
+                            "rpe": rpe_value,
+                        }
+                    ]
+                    saved_rpe_entry_id = save_rpe_tablet(
+                        sb,
+                        player_id=player_id,
+                        entry_date=entry_date,
+                        injury=False,
+                        injury_type=None,
+                        injury_pain=None,
+                        notes="",
+                        sessions=sessions_payload,
+                        existing_rpe_entry_id=None,
+                    )
+                    set_cached_rpe_detail(
+                        player_id,
+                        entry_date,
+                        {
+                            "id": saved_rpe_entry_id,
+                            "player_id": player_id,
+                            "entry_date": entry_date_iso,
+                            "injury": False,
+                            "injury_type": None,
+                            "injury_pain": None,
+                            "notes": "",
+                        },
+                        sessions_payload,
+                    )
+                    update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe=True)
+                    saved_count += 1
+                except Exception as player_exc:
+                    failed_players.append(f"{player_name} ({player_exc})")
 
-            st.session_state["tablet_flash"] = f"RPE opgeslagen voor {saved_count} spelers."
-            st.rerun()
+            if failed_players:
+                if saved_count:
+                    st.warning(
+                        "RPE opgeslagen voor "
+                        f"{saved_count} spelers, maar niet voor: {', '.join(failed_players)}"
+                    )
+                else:
+                    st.error(f"Opslaan faalde voor: {', '.join(failed_players)}")
+            else:
+                st.session_state["tablet_flash"] = f"RPE opgeslagen voor {saved_count} spelers."
+                st.rerun()
         except Exception as exc:
             st.error(f"Opslaan faalde: {exc}")
 
