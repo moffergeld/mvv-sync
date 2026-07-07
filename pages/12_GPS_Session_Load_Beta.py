@@ -48,7 +48,7 @@ def render_css() -> None:
           padding-bottom: 2rem;
         }
 
-        .session-load-beta-hero,
+        div[data-testid="stVerticalBlock"]:has(.session-load-beta-hero-anchor),
         .session-load-beta-panel {
           border-radius: 10px;
           border: 1px solid rgba(255,255,255,0.08);
@@ -56,8 +56,12 @@ def render_css() -> None:
           box-shadow: 0 18px 34px rgba(0, 0, 0, 0.22);
         }
 
-        .session-load-beta-hero {
+        div[data-testid="stVerticalBlock"]:has(.session-load-beta-hero-anchor) {
           padding: 1.75rem 1.55rem;
+          margin-bottom: 1rem;
+        }
+
+        .session-load-beta-hero {
           margin-bottom: 1rem;
         }
 
@@ -71,13 +75,6 @@ def render_css() -> None:
           font-size: 0.92rem;
           font-weight: 700;
           margin-bottom: 0.35rem;
-        }
-
-        .session-load-beta-filter-help {
-          color: rgba(255,255,255,0.62);
-          font-size: 0.78rem;
-          line-height: 1.4;
-          margin-top: 0.35rem;
         }
 
         .session-load-beta-logo {
@@ -144,36 +141,6 @@ def render_css() -> None:
           margin-top: 1rem;
         }
 
-        .session-load-beta-panel-head {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          gap: 1rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .session-load-beta-panel-kicker {
-          color: rgba(255,255,255,0.62);
-          font-size: 0.75rem;
-          font-weight: 800;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-        }
-
-        .session-load-beta-panel-title {
-          margin-top: 0.25rem;
-          color: #ffffff;
-          font-size: 1.05rem;
-          font-weight: 700;
-        }
-
-        .session-load-beta-panel-note {
-          color: rgba(255,255,255,0.78);
-          font-size: 0.88rem;
-          font-weight: 700;
-          text-align: right;
-        }
-
         @media (max-width: 768px) {
           .session-load-beta-head {
             flex-direction: column;
@@ -185,13 +152,8 @@ def render_css() -> None:
             text-align: center;
           }
 
-          .session-load-beta-panel-head {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-
-          .session-load-beta-panel-note {
-            text-align: left;
+          div[data-testid="stVerticalBlock"]:has(.session-load-beta-hero-anchor) {
+            padding: 1.35rem 1rem;
           }
         }
         </style>
@@ -398,35 +360,34 @@ def main() -> None:
         if TEAM_LOGO_URI
         else ""
     )
-    st.markdown(
-        f"""
-        <div class="session-load-beta-hero">
-          <div class="session-load-beta-head">
-            {logo_markup}
-            <h1 class="session-load-beta-title">Session Load</h1>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    hero_shell = st.container()
+    with hero_shell:
+        st.markdown('<div class="session-load-beta-hero-anchor"></div>', unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class="session-load-beta-hero">
+              <div class="session-load-beta-head">
+                {logo_markup}
+                <h1 class="session-load-beta-title">Session Load</h1>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    scope_col, calendar_col = st.columns(2, gap="large")
-    with scope_col:
-        st.markdown(
-            '<div class="session-load-beta-filter-label">Data scope (Summary-only)</div>',
-            unsafe_allow_html=True,
-        )
-        scope_key = st.selectbox(
-            "Data scope (Summary-only)",
-            options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
-            index=0,
-            key="session_load_beta_scope",
-            label_visibility="collapsed",
-        )
-        st.markdown(
-            '<div class="session-load-beta-filter-help">Bepaalt welke Summary-periode actief is voor Session Load.</div>',
-            unsafe_allow_html=True,
-        )
+        scope_col, calendar_col = st.columns(2, gap="large")
+        with scope_col:
+            st.markdown(
+                '<div class="session-load-beta-filter-label">Data scope (Summary-only)</div>',
+                unsafe_allow_html=True,
+            )
+            scope_key = st.selectbox(
+                "Data scope (Summary-only)",
+                options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
+                index=0,
+                key="session_load_beta_scope",
+                label_visibility="collapsed",
+            )
 
     try:
         with st.spinner(f"Summary data laden ({scope_key})..."):
@@ -437,40 +398,12 @@ def main() -> None:
         df_scope = pd.DataFrame()
         calendar_df_scope = pd.DataFrame()
 
-    session_days = (
-        int(calendar_df_scope["Datum"].dropna().nunique())
-        if not calendar_df_scope.empty and "Datum" in calendar_df_scope.columns
-        else 0
-    )
     with calendar_col:
         st.markdown(
             '<div class="session-load-beta-filter-label">Kalender</div>',
             unsafe_allow_html=True,
         )
         selected_day = session_load_pages.pick_day_from_calendar(calendar_df_scope, key_prefix="sl_beta_hero")
-        st.markdown(
-            '<div class="session-load-beta-filter-help">Kies hier direct de trainingsdag binnen de actieve scope.</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        f"""
-        <div class="session-load-beta-panel">
-          <div class="session-load-beta-panel-head">
-            <div>
-              <div class="session-load-beta-panel-kicker">Scope</div>
-              <div class="session-load-beta-panel-title">Actieve Summary-periode voor Session Load</div>
-            </div>
-            <div class="session-load-beta-panel-note">{session_days} sessiedagen in scope</div>
-          </div>
-          <div class="session-load-beta-badge-row">
-            <span class="session-load-beta-badge">Actieve scope: {scope_key}</span>
-            <span class="session-load-beta-badge">Sessie-filter voor dubbele trainingen actief</span>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     if df_scope.empty:
         st.info("Geen Summary GPS data gevonden in deze scope.")

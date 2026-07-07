@@ -91,7 +91,12 @@ def _available_days(df_calendar: pd.DataFrame) -> list[date]:
 def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> date:
     days = _available_days(df_calendar)
     if not days:
-        return st.date_input("Datum", value=date.today(), key=f"{key_prefix}_date_input_empty")
+        return st.date_input(
+            "Kalenderdatum",
+            value=date.today(),
+            key=f"{key_prefix}_date_input_empty",
+            label_visibility="collapsed",
+        )
 
     sel_key = f"{key_prefix}_selected"
     if sel_key not in st.session_state:
@@ -104,11 +109,12 @@ def _pick_day_dateinput(df_calendar: pd.DataFrame, key_prefix: str = "sl") -> da
             st.session_state[sel_key] = days[-1]
 
     picked = st.date_input(
-        "Datum",
+        "Kalenderdatum",
         value=st.session_state[sel_key],
         min_value=days[0],
         max_value=days[-1],
         key=f"{key_prefix}_date_input",
+        label_visibility="collapsed",
     )
     st.session_state[sel_key] = picked
     return picked
@@ -469,8 +475,6 @@ def session_load_pages_main(
     fetch_day_fn: Optional[Callable[[str], pd.DataFrame]] = None,
     selected_day: Optional[date] = None,
 ):
-    _card_title("Session Load", "Dagselectie, teamvergelijking en loadverdeling per speler.")
-
     cal_df = calendar_df_all if calendar_df_all is not None else df_gps_scope
 
     if selected_day is None:
