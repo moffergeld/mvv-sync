@@ -897,7 +897,7 @@ st.markdown(
       }
 
       .mvv-player-next-rpe {
-        color: var(--mvv-gold) !important;
+        color: #a96f14 !important;
       }
 
       .mvv-player-next-ok {
