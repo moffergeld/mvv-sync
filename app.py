@@ -12,8 +12,11 @@ import streamlit as st
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores
 from roles import (
+    consume_login_notice,
     clear_tokens_in_cookie,
+    clear_auth_state,
     cookie_mgr,
+    ensure_valid_session,
     get_profile,
     get_sb,
     render_sidebar_footer,
@@ -991,19 +994,20 @@ try:
 except Exception:
     pass
 
+login_notice = consume_login_notice()
+if login_notice:
+    st.warning(login_notice)
 
-if "access_token" not in st.session_state:
-    restored = try_restore_or_refresh_session(sb)
-    if not restored:
-        login_ui()
-        st.stop()
+if not ensure_valid_session(sb):
+    login_ui()
+    st.stop()
 
 
 profile = get_profile(sb)
 if not profile:
-    clear_tokens_in_cookie()
-    st.session_state.clear()
-    st.error("Geen profiel gevonden of geen rechten. Log opnieuw in.")
+    clear_auth_state(clear_cookies=True)
+    st.warning("Geen profiel gevonden of geen rechten. Log opnieuw in.")
+    login_ui()
     st.stop()
 
 

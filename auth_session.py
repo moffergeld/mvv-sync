@@ -16,7 +16,7 @@ from roles import (
     cookie_mgr,
     set_tokens_in_cookie,
     clear_tokens_in_cookie,
-    try_restore_or_refresh_session,
+    ensure_valid_session,
 )
 
 
@@ -26,8 +26,11 @@ def ensure_auth_restored(sb=None) -> Tuple[bool, Optional[str]]:
     """
     if sb is None:
         sb = get_sb_client()
-    ok = try_restore_or_refresh_session(sb)
+    ok = ensure_valid_session(sb)
     token = st.session_state.get("access_token")
+    if not token:
+        sess = st.session_state.get("sb_session")
+        token = getattr(sess, "access_token", None) if sess is not None else None
     return bool(ok and token), (str(token) if token else None)
 
 

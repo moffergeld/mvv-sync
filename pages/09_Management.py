@@ -14,7 +14,7 @@ from acwr_settings import (
 from pages.Subscripts.gps_import_common import (
     ALLOWED_IMPORT,
     SUPABASE_URL,
-    get_access_token,
+    require_access_token,
     get_players_map,
     get_profile_role,
     rest_headers,
@@ -25,7 +25,7 @@ from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.wr_common import fetch_active_players_cached
-from roles import get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation
+from roles import get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
@@ -659,6 +659,7 @@ def render_settings_tab() -> None:
 
 render_management_css()
 
+require_auth()
 sb = get_sb()
 profile = get_profile(sb) if sb is not None else None
 if not is_staff_user(profile):
@@ -666,10 +667,7 @@ if not is_staff_user(profile):
     st.stop()
 render_sidebar_navigation(profile)
 
-access_token = get_access_token()
-if not access_token:
-    st.error("Niet ingelogd (access_token ontbreekt).")
-    st.stop()
+access_token = require_access_token()
 
 try:
     _, _, role, _ = get_profile_role(access_token)

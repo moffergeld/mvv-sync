@@ -19,6 +19,7 @@ import streamlit as st
 
 # ✅ auth restore helpers (jij hebt auth_session.py al toegevoegd)
 from auth_session import ensure_auth_restored, get_sb_client
+from roles import redirect_to_login
 
 # Excel engine check (Streamlit Cloud must have openpyxl in requirements.txt)
 try:
@@ -148,6 +149,28 @@ def require_access_token() -> str:
         except Exception:
             pass
         st.stop()
+    return tok
+
+
+def get_access_token() -> str | None:
+    """
+    Gevalideerde token-opvraag voor import/management flows.
+    Controleert eerst of de sessie nog geldig is en herstelt anders via cookies.
+    """
+    try:
+        sb = get_sb_client()
+        ok, tok = ensure_auth_restored(sb)
+        if ok and tok:
+            return str(tok)
+    except Exception:
+        pass
+    return None
+
+
+def require_access_token() -> str:
+    tok = get_access_token()
+    if not tok:
+        redirect_to_login("Sessie verlopen. Log opnieuw in.", clear_cookies=True)
     return tok
 
 

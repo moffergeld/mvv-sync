@@ -70,6 +70,7 @@ SIDEBAR_BETA_PAGE_LINKS = [
     ("pages/07_Player_Page_Beta.py", "Player Page Beta"),
     ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
 ]
+LOGIN_PAGE_PATH = "app.py"
 
 
 def normalize_role(v: Any) -> str:
@@ -128,6 +129,41 @@ def clear_tokens_in_cookie() -> None:
     cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
+def clear_auth_state(clear_cookies: bool = False) -> None:
+    for key in (
+        "access_token",
+        "sb_session",
+        "_profile_cache",
+        "role",
+        "player_id",
+        "user_id",
+        "_sb_client",
+        "auth_err",
+    ):
+        st.session_state.pop(key, None)
+    if clear_cookies:
+        clear_tokens_in_cookie()
+
+
+def redirect_to_login(message: str = "Sessie verlopen. Log opnieuw in.", clear_cookies: bool = False) -> None:
+    clear_auth_state(clear_cookies=clear_cookies)
+    if message:
+        st.session_state["_login_notice"] = message
+    try:
+        st.switch_page(LOGIN_PAGE_PATH)
+    except Exception:
+        if message:
+            st.error(message)
+    st.stop()
+
+
+def consume_login_notice() -> Optional[str]:
+    notice = st.session_state.pop("_login_notice", None)
+    if notice is None:
+        return None
+    return str(notice)
+
+
 def _sidebar_logout_action() -> None:
     try:
         sb = get_sb()
@@ -135,9 +171,7 @@ def _sidebar_logout_action() -> None:
             sb.auth.sign_out()
     except Exception:
         pass
-    clear_tokens_in_cookie()
-    st.session_state.clear()
-    st.rerun()
+    redirect_to_login("Je bent uitgelogd.", clear_cookies=True)
 
 
 def _render_sidebar_css() -> None:
@@ -353,23 +387,40 @@ def try_restore_or_refresh_session(sb=None) -> bool:
     return False
 
 
+def ensure_valid_session(sb=None) -> bool:
+    if sb is None:
+        sb = get_sb()
+    if sb is None:
+        st.session_state["auth_err"] = "Supabase client niet beschikbaar"
+        return False
+
+    token = _get_access_token_from_state()
+    if token:
+        try:
+            _set_postgrest_auth_safely(sb, token)
+            user_resp = sb.auth.get_user(token)
+            user = getattr(user_resp, "user", None)
+            if user is not None and getattr(user, "id", None):
+                st.session_state["access_token"] = token
+                st.session_state["user_id"] = str(user.id)
+                return True
+        except Exception as exc:
+            st.session_state["auth_err"] = str(exc)
+        clear_auth_state(clear_cookies=False)
+
+    ok = try_restore_or_refresh_session(sb)
+    return bool(ok and _get_access_token_from_state())
+
+
 # ============================================================
 # AUTH GATE
 # ============================================================
 
 def require_auth() -> None:
-    token = _get_access_token_from_state()
-    if token:
-        st.session_state["access_token"] = token
-        return
-
     sb = get_sb()
-    ok = try_restore_or_refresh_session(sb)
-    if ok and _get_access_token_from_state():
+    if ensure_valid_session(sb):
         return
-
-    st.error("Niet ingelogd.")
-    st.stop()
+    redirect_to_login("Sessie verlopen. Log opnieuw in.", clear_cookies=True)
 
 
 def get_access_token() -> str:

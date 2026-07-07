@@ -10,7 +10,7 @@ import streamlit as st
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.gps_import_common import (
     ALLOWED_IMPORT,
-    get_access_token,
+    require_access_token,
     get_players_map,
     get_profile_role,
 )
@@ -526,10 +526,7 @@ unsafe_allow_html=True,
 # AUTH & PROFIEL
 # ============================================================
 
-access_token = get_access_token()
-if not access_token:
-    st.error("Niet ingelogd (access_token ontbreekt).")
-    st.stop()
+access_token = require_access_token()
 
 try:
     user_id, email, role, team = get_profile_role(access_token)
