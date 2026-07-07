@@ -10,14 +10,35 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 import streamlit as st
+import roles as roles_mod
 
 from roles import (
     get_sb as get_sb_client,
     cookie_mgr,
     set_tokens_in_cookie,
     clear_tokens_in_cookie,
-    ensure_valid_session,
+    try_restore_or_refresh_session,
 )
+
+
+def _fallback_ensure_valid_session(sb=None) -> bool:
+    token = st.session_state.get("access_token")
+    if not token:
+        sess = st.session_state.get("sb_session")
+        token = getattr(sess, "access_token", None) if sess is not None else None
+    if token:
+        st.session_state["access_token"] = str(token)
+        return True
+
+    ok = try_restore_or_refresh_session(sb)
+    token = st.session_state.get("access_token")
+    if not token:
+        sess = st.session_state.get("sb_session")
+        token = getattr(sess, "access_token", None) if sess is not None else None
+    return bool(ok and token)
+
+
+ensure_valid_session = getattr(roles_mod, "ensure_valid_session", _fallback_ensure_valid_session)
 
 
 def ensure_auth_restored(sb=None) -> Tuple[bool, Optional[str]]:

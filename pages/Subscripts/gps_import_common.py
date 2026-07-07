@@ -16,10 +16,23 @@ from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
+import roles as roles_mod
 
 # ✅ auth restore helpers (jij hebt auth_session.py al toegevoegd)
 from auth_session import ensure_auth_restored, get_sb_client
-from roles import redirect_to_login
+
+
+def _fallback_redirect_to_login(message: str = "Sessie verlopen. Log opnieuw in.", clear_cookies: bool = False) -> None:
+    if message:
+        st.error(message)
+    try:
+        st.switch_page("app.py")
+    except Exception:
+        pass
+    st.stop()
+
+
+redirect_to_login = getattr(roles_mod, "redirect_to_login", _fallback_redirect_to_login)
 
 # Excel engine check (Streamlit Cloud must have openpyxl in requirements.txt)
 try:

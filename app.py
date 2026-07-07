@@ -8,15 +8,13 @@ from typing import Any, Dict, List, Optional
 import extra_streamlit_components as stx  # noqa: F401
 import pandas as pd
 import streamlit as st
+import roles as roles_mod
 
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores
 from roles import (
-    consume_login_notice,
     clear_tokens_in_cookie,
-    clear_auth_state,
     cookie_mgr,
-    ensure_valid_session,
     get_profile,
     get_sb,
     render_sidebar_footer,
@@ -43,6 +41,57 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
+
+
+def _fallback_consume_login_notice() -> Optional[str]:
+    notice = st.session_state.pop("_login_notice", None)
+    if notice is None:
+        return None
+    return str(notice)
+
+
+def _fallback_clear_auth_state(clear_cookies: bool = False) -> None:
+    for key in (
+        "access_token",
+        "sb_session",
+        "_profile_cache",
+        "role",
+        "player_id",
+        "user_id",
+        "_sb_client",
+        "auth_err",
+    ):
+        st.session_state.pop(key, None)
+    if clear_cookies:
+        clear_tokens_in_cookie()
+
+
+def _fallback_ensure_valid_session(sb=None) -> bool:
+    token = st.session_state.get("access_token")
+    if not token:
+        sess = st.session_state.get("sb_session")
+        token = getattr(sess, "access_token", None) if sess is not None else None
+    if token:
+        st.session_state["access_token"] = str(token)
+        return True
+
+    restored = try_restore_or_refresh_session(sb)
+    if not restored:
+        return False
+
+    token = st.session_state.get("access_token")
+    if not token:
+        sess = st.session_state.get("sb_session")
+        token = getattr(sess, "access_token", None) if sess is not None else None
+    if token:
+        st.session_state["access_token"] = str(token)
+        return True
+    return False
+
+
+consume_login_notice = getattr(roles_mod, "consume_login_notice", _fallback_consume_login_notice)
+clear_auth_state = getattr(roles_mod, "clear_auth_state", _fallback_clear_auth_state)
+ensure_valid_session = getattr(roles_mod, "ensure_valid_session", _fallback_ensure_valid_session)
 
 
 def build_image_data_uri(path_like: str | Path) -> str:
