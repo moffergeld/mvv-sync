@@ -896,6 +896,10 @@ st.markdown(
         color: var(--mvv-red) !important;
       }
 
+      .mvv-player-next-rpe {
+        color: var(--mvv-gold) !important;
+      }
+
       .mvv-player-next-ok {
         color: #1f8a3b !important;
       }
@@ -1058,7 +1062,13 @@ def render_mini_stat_card(label: str, value: str, note: str = "") -> None:
 def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: str, next_step: str) -> None:
     wellness_class = "mvv-status-ok" if str(wellness_state).upper() == "OK" else "mvv-status-open"
     rpe_class = "mvv-status-ok" if str(rpe_state).upper() == "OK" else "mvv-status-open"
-    next_class = "mvv-player-next-ok" if str(next_step).lower().startswith("controleer") else "mvv-player-next-open"
+    next_step_lower = str(next_step).lower()
+    if next_step_lower.startswith("controleer"):
+        next_class = "mvv-player-next-ok"
+    elif next_step_lower.startswith("open rpe"):
+        next_class = "mvv-player-next-rpe"
+    else:
+        next_class = "mvv-player-next-open"
     st.markdown(
         (
             f'<div class="mvv-player-card">'
