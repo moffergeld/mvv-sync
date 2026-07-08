@@ -59,14 +59,11 @@ COOKIE_SETTLE_SECONDS = 0.10
 SIDEBAR_PAGE_LINKS = [
     ("app.py", "Dashboard"),
     ("pages/02_Match_Reports.py", "Match Reports"),
-    ("pages/03_GPS_Data.py", "GPS Data"),
-    ("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE Overview"),
-    ("pages/05_Compare.py", "Compare"),
+    ("pages/10_Data_Page_Beta.py", "Data"),
     ("pages/09_Management.py", "Management"),
 ]
 
 SIDEBAR_BETA_PAGE_LINKS = [
-    ("pages/10_Data_Page_Beta.py", "Data Page Beta"),
     ("pages/07_Player_Page_Beta.py", "Player Page Beta"),
     ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
 ]

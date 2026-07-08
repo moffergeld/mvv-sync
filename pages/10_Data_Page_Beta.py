@@ -9,7 +9,7 @@ from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_ur
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="Data Page Beta", layout="wide")
+st.set_page_config(page_title="Data", layout="wide")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
@@ -277,17 +277,16 @@ def main() -> None:
             {logo_markup}
             <div class="data-beta-copyhead">
               <h1 class="data-beta-title">Data</h1>
-              <div class="data-beta-kicker">MVV Maastricht | Data Beta | Staff</div>
+              <div class="data-beta-kicker">MVV Maastricht | Data | Staff</div>
             </div>
           </div>
           <div class="data-beta-copy">
-            Beta-opzet voor een centrale data-ingang. Vanuit deze pagina kun je straks sneller kiezen
-            tussen Session Load, ACWR, FFP, Wellness/RPE en Compare zonder dat alles los in de hoofdstructuur hoeft te staan.
+            Centrale data-ingang voor de performance-omgeving. Kies hier direct tussen Session Load,
+            ACWR, Fitness-Fatigue-Performance en Wellness/RPE zonder extra losse hoofdpagina's.
           </div>
           <div class="data-beta-pill-row">
-            <span class="data-beta-pill">Bestaande pagina's blijven actief</span>
-            <span class="data-beta-pill">Nieuwe structuur alleen als beta</span>
-            <span class="data-beta-pill">ACWR en FFP openen als eigen beta-routes</span>
+            <span class="data-beta-pill">Session Load, ACWR en FFP openen als eigen routes</span>
+            <span class="data-beta-pill">Wellness / RPE blijft direct beschikbaar</span>
           </div>
         </div>
         <div class="data-beta-section-head">
@@ -295,7 +294,7 @@ def main() -> None:
             <div class="data-beta-section-kicker">Modules</div>
             <div class="data-beta-section-title">Kies welke data-omgeving je wilt openen</div>
           </div>
-          <div class="data-beta-section-note">5 beta-routes, huidige navigatie blijft onaangetast</div>
+          <div class="data-beta-section-note">4 modules direct beschikbaar</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -307,9 +306,9 @@ def main() -> None:
             key="data_beta_session_load",
             kicker="Load",
             title="Session Load",
-            copy="Open een compacte GPS beta-route die alleen de Session Load workflow toont, inclusief dag- en sessiefilter.",
-            meta="Nieuwe beta-route voor GPS Session Load",
-            button_label="Open Session Load Beta",
+            copy="Open direct de compacte Session Load route met dag- en sessiefilter voor dubbele trainingen.",
+            meta="Route voor dagelijkse loadselectie en teamvergelijking",
+            button_label="Open Session Load",
             target_page="pages/12_GPS_Session_Load_Beta.py",
         )
     with row_one[1]:
@@ -317,9 +316,9 @@ def main() -> None:
             key="data_beta_acwr",
             kicker="Ratio",
             title="ACWR",
-            copy="Open direct de beta-route voor ACWR met scope-keuze en dezelfde onderliggende berekeningen.",
-            meta="Beta-route, bestaande GPS ACWR blijft ook bestaan",
-            button_label="Open ACWR Beta",
+            copy="Open direct de ACWR route met scope-keuze en dezelfde onderliggende berekeningen.",
+            meta="Route voor workload ratio en threshold planning",
+            button_label="Open ACWR",
             target_page="pages/11_ACWR_Page_Beta.py",
         )
     with row_one[2]:
@@ -327,33 +326,25 @@ def main() -> None:
             key="data_beta_ffp",
             kicker="Model",
             title="Fitness-Fatigue-Performance",
-            copy="Open direct de beta-route voor het FFP-model met dezelfde onderliggende Summary-data en modelinstellingen.",
-            meta="Losse beta-route voor FFP",
-            button_label="Open FFP Beta",
+            copy="Open direct het FFP-model met dezelfde onderliggende Summary-data en modelinstellingen.",
+            meta="Route voor fitness-, fatigue- en performance-modellering",
+            button_label="Open FFP",
             target_page="pages/13_FFP_Page_Beta.py",
         )
 
-    row_two = st.columns(2, gap="large")
+    row_two = st.columns([1.2, 0.8], gap="large")
     with row_two[0]:
         render_tile(
             key="data_beta_wr",
             kicker="Monitoring",
             title="Wellness / RPE",
             copy="Ga naar de dagelijkse wellness-, week-, injury- en checklistweergaven voor de selectie.",
-            meta="Huidige route: Wellness & RPE Overview",
+            meta="Route voor teammonitoring, checklists en dagelijkse check-ins",
             button_label="Open Wellness / RPE",
             target_page="pages/04_Wellness_&_RPE_Overview.py",
         )
     with row_two[1]:
-        render_tile(
-            key="data_beta_compare",
-            kicker="Analyse",
-            title="Compare",
-            copy="Vergelijk GPS, Wellness en RPE over meerdere sessies in een losse analyseflow.",
-            meta="Huidige route: Compare",
-            button_label="Open Compare",
-            target_page="pages/05_Compare.py",
-        )
+        st.empty()
 
     render_sidebar_footer(profile)
 
