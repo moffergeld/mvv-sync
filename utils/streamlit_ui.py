@@ -17,8 +17,7 @@ def apply_streamlit_chrome() -> None:
 
         div[data-testid="stToolbar"],
         div[data-testid="stDecoration"],
-        div[data-testid="stStatusWidget"],
-        div[data-testid="stHeaderActionElements"] {
+        div[data-testid="stStatusWidget"] {
           display: none !important;
         }
 
@@ -45,6 +44,13 @@ def apply_streamlit_chrome() -> None:
 
         [data-testid="collapsedControl"] svg {
           fill: #ffffff !important;
+        }
+
+        div[data-testid="stHeaderActionElements"] {
+          display: flex !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+          z-index: 1001 !important;
         }
 
         @media (max-width: 1024px) {
