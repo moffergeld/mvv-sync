@@ -224,6 +224,19 @@ def _render_sidebar_css() -> None:
           margin: 0.9rem 0 0.95rem 0;
           background: rgba(255,255,255,0.08);
         }
+
+        @media (max-width: 1024px) {
+          [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
+            min-height: auto;
+          }
+
+          [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] > div:has(.mvv-sidebar-footer-anchor) {
+            position: static;
+            margin-top: 1rem;
+            padding-bottom: 0;
+            background: transparent;
+          }
+        }
         </style>
         """,
         unsafe_allow_html=True,

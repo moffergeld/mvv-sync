@@ -9,7 +9,7 @@ from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_ur
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="Data", layout="wide")
+st.set_page_config(page_title="Data", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)

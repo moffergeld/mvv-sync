@@ -25,7 +25,7 @@ from roles import (
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="MVV Dashboard", layout="wide")
+st.set_page_config(page_title="MVV Dashboard", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 DIAG_MODE = st.query_params.get("diag") == "1"
