@@ -225,57 +225,14 @@ def _render_sidebar_css() -> None:
           background: rgba(255,255,255,0.08);
         }
 
-        .mvv-inline-nav-label {
-          color: rgba(255,255,255,0.62);
-          font-size: 0.74rem;
-          font-weight: 800;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          margin: 0.15rem 0 0.55rem 0;
-        }
-
-        [class*="st-key-inline_nav_"] button {
-          min-height: 2.7rem !important;
-          border-radius: 10px !important;
-          border: 1px solid rgba(234, 51, 81, 0.18) !important;
-          background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96)) !important;
-          color: #ffffff !important;
-          font-weight: 700 !important;
-          box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
-        }
-
-        [class*="st-key-inline_nav_"] button:hover {
-          border-color: rgba(234, 51, 81, 0.34) !important;
-        }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _inline_nav_switch_button(label: str, page_path: str, key: str) -> None:
-    if st.button(label, use_container_width=True, key=key):
-        st.switch_page(page_path)
-
-
-def _render_inline_navigation() -> None:
-    st.markdown('<div class="mvv-inline-nav-label">Navigatie</div>', unsafe_allow_html=True)
-    row_one = st.columns(2, gap="small")
-    with row_one[0]:
-        _inline_nav_switch_button("Dashboard", "app.py", "inline_nav_dashboard")
-    with row_one[1]:
-        _inline_nav_switch_button("Match Reports", "pages/02_Match_Reports.py", "inline_nav_match_reports")
-
-    row_two = st.columns(2, gap="small")
-    with row_two[0]:
-        _inline_nav_switch_button("Data", "pages/10_Data_Page_Beta.py", "inline_nav_data")
-    with row_two[1]:
-        _inline_nav_switch_button("Management", "pages/09_Management.py", "inline_nav_management")
-
-
 def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
     _render_sidebar_css()
-    _render_inline_navigation()
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-nav-label">Navigatie</div>', unsafe_allow_html=True)
         for page_path, label in SIDEBAR_PAGE_LINKS:
