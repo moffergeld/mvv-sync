@@ -225,7 +225,64 @@ def _render_sidebar_css() -> None:
           background: rgba(255,255,255,0.08);
         }
 
+        div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
+          display: none;
+        }
+
         @media (max-width: 1024px) {
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
+            display: block;
+            margin-bottom: 1rem;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) > div {
+            border-radius: 12px;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) details {
+            border: 1px solid rgba(234, 51, 81, 0.24);
+            border-radius: 12px;
+            background: linear-gradient(180deg, rgba(18, 25, 42, 0.98), rgba(11, 16, 29, 0.98));
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+            overflow: hidden;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) summary {
+            padding: 0.25rem 0.2rem;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) summary p {
+            color: #ffffff !important;
+            font-size: 1rem !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.04em;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) .mvv-mobile-nav-copy {
+            color: rgba(255,255,255,0.76);
+            font-size: 0.84rem;
+            line-height: 1.45;
+            margin: 0 0 0.7rem 0;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] {
+            margin-bottom: 0.2rem;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] a,
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] span {
+            border-radius: 10px !important;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) .mvv-mobile-nav-section {
+            color: rgba(255,255,255,0.62);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin: 0.15rem 0 0.55rem 0;
+          }
+
           [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
             min-height: auto;
           }
@@ -243,8 +300,57 @@ def _render_sidebar_css() -> None:
     )
 
 
+def _render_mobile_navigation(profile: Optional[Dict[str, Any]] = None, show_debug: bool = False) -> None:
+    resolved_profile = profile or {}
+    email = str(
+        st.session_state.get("user_email")
+        or resolved_profile.get("email")
+        or ""
+    ).strip() or "--"
+    role_label = _format_role_label(resolved_profile.get("role") or st.session_state.get("role"))
+
+    with st.container():
+        st.markdown('<div class="mvv-mobile-nav-anchor"></div>', unsafe_allow_html=True)
+        with st.expander("Menu", expanded=False):
+            st.markdown(
+                '<div class="mvv-mobile-nav-copy">Open hier je pagina’s, beta-routes en accountopties op telefoon of tablet.</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="mvv-mobile-nav-section">Navigatie</div>', unsafe_allow_html=True)
+            for page_path, label in SIDEBAR_PAGE_LINKS:
+                st.page_link(page_path, label=label)
+
+            if SIDEBAR_BETA_PAGE_LINKS:
+                with st.expander("Beta pagina's", expanded=False):
+                    for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
+                        st.page_link(page_path, label=label)
+
+            st.markdown('<div class="mvv-mobile-nav-section">Account</div>', unsafe_allow_html=True)
+            with st.expander("Account info", expanded=False):
+                st.markdown(
+                    f"""
+                    <div class="mvv-sidebar-account-copy"><strong>Email</strong><br>{email}</div>
+                    <div style="height:0.7rem;"></div>
+                    <div class="mvv-sidebar-account-copy"><strong>Rol</strong><br>{role_label}</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            if st.button("Logout", use_container_width=True, key="mobile_logout_btn"):
+                _sidebar_logout_action()
+
+            if show_debug:
+                with st.expander("Auth debug", expanded=False):
+                    cm = cookie_mgr()
+                    st.write("session access:", bool(st.session_state.get("access_token")))
+                    st.write("cookie access:", bool(cm.get("sb_access")))
+                    st.write("cookie refresh:", bool(cm.get("sb_refresh")))
+                    st.write("auth_err:", st.session_state.get("auth_err"))
+
+
 def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
     _render_sidebar_css()
+    _render_mobile_navigation(profile)
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-nav-label">Navigatie</div>', unsafe_allow_html=True)
         for page_path, label in SIDEBAR_PAGE_LINKS:
