@@ -15,7 +15,6 @@ def apply_streamlit_chrome() -> None:
           min-height: 3.2rem !important;
         }
 
-        div[data-testid="stToolbar"],
         div[data-testid="stDecoration"],
         div[data-testid="stStatusWidget"] {
           display: none !important;
@@ -37,6 +36,9 @@ def apply_streamlit_chrome() -> None:
           visibility: visible !important;
           opacity: 1 !important;
           z-index: 1002 !important;
+          position: fixed !important;
+          top: 0.65rem !important;
+          left: 0.65rem !important;
         }
 
         [data-testid="collapsedControl"] button {
@@ -50,6 +52,12 @@ def apply_streamlit_chrome() -> None:
 
         [data-testid="collapsedControl"] svg {
           fill: #ffffff !important;
+        }
+
+        div[data-testid="stToolbar"] {
+          display: flex !important;
+          visibility: visible !important;
+          opacity: 1 !important;
         }
         </style>
         """,
