@@ -12,7 +12,7 @@ from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
 from pages.Subscripts.wr_tab_injury import render_wellness_rpe_tab_injury
 from utils.streamlit_ui import apply_streamlit_chrome
 
-st.set_page_config(page_title="Wellness & RPE Overview", layout="wide")
+st.set_page_config(page_title="Wellness & RPE Overview", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)

@@ -29,7 +29,7 @@ from roles import get_profile, get_sb, is_staff_user, render_sidebar_footer, ren
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="Management | MVV Dashboard", layout="wide")
+st.set_page_config(page_title="Management | MVV Dashboard", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)

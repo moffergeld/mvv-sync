@@ -21,7 +21,7 @@ from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from roles import render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_streamlit_chrome
 
-st.set_page_config(page_title="GPS Import | MVV Dashboard", layout="wide")
+st.set_page_config(page_title="GPS Import | MVV Dashboard", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
