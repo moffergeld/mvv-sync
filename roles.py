@@ -240,6 +240,10 @@ def _render_sidebar_css() -> None:
           margin: 0 0 0.7rem 0;
         }
 
+        div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
+          display: none;
+        }
+
         [class*="st-key-mobile_nav_"] button,
         [class*="st-key-mobile_beta_"] button,
         [class*="st-key-mobile_logout_btn"] button {
@@ -259,6 +263,11 @@ def _render_sidebar_css() -> None:
         }
 
         @media (max-width: 1024px) {
+          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
+            display: block;
+            margin-bottom: 1rem;
+          }
+
           [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
             min-height: auto;
           }
@@ -290,6 +299,7 @@ def _render_mobile_navigation(profile: Optional[Dict[str, Any]] = None, show_deb
     ).strip() or "--"
     role_label = _format_role_label(resolved_profile.get("role") or st.session_state.get("role"))
 
+    st.markdown('<div class="mvv-mobile-nav-anchor"></div>', unsafe_allow_html=True)
     st.markdown('<div class="mvv-mobile-nav-section">Menu</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="mvv-mobile-nav-copy">Gebruik deze knoppen als de zijbalk op telefoon of tablet niet zichtbaar is.</div>',
