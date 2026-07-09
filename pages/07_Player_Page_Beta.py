@@ -36,7 +36,7 @@ from Subscripts.player_tab_data import (  # noqa: E402
 from Subscripts.player_tab_forms import render_forms_tab  # noqa: E402
 
 
-st.set_page_config(page_title="Player Page Beta", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Player Page Beta", layout="wide")
 apply_streamlit_chrome()
 
 

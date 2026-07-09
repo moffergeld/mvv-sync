@@ -42,7 +42,7 @@ from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 # -----------------------------
 # Config
 # -----------------------------
-st.set_page_config(page_title="Match Reports", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Match Reports", layout="wide")
 apply_streamlit_chrome()
 
 ASSETS_DIR = ROOT / "Assets" / "Afbeeldingen"

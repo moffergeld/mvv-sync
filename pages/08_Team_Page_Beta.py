@@ -31,7 +31,7 @@ from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_nav
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 
-st.set_page_config(page_title="Team Page Beta", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Team Page Beta", layout="wide")
 apply_streamlit_chrome()
 
 

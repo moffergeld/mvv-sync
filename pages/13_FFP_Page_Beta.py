@@ -13,7 +13,7 @@ from roles import get_profile, is_staff_user, render_sidebar_footer, render_side
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="FFP Beta", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="FFP Beta", layout="wide")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
