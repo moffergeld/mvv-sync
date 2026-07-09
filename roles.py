@@ -28,8 +28,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-import streamlit as st
 import extra_streamlit_components as stx
+import streamlit as st
 
 try:
     from supabase import create_client  # type: ignore
@@ -104,7 +104,6 @@ def _set_postgrest_auth_safely(sb, token: Optional[str]) -> None:
         sb.postgrest.auth(token)
     except Exception:
         pass
-    # (optioneel) storage auth; kan geen kwaad
     try:
         sb.storage.auth(token)
     except Exception:
@@ -225,64 +224,41 @@ def _render_sidebar_css() -> None:
           background: rgba(255,255,255,0.08);
         }
 
-        div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
-          display: none;
+        .mvv-mobile-nav-section {
+          color: rgba(255,255,255,0.62);
+          font-size: 0.74rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin: 0.15rem 0 0.55rem 0;
+        }
+
+        .mvv-mobile-nav-copy {
+          color: rgba(255,255,255,0.76);
+          font-size: 0.84rem;
+          line-height: 1.45;
+          margin: 0 0 0.7rem 0;
+        }
+
+        [class*="st-key-mobile_nav_"] button,
+        [class*="st-key-mobile_beta_"] button,
+        [class*="st-key-mobile_logout_btn"] button {
+          min-height: 2.85rem !important;
+          border-radius: 12px !important;
+          border: 1px solid rgba(234, 51, 81, 0.24) !important;
+          background: linear-gradient(180deg, rgba(18, 25, 42, 0.98), rgba(11, 16, 29, 0.98)) !important;
+          color: #ffffff !important;
+          font-weight: 700 !important;
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18) !important;
+        }
+
+        [class*="st-key-mobile_nav_"] button:hover,
+        [class*="st-key-mobile_beta_"] button:hover,
+        [class*="st-key-mobile_logout_btn"] button:hover {
+          border-color: rgba(234, 51, 81, 0.38) !important;
         }
 
         @media (max-width: 1024px) {
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) {
-            display: block;
-            margin-bottom: 1rem;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) > div {
-            border-radius: 12px;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) details {
-            border: 1px solid rgba(234, 51, 81, 0.24);
-            border-radius: 12px;
-            background: linear-gradient(180deg, rgba(18, 25, 42, 0.98), rgba(11, 16, 29, 0.98));
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
-            overflow: hidden;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) summary {
-            padding: 0.25rem 0.2rem;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) summary p {
-            color: #ffffff !important;
-            font-size: 1rem !important;
-            font-weight: 800 !important;
-            letter-spacing: 0.04em;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) .mvv-mobile-nav-copy {
-            color: rgba(255,255,255,0.76);
-            font-size: 0.84rem;
-            line-height: 1.45;
-            margin: 0 0 0.7rem 0;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] {
-            margin-bottom: 0.2rem;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] a,
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) div[data-testid="stPageLink"] span {
-            border-radius: 10px !important;
-          }
-
-          div[data-testid="stVerticalBlock"]:has(.mvv-mobile-nav-anchor) .mvv-mobile-nav-section {
-            color: rgba(255,255,255,0.62);
-            font-size: 0.74rem;
-            font-weight: 800;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            margin: 0.15rem 0 0.55rem 0;
-          }
-
           [data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlock"] {
             min-height: auto;
           }
@@ -300,6 +276,11 @@ def _render_sidebar_css() -> None:
     )
 
 
+def _mobile_switch_button(label: str, page_path: str, key: str) -> None:
+    if st.button(label, use_container_width=True, key=key):
+        st.switch_page(page_path)
+
+
 def _render_mobile_navigation(profile: Optional[Dict[str, Any]] = None, show_debug: bool = False) -> None:
     resolved_profile = profile or {}
     email = str(
@@ -309,43 +290,51 @@ def _render_mobile_navigation(profile: Optional[Dict[str, Any]] = None, show_deb
     ).strip() or "--"
     role_label = _format_role_label(resolved_profile.get("role") or st.session_state.get("role"))
 
-    with st.container():
-        st.markdown('<div class="mvv-mobile-nav-anchor"></div>', unsafe_allow_html=True)
-        with st.expander("Menu", expanded=False):
-            st.markdown(
-                '<div class="mvv-mobile-nav-copy">Open hier je pagina’s, beta-routes en accountopties op telefoon of tablet.</div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown('<div class="mvv-mobile-nav-section">Navigatie</div>', unsafe_allow_html=True)
-            for page_path, label in SIDEBAR_PAGE_LINKS:
-                st.page_link(page_path, label=label)
+    st.markdown('<div class="mvv-mobile-nav-section">Menu</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mvv-mobile-nav-copy">Gebruik deze knoppen als de zijbalk op telefoon of tablet niet zichtbaar is.</div>',
+        unsafe_allow_html=True,
+    )
 
-            if SIDEBAR_BETA_PAGE_LINKS:
-                with st.expander("Beta pagina's", expanded=False):
-                    for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
-                        st.page_link(page_path, label=label)
+    nav_row_one = st.columns(2, gap="small")
+    with nav_row_one[0]:
+        _mobile_switch_button("Dashboard", "app.py", "mobile_nav_dashboard")
+    with nav_row_one[1]:
+        _mobile_switch_button("Match Reports", "pages/02_Match_Reports.py", "mobile_nav_match_reports")
 
-            st.markdown('<div class="mvv-mobile-nav-section">Account</div>', unsafe_allow_html=True)
-            with st.expander("Account info", expanded=False):
-                st.markdown(
-                    f"""
-                    <div class="mvv-sidebar-account-copy"><strong>Email</strong><br>{email}</div>
-                    <div style="height:0.7rem;"></div>
-                    <div class="mvv-sidebar-account-copy"><strong>Rol</strong><br>{role_label}</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+    nav_row_two = st.columns(2, gap="small")
+    with nav_row_two[0]:
+        _mobile_switch_button("Data", "pages/10_Data_Page_Beta.py", "mobile_nav_data")
+    with nav_row_two[1]:
+        _mobile_switch_button("Management", "pages/09_Management.py", "mobile_nav_management")
 
-            if st.button("Logout", use_container_width=True, key="mobile_logout_btn"):
-                _sidebar_logout_action()
+    if SIDEBAR_BETA_PAGE_LINKS:
+        with st.expander("Beta pagina's", expanded=False):
+            beta_row = st.columns(len(SIDEBAR_BETA_PAGE_LINKS), gap="small")
+            for idx, (page_path, label) in enumerate(SIDEBAR_BETA_PAGE_LINKS):
+                with beta_row[idx]:
+                    _mobile_switch_button(label, page_path, f"mobile_beta_{idx}")
 
-            if show_debug:
-                with st.expander("Auth debug", expanded=False):
-                    cm = cookie_mgr()
-                    st.write("session access:", bool(st.session_state.get("access_token")))
-                    st.write("cookie access:", bool(cm.get("sb_access")))
-                    st.write("cookie refresh:", bool(cm.get("sb_refresh")))
-                    st.write("auth_err:", st.session_state.get("auth_err"))
+    with st.expander("Account", expanded=False):
+        st.markdown(
+            f"""
+            <div class="mvv-sidebar-account-copy"><strong>Email</strong><br>{email}</div>
+            <div style="height:0.7rem;"></div>
+            <div class="mvv-sidebar-account-copy"><strong>Rol</strong><br>{role_label}</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if st.button("Logout", use_container_width=True, key="mobile_logout_btn"):
+            _sidebar_logout_action()
+
+        if show_debug:
+            with st.expander("Auth debug", expanded=False):
+                cm = cookie_mgr()
+                st.write("session access:", bool(st.session_state.get("access_token")))
+                st.write("cookie access:", bool(cm.get("sb_access")))
+                st.write("cookie refresh:", bool(cm.get("sb_refresh")))
+                st.write("auth_err:", st.session_state.get("auth_err"))
 
 
 def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
@@ -435,16 +424,12 @@ def get_sb():
     if not url or not key:
         return None
 
-    # per-session client
     if "_sb_client" not in st.session_state or st.session_state.get("_sb_client") is None:
         st.session_state["_sb_client"] = create_client(url, key)
 
     sb = st.session_state["_sb_client"]
-
-    # zet ALTIJD postgrest auth voor deze sessie (als token er al is)
     tok = _get_access_token_from_state()
     _set_postgrest_auth_safely(sb, tok)
-
     return sb
 
 
@@ -493,7 +478,6 @@ def try_restore_or_refresh_session(sb=None) -> bool:
                     time.sleep(COOKIE_SETTLE_SECONDS)
 
                 return True
-
         except Exception as e:
             last_err = e
             if COOKIE_SETTLE_SECONDS > 0:
@@ -629,6 +613,7 @@ def _player_cache_scope() -> str:
     user_id = str(profile.get("user_id") or st.session_state.get("user_id") or "anon")
     role = normalize_role(profile.get("role") or st.session_state.get("role"))
     return f"{user_id}:{role}"
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def _list_players_cached(access_scope: str, _cache_buster: str = "v2") -> List[Dict[str, Any]]:
