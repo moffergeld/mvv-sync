@@ -214,6 +214,21 @@ st.markdown(
         height: 0;
     }
 
+    [class*="st-key-mr_back_to_reports"] button {
+        min-height: 2.65rem !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(234, 51, 81, 0.22) !important;
+        background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96)) !important;
+        color: #ffffff !important;
+        font-weight: 800 !important;
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18) !important;
+    }
+
+    [class*="st-key-mr_back_to_reports"] button:hover {
+        border-color: rgba(234, 51, 81, 0.36) !important;
+        color: #ffffff !important;
+    }
+
     .mr-hero-filter-label {
         color: rgba(255,255,255,.62);
         font-size: 11px;
@@ -602,7 +617,7 @@ def render_reports_intro() -> None:
           {logo_markup}
           <div class="mr-page-header-copy">
             <h1 class="mr-page-title">Match Reports</h1>
-            <div class="mr-kicker">MVV Maastricht | Match Reports | Beta</div>
+            <div class="mr-kicker">MVV Maastricht | Reports | Match Reports</div>
           </div>
         </div>
         """,
@@ -1141,6 +1156,10 @@ def main() -> None:
     hero_container = st.container()
     with hero_container:
         render_reports_intro()
+        back_col, _ = st.columns([0.42, 1.58], gap="large")
+        with back_col:
+            if st.button("Open Reports", key="mr_back_to_reports", use_container_width=True):
+                st.switch_page("pages/03_Reports_Page.py")
         hero_meta_l, hero_meta_r = st.columns([1.6, 1], gap="large")
         with hero_meta_l:
             st.markdown('<div class="mr-hero-filter-label">Filters</div>', unsafe_allow_html=True)
