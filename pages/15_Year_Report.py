@@ -412,8 +412,9 @@ def rest_get_paged(
 
 
 def _safe_divide(numerator: pd.Series, denominator: pd.Series, multiplier: float = 1.0) -> pd.Series:
-    num = pd.to_numeric(numerator, errors="coerce")
-    den = pd.to_numeric(denominator, errors="coerce").replace(0, pd.NA)
+    num = pd.to_numeric(numerator, errors="coerce").astype(float)
+    den = pd.to_numeric(denominator, errors="coerce").astype(float)
+    den = den.where(den.ne(0), float("nan"))
     return num.div(den).mul(multiplier)
 
 

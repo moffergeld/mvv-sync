@@ -412,8 +412,9 @@ def rest_get_paged(
 
 
 def _safe_divide(numerator: pd.Series, denominator: pd.Series, multiplier: float = 1.0) -> pd.Series:
-    num = pd.to_numeric(numerator, errors="coerce")
-    den = pd.to_numeric(denominator, errors="coerce").replace(0, pd.NA)
+    num = pd.to_numeric(numerator, errors="coerce").astype(float)
+    den = pd.to_numeric(denominator, errors="coerce").astype(float)
+    den = den.where(den.ne(0), float("nan"))
     return num.div(den).mul(multiplier)
 
 
@@ -577,6 +578,8 @@ def build_week_day_stats(week_df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     player_day["distance_per_min"] = _safe_divide(player_day["total_distance"], player_day["duration"])
+    for metric in ["total_distance", "hsr_hsd", "sprints", "total_accelerations", "total_decelerations", "distance_per_min"]:
+        player_day[metric] = pd.to_numeric(player_day[metric], errors="coerce").astype(float)
 
     grouped = player_day.groupby("datum", dropna=False).agg(player_count=("player_name", "nunique")).reset_index()
     for metric in ["total_distance", "hsr_hsd", "sprints", "total_accelerations", "total_decelerations", "distance_per_min"]:
