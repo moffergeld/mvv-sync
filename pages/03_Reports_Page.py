@@ -279,11 +279,12 @@ def main() -> None:
             </div>
           </div>
           <div class="reports-copy">
-            Centrale rapportage-ingang voor wedstrijdanalyses, weekoverzichten en staffevaluaties.
+            Centrale rapportage-ingang voor wedstrijdanalyses, weekoverzichten, seizoensrapportage en staffevaluaties.
           </div>
           <div class="reports-pill-row">
             <span class="reports-pill">Match Reports opent als eigen rapportage-route</span>
             <span class="reports-pill">Week Report volgt de team weekstructuur uit de rapportagemap</span>
+            <span class="reports-pill">Year Report bundelt het volledige seizoensverhaal in dashboardvorm</span>
           </div>
         </div>
         <div class="reports-section-head">
@@ -291,13 +292,13 @@ def main() -> None:
             <div class="reports-section-kicker">Modules</div>
             <div class="reports-section-title">Kies welke rapportage je wilt openen</div>
           </div>
-          <div class="reports-section-note">2 modules direct beschikbaar</div>
+          <div class="reports-section-note">3 modules direct beschikbaar</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    row = st.columns(2, gap="large")
+    row = st.columns(3, gap="large")
     with row[0]:
         render_tile(
             key="reports_hub_match_reports",
@@ -317,6 +318,16 @@ def main() -> None:
             meta="Route voor teamweekanalyse, training vs match en weeknotities",
             button_label="Open Week Report",
             target_page="pages/14_Week_Report.py",
+        )
+    with row[2]:
+        render_tile(
+            key="reports_hub_year_report",
+            kicker="Seizoen",
+            title="Year Report",
+            copy="Open de seizoensrapportage met team workload trend, ACWR, speed load, top weeks en analyst notes.",
+            meta="Route voor jaaroverzicht, loadprofiel en staffinzichten over de hele selectie",
+            button_label="Open Year Report",
+            target_page="pages/15_Year_Report.py",
         )
 
     render_sidebar_footer(profile)
