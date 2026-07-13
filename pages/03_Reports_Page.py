@@ -279,10 +279,11 @@ def main() -> None:
             </div>
           </div>
           <div class="reports-copy">
-            Centrale rapportage-ingang voor wedstrijdanalyses en evaluaties.
+            Centrale rapportage-ingang voor wedstrijdanalyses, weekoverzichten en staffevaluaties.
           </div>
           <div class="reports-pill-row">
             <span class="reports-pill">Match Reports opent als eigen rapportage-route</span>
+            <span class="reports-pill">Week Report volgt de team weekstructuur uit de rapportagemap</span>
           </div>
         </div>
         <div class="reports-section-head">
@@ -290,13 +291,13 @@ def main() -> None:
             <div class="reports-section-kicker">Modules</div>
             <div class="reports-section-title">Kies welke rapportage je wilt openen</div>
           </div>
-          <div class="reports-section-note">1 module direct beschikbaar</div>
+          <div class="reports-section-note">2 modules direct beschikbaar</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    row = st.columns([1.05, 0.95], gap="large")
+    row = st.columns(2, gap="large")
     with row[0]:
         render_tile(
             key="reports_hub_match_reports",
@@ -308,7 +309,15 @@ def main() -> None:
             target_page="pages/02_Match_Reports.py",
         )
     with row[1]:
-        st.empty()
+        render_tile(
+            key="reports_hub_week_report",
+            kicker="Week",
+            title="Week Report",
+            copy="Open de webversie van de team weekrapportage met KPI-cards, dagbelasting, spreiding en leaders.",
+            meta="Route voor teamweekanalyse, training vs match en weeknotities",
+            button_label="Open Week Report",
+            target_page="pages/14_Week_Report.py",
+        )
 
     render_sidebar_footer(profile)
 
