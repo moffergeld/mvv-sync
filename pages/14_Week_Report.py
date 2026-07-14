@@ -855,13 +855,11 @@ def build_cards_html(summary: dict[str, object]) -> str:
     html_blocks = []
     for label, value, foot in cards:
         html_blocks.append(
-            f"""
-            <div class="week-report-card">
-              <div class="week-report-card-label">{escape(label)}</div>
-              <div class="week-report-card-value">{escape(value)}</div>
-              <div class="week-report-card-foot">{escape(foot)}</div>
-            </div>
-            """
+            '<div class="week-report-card">'
+            f'<div class="week-report-card-label">{escape(label)}</div>'
+            f'<div class="week-report-card-value">{escape(value)}</div>'
+            f'<div class="week-report-card-foot">{escape(foot)}</div>'
+            "</div>"
         )
     return f'<div class="week-report-card-grid">{"".join(html_blocks)}</div>'
 

@@ -843,13 +843,11 @@ def build_cards_html(kpis: dict[str, object]) -> str:
         ("Top Speed", _format_speed(kpis["top_speed"]), "Hoogste geregistreerde topsnelheid"),
     ]
     return '<div class="year-report-card-grid">' + "".join(
-        f"""
-        <div class="year-report-card">
-          <div class="year-report-card-label">{escape(label)}</div>
-          <div class="year-report-card-value">{escape(value)}</div>
-          <div class="year-report-card-foot">{escape(foot)}</div>
-        </div>
-        """
+        '<div class="year-report-card">'
+        f'<div class="year-report-card-label">{escape(label)}</div>'
+        f'<div class="year-report-card-value">{escape(value)}</div>'
+        f'<div class="year-report-card-foot">{escape(foot)}</div>'
+        "</div>"
         for label, value, foot in cards
     ) + "</div>"
 
