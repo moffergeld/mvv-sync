@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
+from report_monitoring import build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 # -----------------------------
@@ -103,6 +104,7 @@ def _build_data_uri(path: Path) -> str:
 
 PAGE_BG_URI = _build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = _build_data_uri(TEAM_LOGO)
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 
 # -----------------------------
 # Global CSS
@@ -553,6 +555,15 @@ def _fmt_max_speed2(x: Any) -> str:
         return ""
 
 
+def _fmt_dec1(x: Any) -> str:
+    if pd.isna(x):
+        return "--"
+    try:
+        return f"{float(x):.1f}"
+    except Exception:
+        return "--"
+
+
 def _percentile_color(val: float, q25: float, q50: float, q75: float) -> str:
     if np.isnan(val):
         return ""
@@ -787,6 +798,55 @@ def render_kpi_row(df_phase: pd.DataFrame) -> None:
         _kpi_card("Mediaan Sprint", f"{_fmt_int0(med_spr)} m")
     with c4:
         _kpi_card("Peak Speed", f"{_fmt_max_speed2(peak_speed)}")
+
+
+def render_monitoring_summary_row(summary: dict[str, Any]) -> None:
+    cards = [
+        ("Wellness Physical", _fmt_dec1(summary.get("wellness_physical")), f"{int(summary.get('wellness_players', 0) or 0)} spelers met wellness"),
+        ("Wellness Mental", _fmt_dec1(summary.get("wellness_mental")), "Sleep, stress en mood op matchdag"),
+        ("Avg RPE", _fmt_dec1(summary.get("avg_rpe")), f"{int(summary.get('rpe_players', 0) or 0)} spelers met RPE"),
+        ("RPE Load", _fmt_int0(summary.get("rpe_load")), "Totale duration x RPE op matchdag"),
+    ]
+    html_cards = "".join(
+        '<div class="mr-summary-card">'
+        f'<div class="mr-summary-label">{html.escape(label)}</div>'
+        f'<div class="mr-summary-value">{html.escape(str(value))}</div>'
+        f'<div class="mr-summary-foot">{html.escape(foot)}</div>'
+        "</div>"
+        for label, value, foot in cards
+    )
+    st.markdown(f'<div class="mr-summary-grid">{html_cards}</div>', unsafe_allow_html=True)
+
+
+def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
+    if monitoring_players.empty:
+        st.info("Geen wellness- of RPE-invoer gevonden voor deze wedstrijddag.")
+        return
+
+    show_df = monitoring_players.copy().head(18)
+    show_df["Physical"] = show_df["wellness_physical"].map(_fmt_dec1)
+    show_df["Mental"] = show_df["wellness_mental"].map(_fmt_dec1)
+    show_df["Readiness"] = show_df["readiness_score"].map(_fmt_dec1)
+    show_df["Avg RPE"] = show_df["avg_rpe"].map(_fmt_dec1)
+    show_df["RPE Load"] = show_df["rpe_load"].map(_fmt_int0)
+    show_df["Wellness Days"] = show_df["wellness_days"].map(_fmt_int0)
+    show_df["RPE Days"] = show_df["rpe_days"].map(_fmt_int0)
+    st.dataframe(
+        show_df[
+            [
+                "player_name",
+                "Wellness Days",
+                "RPE Days",
+                "Physical",
+                "Mental",
+                "Readiness",
+                "Avg RPE",
+                "RPE Load",
+            ]
+        ].rename(columns={"player_name": "Speler"}),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # -----------------------------
@@ -1239,7 +1299,31 @@ def main() -> None:
         st.info("Geen data voor deze fase.")
         st.stop()
 
+    player_lookup = (
+        df_events.assign(player_id=df_events["player_id"].astype(str), player_name=df_events["player_name"].fillna("Onbekend").astype(str))
+        .drop_duplicates(subset=["player_id"])
+        .set_index("player_id")["player_name"]
+        .to_dict()
+    )
+    monitoring_df = build_monitoring_dataset(
+        SUPABASE_URL or "default",
+        sb,
+        match_row["match_date"],
+        match_row["match_date"],
+        player_ids=df_events["player_id"].astype(str).tolist(),
+        player_lookup=player_lookup,
+    )
+    monitoring_summary = summarize_monitoring_dataset(monitoring_df)
+    monitoring_players = build_monitoring_player_summary(monitoring_df)
+
     render_kpi_row(df_phase)
+
+    st.markdown('<div class="mr-section-label">Wellness &amp; RPE</div>', unsafe_allow_html=True)
+    if monitoring_df.empty:
+        st.info("Geen wellness- of RPE-data beschikbaar voor deze wedstrijddag.")
+    else:
+        render_monitoring_summary_row(monitoring_summary)
+        render_monitoring_player_table(monitoring_players)
 
     chart_l, chart_r = st.columns(2)
     with chart_l:

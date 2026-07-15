@@ -12,6 +12,12 @@ from plotly.subplots import make_subplots
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from report_monitoring import (
+    build_monitoring_dataset,
+    build_monitoring_grouped_summary,
+    build_monitoring_player_summary,
+    summarize_monitoring_dataset,
+)
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
 
@@ -663,6 +669,7 @@ def build_bar_line_chart(
     line_column: str | None = None,
     line_label: str | None = None,
     line_color: str = MVV_RED_BRIGHT,
+    primary_y_range: tuple[float, float] | None = None,
 ) -> go.Figure:
     fig = make_subplots(specs=[[{"secondary_y": bool(line_column)}]])
     fig.update_layout(
@@ -703,6 +710,8 @@ def build_bar_line_chart(
     fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT), tickangle=-45)
     fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT), secondary_y=False)
     fig.update_yaxes(showgrid=False, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT), secondary_y=True)
+    if primary_y_range is not None:
+        fig.update_yaxes(range=list(primary_y_range), secondary_y=False)
     return fig
 
 
@@ -831,7 +840,7 @@ def build_leaderboard_chart(df: pd.DataFrame, column: str, title: str, formatter
     return fig
 
 
-def build_cards_html(kpis: dict[str, object]) -> str:
+def build_cards_html(kpis: dict[str, object], monitoring_summary: dict[str, object]) -> str:
     cards = [
         ("Players", _format_int(kpis["players"]), "Aantal unieke spelers met geldige GPS-data"),
         ("Weeks", _format_int(kpis["weeks"]), "Actieve GPS-weken in deze selectie"),
@@ -841,6 +850,10 @@ def build_cards_html(kpis: dict[str, object]) -> str:
         ("Total Duration", _format_hours(kpis["duration_hours"]), "Opgetelde trainings- en matchduur"),
         ("Peak Week", _format_distance(kpis["peak_week"]), "Hoogste teamweek op total distance"),
         ("Top Speed", _format_speed(kpis["top_speed"]), "Hoogste geregistreerde topsnelheid"),
+        ("Wellness Physical", _format_decimal(monitoring_summary["wellness_physical"], 1), "Seizoensgemiddelde muscle soreness + fatigue"),
+        ("Wellness Mental", _format_decimal(monitoring_summary["wellness_mental"], 1), "Seizoensgemiddelde sleep, stress en mood"),
+        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen teamgemiddelde RPE over de selectie"),
+        ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE over de selectie"),
     ]
     return '<div class="year-report-card-grid">' + "".join(
         '<div class="year-report-card">'
@@ -987,13 +1000,39 @@ def main() -> None:
         st.info("Geen data gevonden voor dit seizoen.")
         st.stop()
 
+    season_start_date = season_df["datum"].min()
+    season_end_date = season_df["datum"].max()
+    player_lookup = (
+        season_df.assign(player_id=season_df["player_id"].astype(str), player_name=season_df["player_name"].fillna("Onbekend").astype(str))
+        .drop_duplicates(subset=["player_id"])
+        .set_index("player_id")["player_name"]
+        .to_dict()
+    )
+    monitoring_df = build_monitoring_dataset(
+        SUPABASE_URL or "default",
+        sb,
+        season_start_date.date(),
+        season_end_date.date(),
+        player_ids=season_df["player_id"].astype(str).tolist(),
+        player_lookup=player_lookup,
+    )
+    monitoring_summary = summarize_monitoring_dataset(monitoring_df)
+    monitoring_weekly = build_monitoring_grouped_summary(monitoring_df, "week").rename(columns={"label": "week_label"})
+    monitoring_players = build_monitoring_player_summary(monitoring_df)
+
     weekly_df = build_season_dataset(season_df, str(acwr_meta["mode"]))
     category_summary = build_category_summary(season_df)
     kpis = calculate_season_kpis(season_df, weekly_df)
     notes = build_team_alerts(weekly_df, acwr_meta)
+    if monitoring_summary["wellness_entries"]:
+        notes.append(
+            f"Wellness gemiddeld over het seizoen: physical {_format_decimal(monitoring_summary['wellness_physical'], 1)} en mental {_format_decimal(monitoring_summary['wellness_mental'], 1)}."
+        )
+    if monitoring_summary["rpe_entries"]:
+        notes.append(
+            f"RPE gemiddeld over het seizoen: {_format_decimal(monitoring_summary['avg_rpe'], 1)} met totale RPE load {_format_int(monitoring_summary['rpe_load'])}."
+        )
 
-    season_start_date = season_df["datum"].min()
-    season_end_date = season_df["datum"].max()
     badges = [
         f"Data periode: {season_start_date:%d/%m/%Y} - {season_end_date:%d/%m/%Y}",
         f"Actieve weken: {_format_int(kpis['weeks'])}",
@@ -1012,9 +1051,9 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    st.markdown(build_cards_html(kpis), unsafe_allow_html=True)
+    st.markdown(build_cards_html(kpis, monitoring_summary), unsafe_allow_html=True)
 
-    tab_trend, tab_load, tab_risk = st.tabs(["Trend", "Load Profile", "Risk & Insights"])
+    tab_trend, tab_load, tab_monitoring, tab_risk = st.tabs(["Trend", "Load Profile", "Wellness & RPE", "Risk & Insights"])
 
     with tab_trend:
         trend_row_one = st.columns(2, gap="large")
@@ -1126,6 +1165,101 @@ def main() -> None:
                     line_label="Acc / 10 min",
                 ),
                 "Versnellingsbelasting en dichtheid van acceleraties",
+            )
+
+    with tab_monitoring:
+        if monitoring_df.empty:
+            st.info("Geen wellness- of RPE-data beschikbaar voor dit seizoen.")
+        else:
+            monitoring_row_one = st.columns(2, gap="large")
+            with monitoring_row_one[0]:
+                render_plot_panel(
+                    "Weekly Wellness Physical",
+                    build_bar_line_chart(
+                        monitoring_weekly,
+                        title="Weekly Team Wellness Physical",
+                        bar_column="wellness_physical",
+                        bar_label="Physical",
+                        bar_color=MVV_RED_DEEP,
+                        primary_y_range=(0, 10),
+                    ),
+                    "Wekelijks gemiddelde muscle soreness en fatigue",
+                )
+            with monitoring_row_one[1]:
+                render_plot_panel(
+                    "Weekly Wellness Mental",
+                    build_bar_line_chart(
+                        monitoring_weekly,
+                        title="Weekly Team Wellness Mental",
+                        bar_column="wellness_mental",
+                        bar_label="Mental",
+                        bar_color=MVV_RED_BRIGHT,
+                        primary_y_range=(0, 10),
+                    ),
+                    "Wekelijks gemiddelde sleep quality, stress en mood",
+                )
+
+            monitoring_row_two = st.columns(2, gap="large")
+            with monitoring_row_two[0]:
+                render_plot_panel(
+                    "Weekly Weighted RPE",
+                    build_bar_line_chart(
+                        monitoring_weekly,
+                        title="Weekly Team Weighted RPE",
+                        bar_column="avg_rpe",
+                        bar_label="Avg RPE",
+                        bar_color=MVV_RED_DEEP,
+                        primary_y_range=(0, 10),
+                    ),
+                    "Gewogen team-RPE per week",
+                )
+            with monitoring_row_two[1]:
+                render_plot_panel(
+                    "Weekly RPE Load",
+                    build_bar_line_chart(
+                        monitoring_weekly,
+                        title="Weekly Team RPE Load",
+                        bar_column="rpe_load",
+                        bar_label="RPE Load",
+                        bar_color=MVV_RED_BRIGHT,
+                    ),
+                    "Totale duration x RPE per week",
+                )
+
+            render_html_panel(
+                "Monitoring by Week",
+                build_table_html(
+                    monitoring_weekly,
+                    [
+                        ("week_label", "Week", None),
+                        ("wellness_players", "Wellness Players", _format_int),
+                        ("rpe_players", "RPE Players", _format_int),
+                        ("wellness_physical", "Physical", _format_decimal),
+                        ("wellness_mental", "Mental", _format_decimal),
+                        ("readiness_score", "Readiness", _format_decimal),
+                        ("avg_rpe", "Avg RPE", _format_decimal),
+                        ("rpe_load", "RPE Load", _format_int),
+                    ],
+                ),
+                "Weekoverzicht van wellness, readiness en RPE",
+            )
+
+            render_html_panel(
+                "Monitoring Players",
+                build_table_html(
+                    monitoring_players.head(16),
+                    [
+                        ("player_name", "Speler", None),
+                        ("wellness_days", "Wellness Days", _format_int),
+                        ("rpe_days", "RPE Days", _format_int),
+                        ("wellness_physical", "Physical", _format_decimal),
+                        ("wellness_mental", "Mental", _format_decimal),
+                        ("readiness_score", "Readiness", _format_decimal),
+                        ("avg_rpe", "Avg RPE", _format_decimal),
+                        ("rpe_load", "RPE Load", _format_int),
+                    ],
+                ),
+                "Top 16 spelers op basis van monitoringvolume in dit seizoen",
             )
 
     with tab_risk:
