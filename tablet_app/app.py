@@ -888,6 +888,11 @@ st.markdown(
         font-weight: 900;
       }
 
+      .mvv-status-partial {
+        color: #a96f14 !important;
+        font-weight: 900;
+      }
+
       .mvv-status-ok {
         color: #1f8a3b !important;
         font-weight: 900;
@@ -980,6 +985,30 @@ st.markdown(
         border-radius: 18px !important;
         font-size: 0.98rem !important;
       }
+
+      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] {
+        margin: 0.15rem 0 1rem;
+      }
+
+      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] {
+        width: 100%;
+        gap: 0.45rem;
+      }
+
+      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label {
+        min-width: 8.2rem;
+        min-height: 4.1rem;
+        padding: 0.65rem 1rem;
+        border-radius: 20px;
+      }
+
+      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
+        display: none !important;
+      }
+
+      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
+        justify-content: center;
+      }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -1068,7 +1097,13 @@ def render_mini_stat_card(label: str, value: str, note: str = "") -> None:
 
 def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: str, next_step: str) -> None:
     wellness_class = "mvv-status-ok" if str(wellness_state).upper() == "OK" else "mvv-status-open"
-    rpe_class = "mvv-status-ok" if str(rpe_state).upper() == "OK" else "mvv-status-open"
+    rpe_state_text = str(rpe_state).strip()
+    if rpe_state_text.upper() == "OK":
+        rpe_class = "mvv-status-ok"
+    elif "/" in rpe_state_text:
+        rpe_class = "mvv-status-partial"
+    else:
+        rpe_class = "mvv-status-open"
     next_step_lower = str(next_step).lower()
     if next_step_lower.startswith("controleer"):
         next_class = "mvv-player-next-ok"
@@ -1196,6 +1231,14 @@ def _session_cache_clear(bucket_name: str, key: str | None = None) -> None:
 
 def _player_day_cache_key(player_id: str, entry_date_iso: str) -> str:
     return f"{entry_date_iso}:{player_id}"
+
+
+def _second_rpe_mode_key(entry_date_iso: str) -> str:
+    return f"tablet_day_rpe_mode_{entry_date_iso.replace('-', '_')}"
+
+
+def second_rpe_enabled_for_date(entry_date_iso: str) -> bool:
+    return bool(st.session_state.get(_second_rpe_mode_key(entry_date_iso), False))
 
 
 def _execute_upsert_with_fallback(sb, table_name: str, payload: Dict[str, Any], keys: Dict[str, Any]):
@@ -1430,7 +1473,7 @@ def fetch_daily_completion(_sb, entry_date_iso: str) -> Dict[str, List[str]]:
     try:
         rpe_rows = (
             _sb.table("rpe_entries")
-            .select("player_id")
+            .select("id,player_id")
             .eq("entry_date", entry_date_iso)
             .execute()
             .data
@@ -1440,8 +1483,50 @@ def fetch_daily_completion(_sb, entry_date_iso: str) -> Dict[str, List[str]]:
         rpe_rows = []
 
     asrm_ids = sorted({str(row.get("player_id")) for row in asrm_rows if row.get("player_id")})
-    rpe_ids = sorted({str(row.get("player_id")) for row in rpe_rows if row.get("player_id")})
-    return {"asrm_ids": asrm_ids, "rpe_ids": rpe_ids}
+    entry_map = {
+        str(row.get("id")): str(row.get("player_id"))
+        for row in rpe_rows
+        if row.get("id") and row.get("player_id")
+    }
+
+    session_rows: List[Dict[str, Any]] = []
+    if entry_map:
+        try:
+            session_rows = (
+                _sb.table("rpe_sessions")
+                .select("rpe_entry_id,session_index")
+                .in_("rpe_entry_id", list(entry_map.keys()))
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            session_rows = []
+
+    sessions_by_entry: Dict[str, set[int]] = {}
+    for row in session_rows:
+        entry_id = str(row.get("rpe_entry_id") or "").strip()
+        if not entry_id:
+            continue
+        sessions_by_entry.setdefault(entry_id, set()).add(int(row.get("session_index", 0) or 0))
+
+    rpe1_ids: set[str] = set()
+    rpe2_ids: set[str] = set()
+    for entry_id, player_id in entry_map.items():
+        session_indexes = sessions_by_entry.get(entry_id, set())
+        if session_indexes:
+            rpe1_ids.add(player_id)
+        else:
+            # Fallback voor oudere of half-opgeslagen records: een header telt minimaal als RPE 1.
+            rpe1_ids.add(player_id)
+        if 2 in session_indexes:
+            rpe2_ids.add(player_id)
+
+    return {
+        "asrm_ids": asrm_ids,
+        "rpe_ids": sorted(rpe1_ids),
+        "rpe2_ids": sorted(rpe2_ids),
+    }
 
 
 def get_cached_daily_completion(sb, entry_date_iso: str) -> Dict[str, List[str]]:
@@ -1454,6 +1539,7 @@ def get_cached_daily_completion(sb, entry_date_iso: str) -> Dict[str, List[str]]
         return {
             "asrm_ids": list(cached.get("asrm_ids", [])),
             "rpe_ids": list(cached.get("rpe_ids", [])),
+            "rpe2_ids": list(cached.get("rpe2_ids", [])),
         }
 
     completion = fetch_daily_completion(sb, entry_date_iso)
@@ -1461,7 +1547,15 @@ def get_cached_daily_completion(sb, entry_date_iso: str) -> Dict[str, List[str]]
     return completion
 
 
-def update_cached_daily_completion(sb, player_id: str, entry_date_iso: str, *, has_asrm: bool | None = None, has_rpe: bool | None = None) -> None:
+def update_cached_daily_completion(
+    sb,
+    player_id: str,
+    entry_date_iso: str,
+    *,
+    has_asrm: bool | None = None,
+    has_rpe: bool | None = None,
+    has_rpe2: bool | None = None,
+) -> None:
     cached = _session_cache_get(
         "_tablet_daily_completion_cache",
         entry_date_iso,
@@ -1471,9 +1565,10 @@ def update_cached_daily_completion(sb, player_id: str, entry_date_iso: str, *, h
         try:
             cached = fetch_daily_completion(sb, entry_date_iso)
         except Exception:
-            cached = {"asrm_ids": [], "rpe_ids": []}
+            cached = {"asrm_ids": [], "rpe_ids": [], "rpe2_ids": []}
     asrm_ids = set(cached.get("asrm_ids", []))
     rpe_ids = set(cached.get("rpe_ids", []))
+    rpe2_ids = set(cached.get("rpe2_ids", []))
 
     if has_asrm is True:
         asrm_ids.add(str(player_id))
@@ -1485,10 +1580,19 @@ def update_cached_daily_completion(sb, player_id: str, entry_date_iso: str, *, h
     elif has_rpe is False:
         rpe_ids.discard(str(player_id))
 
+    if has_rpe2 is True:
+        rpe2_ids.add(str(player_id))
+    elif has_rpe2 is False:
+        rpe2_ids.discard(str(player_id))
+
     _session_cache_set(
         "_tablet_daily_completion_cache",
         entry_date_iso,
-        {"asrm_ids": sorted(asrm_ids), "rpe_ids": sorted(rpe_ids)},
+        {
+            "asrm_ids": sorted(asrm_ids),
+            "rpe_ids": sorted(rpe_ids),
+            "rpe2_ids": sorted(rpe2_ids),
+        },
     )
 
 
@@ -1558,7 +1662,7 @@ def clear_selected_player_state(player_id: str | None = None) -> None:
                 f"tablet_asrm_sleep_{player_id}",
                 f"tablet_asrm_stress_{player_id}",
                 f"tablet_asrm_mood_{player_id}",
-                f"tablet_rpe_enable_s2_{player_id}",
+                f"tablet_rpe_stage_{player_id}",
                 f"tablet_rpe_injury_{player_id}",
                 f"tablet_rpe_s1_dur_{player_id}",
                 f"tablet_rpe_s1_dur_choice_{player_id}",
@@ -1596,7 +1700,8 @@ def render_player_picker(sb) -> None:
 
     completion = get_cached_daily_completion(sb, entry_date_iso)
     asrm_ids = set(completion.get("asrm_ids", []))
-    rpe_ids = set(completion.get("rpe_ids", []))
+    rpe1_ids = set(completion.get("rpe_ids", []))
+    rpe2_ids = set(completion.get("rpe2_ids", []))
 
     render_top_actions(show_back=False)
     show_flash()
@@ -1606,9 +1711,24 @@ def render_player_picker(sb) -> None:
         f"Selecteer een speler voor de invoer van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
     )
 
+    second_rpe_key = _second_rpe_mode_key(entry_date_iso)
+    if second_rpe_key not in st.session_state:
+        st.session_state[second_rpe_key] = False
+    st.markdown('<div class="mvv-toggle-choice-title">RPE modus</div>', unsafe_allow_html=True)
+    second_rpe_enabled = st.radio(
+        "RPE modus",
+        options=[False, True],
+        index=1 if bool(st.session_state[second_rpe_key]) else 0,
+        format_func=lambda value: "2 RPE" if value else "1 RPE",
+        horizontal=True,
+        label_visibility="collapsed",
+        key=second_rpe_key,
+    )
+
     total_players = len(players)
     wellness_completed = sum(1 for player in players if player["player_id"] in asrm_ids)
-    rpe_completed = sum(1 for player in players if player["player_id"] in rpe_ids)
+    completed_rpe_ids = rpe2_ids if second_rpe_enabled else rpe1_ids
+    rpe_completed = sum(1 for player in players if player["player_id"] in completed_rpe_ids)
 
     stat_1, stat_2 = st.columns(2)
     with stat_1:
@@ -1626,11 +1746,29 @@ def render_player_picker(sb) -> None:
         player_id = player["player_id"]
         player_name = player["full_name"]
         wellness_done = player_id in asrm_ids
-        rpe_done = player_id in rpe_ids
+        rpe1_done = player_id in rpe1_ids
+        rpe2_done = player_id in rpe2_ids
         wellness_state = "OK" if wellness_done else "OPEN"
-        rpe_state = "OK" if rpe_done else "OPEN"
-        next_step = "Open RPE" if wellness_done and not rpe_done else "Open wellness"
-        if wellness_done and rpe_done:
+        if second_rpe_enabled:
+            if rpe2_done:
+                rpe_state = "OK"
+            elif rpe1_done:
+                rpe_state = "1/2"
+            else:
+                rpe_state = "OPEN"
+        else:
+            rpe_state = "OK" if rpe1_done else "OPEN"
+
+        rpe_done = rpe2_done if second_rpe_enabled else rpe1_done
+        if not wellness_done:
+            next_step = "Open wellness"
+        elif second_rpe_enabled and not rpe1_done:
+            next_step = "Open RPE 1"
+        elif second_rpe_enabled and not rpe2_done:
+            next_step = "Open RPE 2"
+        elif not second_rpe_enabled and not rpe1_done:
+            next_step = "Open RPE"
+        else:
             next_step = "Controleer invoer"
         with cols[idx % 3]:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
@@ -1655,11 +1793,11 @@ def render_bulk_rpe_page(sb) -> None:
 
     completion = get_cached_daily_completion(sb, entry_date_iso)
     asrm_ids = set(completion.get("asrm_ids", []))
-    rpe_ids = set(completion.get("rpe_ids", []))
+    rpe1_ids = set(completion.get("rpe_ids", []))
     ready_players = [
         player
         for player in players
-        if str(player.get("player_id")) in asrm_ids and str(player.get("player_id")) not in rpe_ids
+        if str(player.get("player_id")) in asrm_ids and str(player.get("player_id")) not in rpe1_ids
     ]
     render_top_actions(show_back=False)
     show_flash()
@@ -1783,6 +1921,17 @@ def _session_value(rpe_sessions: List[Dict[str, Any]], idx: int, key: str, defau
     return int(value) if value is not None else default
 
 
+def _existing_session_payload(rpe_sessions: List[Dict[str, Any]], idx: int) -> Dict[str, int] | None:
+    duration_min = _session_value(rpe_sessions, idx, "duration_min", 0)
+    if int(duration_min) <= 0:
+        return None
+    return {
+        "session_index": int(idx),
+        "duration_min": int(duration_min),
+        "rpe": _session_value(rpe_sessions, idx, "rpe", 5),
+    }
+
+
 def _normalize_duration_choice(value: int) -> int:
     try:
         duration = int(value)
@@ -1798,10 +1947,14 @@ def _normalize_duration_choice(value: int) -> int:
 def render_player_forms(sb, player_id: str, player_name: str) -> None:
     entry_date = amsterdam_today()
     entry_date_iso = entry_date.isoformat()
+    second_rpe_enabled = second_rpe_enabled_for_date(entry_date_iso)
     if "tablet_player_has_wellness" not in st.session_state or "tablet_player_has_rpe" not in st.session_state:
         completion = get_cached_daily_completion(sb, entry_date_iso)
-        st.session_state["tablet_player_has_wellness"] = str(player_id) in set(completion.get("asrm_ids", []))
-        st.session_state["tablet_player_has_rpe"] = str(player_id) in set(completion.get("rpe_ids", []))
+        asrm_ids = set(completion.get("asrm_ids", []))
+        rpe1_ids = set(completion.get("rpe_ids", []))
+        rpe2_ids = set(completion.get("rpe2_ids", []))
+        st.session_state["tablet_player_has_wellness"] = str(player_id) in asrm_ids
+        st.session_state["tablet_player_has_rpe"] = str(player_id) in (rpe2_ids if second_rpe_enabled else rpe1_ids)
 
     has_wellness = bool(st.session_state.get("tablet_player_has_wellness", False))
     has_rpe = bool(st.session_state.get("tablet_player_has_rpe", False))
@@ -1893,11 +2046,10 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 st.error(f"Opslaan faalde: {exc}")
 
     if active_form == "RPE":
-        if has_rpe:
-            rpe_header, rpe_sessions = get_cached_rpe_detail(sb, player_id, entry_date)
-        else:
-            rpe_header, rpe_sessions = {}, []
-        has_s2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
+        rpe_header, rpe_sessions = get_cached_rpe_detail(sb, player_id, entry_date)
+        has_rpe1 = any(int(row.get("session_index", 0) or 0) == 1 for row in rpe_sessions)
+        has_rpe2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
+        st.session_state["tablet_player_has_rpe"] = has_rpe2 if second_rpe_enabled else has_rpe1
         injury_default = bool(rpe_header.get("injury", False))
         injury_locations = [
             "None",
@@ -1931,31 +2083,36 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         s1_default_rpe = _session_value(rpe_sessions, 1, "rpe", 5)
         s2_default_dur = _session_value(rpe_sessions, 2, "duration_min", 0)
         s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
-        s1_duration_choice = _normalize_duration_choice(s1_default_dur)
-        s2_duration_choice = _normalize_duration_choice(s2_default_dur)
         notes_default = str(rpe_header.get("notes") or "")
         injury_pain_default = int(rpe_header.get("injury_pain", 0) or 0)
-        enable_s2_key = f"tablet_rpe_enable_s2_{player_id}"
+        stage_key = f"tablet_rpe_stage_{player_id}"
         injury_key = f"tablet_rpe_injury_{player_id}"
 
-        if enable_s2_key not in st.session_state:
-            st.session_state[enable_s2_key] = has_s2
         if injury_key not in st.session_state:
             st.session_state[injury_key] = injury_default
 
-        toggle_cols = st.columns(2, gap="large")
-        with toggle_cols[0]:
-            st.markdown('<div class="mvv-toggle-choice-title">2e sessie</div>', unsafe_allow_html=True)
-            enable_s2 = st.radio(
-                "2e sessie",
-                options=[False, True],
-                index=1 if bool(st.session_state[enable_s2_key]) else 0,
-                format_func=lambda value: "Ja" if value else "Nee",
-                horizontal=True,
-                label_visibility="collapsed",
-                key=enable_s2_key,
-            )
-        with toggle_cols[1]:
+        default_stage = 2 if second_rpe_enabled and has_rpe1 and not has_rpe2 else 1
+        if stage_key not in st.session_state:
+            st.session_state[stage_key] = default_stage
+        current_rpe_stage = int(st.session_state.get(stage_key, default_stage) or default_stage)
+        if not second_rpe_enabled or not has_rpe1:
+            current_rpe_stage = 1
+            st.session_state[stage_key] = 1
+        elif second_rpe_enabled and has_rpe1 and not has_rpe2:
+            current_rpe_stage = 2
+            st.session_state[stage_key] = 2
+        elif current_rpe_stage not in (1, 2):
+            current_rpe_stage = 1
+            st.session_state[stage_key] = 1
+
+        current_duration_default = s2_default_dur if current_rpe_stage == 2 else s1_default_dur
+        current_rpe_default = s2_default_rpe if current_rpe_stage == 2 else s1_default_rpe
+        current_duration_choice = _normalize_duration_choice(current_duration_default)
+        duration_key = f"tablet_rpe_s{current_rpe_stage}_dur_choice_{player_id}"
+        rpe_key = f"tablet_rpe_s{current_rpe_stage}_rpe_{player_id}"
+        session_title = f"RPE {current_rpe_stage}"
+
+        if current_rpe_stage == 1:
             st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
             injury = st.radio(
                 "Injury",
@@ -1966,73 +2123,37 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 label_visibility="collapsed",
                 key=injury_key,
             )
+        else:
+            injury = injury_default
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
             _legend_rpe()
 
-            if enable_s2:
-                session_cols = st.columns(2, gap="large")
-                session_1_container = session_cols[0]
-                session_2_container = session_cols[1]
-            else:
-                session_1_container = st.container()
-                session_2_container = None
+            st.markdown(
+                f"""
+                <div class="mvv-session-title">{html.escape(session_title)}</div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
+            current_dur = st.radio(
+                "Duration (min)",
+                options=RPE_DURATION_OPTIONS,
+                index=RPE_DURATION_OPTIONS.index(current_duration_choice),
+                format_func=lambda value: str(value),
+                horizontal=True,
+                label_visibility="collapsed",
+                key=duration_key,
+            )
+            current_rpe_value = st.slider(
+                "RPE (1-10)",
+                1,
+                10,
+                value=current_rpe_default,
+                key=rpe_key,
+            )
 
-            with session_1_container:
-                st.markdown(
-                    """
-                    <div class="mvv-session-title">Session 1</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
-                s1_dur = st.radio(
-                    "Duration (min)",
-                    options=RPE_DURATION_OPTIONS,
-                    index=RPE_DURATION_OPTIONS.index(s1_duration_choice),
-                    format_func=lambda value: str(value),
-                    horizontal=True,
-                    label_visibility="collapsed",
-                    key=f"tablet_rpe_s1_dur_choice_{player_id}",
-                )
-                s1_rpe = st.slider(
-                    "RPE (1-10)",
-                    1,
-                    10,
-                    value=s1_default_rpe,
-                    key=f"tablet_rpe_s1_rpe_{player_id}",
-                )
-
-            if enable_s2 and session_2_container is not None:
-                with session_2_container:
-                    st.markdown(
-                        """
-                        <div class="mvv-session-title">Session 2</div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
-                    s2_dur = st.radio(
-                        "2e Duration (min)",
-                        options=RPE_DURATION_OPTIONS,
-                        index=RPE_DURATION_OPTIONS.index(s2_duration_choice),
-                        format_func=lambda value: str(value),
-                        horizontal=True,
-                        label_visibility="collapsed",
-                        key=f"tablet_rpe_s2_dur_choice_{player_id}",
-                    )
-                    s2_rpe = st.slider(
-                        "2e RPE (1-10)",
-                        1,
-                        10,
-                        value=s2_default_rpe,
-                        key=f"tablet_rpe_s2_rpe_{player_id}",
-                    )
-            else:
-                s2_dur = 0
-                s2_rpe = s2_default_rpe
-
-            if injury:
+            if current_rpe_stage == 1 and injury:
                 st.divider()
                 st.markdown(
                     """
@@ -2057,69 +2178,96 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                         key=f"tablet_rpe_pain_{player_id}",
                     )
             else:
-                injury_loc = "None"
-                injury_pain = 0
+                injury_loc = existing_loc
+                injury_pain = injury_pain_default
 
-            st.divider()
-            notes = st.text_area(
-                "Notes (optional)",
-                value=notes_default,
-                key=f"tablet_rpe_notes_{player_id}",
-                height=120,
-            )
+            if current_rpe_stage == 1:
+                st.divider()
+                notes = st.text_area(
+                    "Notes (optional)",
+                    value=notes_default,
+                    key=f"tablet_rpe_notes_{player_id}",
+                    height=120,
+                )
+            else:
+                notes = notes_default
 
-            rpe_submit = st.form_submit_button("RPE opslaan", use_container_width=True)
+            rpe_submit = st.form_submit_button(f"{session_title} opslaan", use_container_width=True)
 
         if rpe_submit:
             try:
                 sessions_payload: List[Dict[str, int]] = []
+                current_session_payload = {
+                    "session_index": int(current_rpe_stage),
+                    "duration_min": int(current_dur),
+                    "rpe": int(current_rpe_value),
+                }
 
-                if int(s1_dur) > 0:
-                    sessions_payload.append(
-                        {"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)}
-                    )
+                if current_rpe_stage == 1:
+                    sessions_payload.append(current_session_payload)
+                    existing_session_2 = _existing_session_payload(rpe_sessions, 2)
+                    if existing_session_2:
+                        sessions_payload.append(existing_session_2)
+                else:
+                    existing_session_1 = _existing_session_payload(rpe_sessions, 1)
+                    if existing_session_1:
+                        sessions_payload.append(existing_session_1)
+                    sessions_payload.append(current_session_payload)
 
-                if bool(enable_s2) and int(s2_dur) > 0:
-                    sessions_payload.append(
-                        {"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)}
-                    )
+                sessions_payload = sorted(sessions_payload, key=lambda row: int(row["session_index"]))
 
-                injury_type_to_save = None
-                injury_pain_to_save = None
-                if bool(injury):
-                    injury_type_to_save = None if injury_loc == "None" else injury_loc
-                    injury_pain_to_save = int(injury_pain)
+                if current_rpe_stage == 1:
+                    injury_type_to_save = None
+                    injury_pain_to_save = None
+                    if bool(injury):
+                        injury_type_to_save = None if injury_loc == "None" else injury_loc
+                        injury_pain_to_save = int(injury_pain)
+                    notes_to_save = notes
+                else:
+                    injury_type_to_save = None if existing_loc == "None" else existing_loc
+                    injury_pain_to_save = int(injury_pain_default) if injury_default else None
+                    notes_to_save = notes_default
 
                 saved_rpe_entry_id = save_rpe_tablet(
                     sb,
                     player_id=player_id,
                     entry_date=entry_date,
-                    injury=bool(injury),
+                    injury=bool(injury_default if current_rpe_stage == 2 else injury),
                     injury_type=injury_type_to_save,
                     injury_pain=injury_pain_to_save,
-                    notes=notes,
+                    notes=notes_to_save,
                     sessions=sessions_payload,
                     existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
                 )
-                st.session_state["tablet_player_has_rpe"] = True
+                current_header = {
+                    "id": saved_rpe_entry_id,
+                    "player_id": str(player_id),
+                    "entry_date": entry_date_iso,
+                    "injury": bool(injury_default if current_rpe_stage == 2 else injury),
+                    "injury_type": injury_type_to_save,
+                    "injury_pain": injury_pain_to_save,
+                    "notes": str(notes_to_save or ""),
+                }
                 set_cached_rpe_detail(
                     player_id,
                     entry_date,
-                    {
-                        "id": saved_rpe_entry_id,
-                        "player_id": str(player_id),
-                        "entry_date": entry_date_iso,
-                        "injury": bool(injury),
-                        "injury_type": injury_type_to_save,
-                        "injury_pain": injury_pain_to_save,
-                        "notes": str(notes or ""),
-                    },
+                    current_header,
                     sessions_payload,
                 )
                 update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe=True)
-                st.session_state["tablet_flash"] = f"RPE opgeslagen voor {player_name}."
-                clear_selected_player_state(player_id)
-                st.rerun()
+
+                if current_rpe_stage == 1 and second_rpe_enabled and not has_rpe2:
+                    st.session_state["tablet_player_has_rpe"] = False
+                    st.session_state[stage_key] = 2
+                    st.session_state["tablet_flash"] = f"RPE 1 opgeslagen voor {player_name}. Vul nu RPE 2 in."
+                    st.rerun()
+                else:
+                    if current_rpe_stage == 2:
+                        update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe2=True)
+                    st.session_state["tablet_player_has_rpe"] = True
+                    st.session_state["tablet_flash"] = f"{session_title} opgeslagen voor {player_name}."
+                    clear_selected_player_state(player_id)
+                    st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
     if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
