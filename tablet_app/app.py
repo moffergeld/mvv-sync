@@ -596,6 +596,10 @@ st.markdown(
         color: rgba(20, 7, 10, 0.76);
       }
 
+      .mvv-inline-control-spacer {
+        height: 1.45rem;
+      }
+
       .stApp [data-testid="stRadio"] {
         margin: 0.35rem 0 1rem;
       }
@@ -991,6 +995,13 @@ st.markdown(
 
       [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
         justify-content: center;
+      }
+
+      [class*="st-key-tablet_open_bulk_rpe"] button,
+      [class*="st-key-tablet_open_injury"] button {
+        min-height: 4.1rem !important;
+        border-radius: 20px !important;
+        font-size: 0.98rem !important;
       }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
@@ -1753,25 +1764,28 @@ def render_player_picker(sb) -> None:
     second_rpe_key = _second_rpe_mode_key(entry_date_iso)
     if second_rpe_key not in st.session_state:
         st.session_state[second_rpe_key] = False
-    st.markdown('<div class="mvv-toggle-choice-title">RPE modus</div>', unsafe_allow_html=True)
-    second_rpe_enabled = st.radio(
-        "RPE modus",
-        options=[False, True],
-        index=1 if bool(st.session_state[second_rpe_key]) else 0,
-        format_func=lambda value: "2 RPE" if value else "1 RPE",
-        horizontal=True,
-        label_visibility="collapsed",
-        key=second_rpe_key,
-    )
+    top_cols = st.columns([1.25, 1, 1], gap="small")
+    with top_cols[0]:
+        st.markdown('<div class="mvv-toggle-choice-title">RPE modus</div>', unsafe_allow_html=True)
+        second_rpe_enabled = st.radio(
+            "RPE modus",
+            options=[False, True],
+            index=1 if bool(st.session_state[second_rpe_key]) else 0,
+            format_func=lambda value: "2 RPE" if value else "1 RPE",
+            horizontal=True,
+            label_visibility="collapsed",
+            key=second_rpe_key,
+        )
 
-    action_cols = st.columns(2)
-    with action_cols[0]:
+    with top_cols[1]:
+        st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
         if st.button("Groeps-RPE invullen", use_container_width=True, key="tablet_open_bulk_rpe"):
             clear_selected_player_state()
             clear_injury_report_state()
             st.session_state["tablet_bulk_rpe_mode"] = True
             st.rerun()
-    with action_cols[1]:
+    with top_cols[2]:
+        st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
         if st.button("Injury melden", use_container_width=True, key="tablet_open_injury"):
             clear_selected_player_state()
             clear_injury_report_state()
