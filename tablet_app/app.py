@@ -2039,40 +2039,57 @@ def render_injury_report_page(sb) -> None:
     render_top_actions(show_back=False)
     show_flash()
 
-    render_hero(
-        "Injury melden",
-        f"Selecteer een speler en meld de blessure van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
-        kicker=f"{CLUB_NAME} - blessuremelding",
-    )
-
-    if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
-        clear_injury_report_state()
-        st.rerun()
-
     player_lookup = {str(player["player_id"]): str(player["full_name"]) for player in players}
     selected_player_id = str(st.session_state.get("tablet_injury_player_id") or "").strip()
     if selected_player_id not in player_lookup:
         selected_player_id = ""
 
-    st.markdown('<div class="mvv-toggle-choice-title">Speler kiezen</div>', unsafe_allow_html=True)
-    cols = st.columns(3)
-    for idx, player in enumerate(players):
-        player_id = str(player["player_id"])
-        player_name = str(player["full_name"])
-        with cols[idx % 3]:
-            render_injury_pick_card(player_name, selected=player_id == selected_player_id)
-            if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
-                st.session_state["tablet_injury_player_id"] = player_id
-                st.session_state.pop("tablet_injury_loc", None)
-                st.session_state.pop("tablet_injury_pain", None)
-                st.session_state.pop("tablet_injury_notes", None)
-                st.rerun()
-
     if not selected_player_id:
-        st.info("Kies een speler voor de blessuremelding.")
+        render_hero(
+            "Injury melden",
+            f"Selecteer een speler en meld de blessure van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
+            kicker=f"{CLUB_NAME} - blessuremelding",
+        )
+
+        if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
+            clear_injury_report_state()
+            st.rerun()
+
+        st.markdown('<div class="mvv-toggle-choice-title">Speler kiezen</div>', unsafe_allow_html=True)
+        cols = st.columns(3)
+        for idx, player in enumerate(players):
+            player_id = str(player["player_id"])
+            player_name = str(player["full_name"])
+            with cols[idx % 3]:
+                render_injury_pick_card(player_name, selected=False)
+                if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
+                    st.session_state["tablet_injury_player_id"] = player_id
+                    st.session_state.pop("tablet_injury_loc", None)
+                    st.session_state.pop("tablet_injury_pain", None)
+                    st.session_state.pop("tablet_injury_notes", None)
+                    st.rerun()
         return
 
     player_name = player_lookup[selected_player_id]
+    render_hero(
+        player_name,
+        f"Blessuremelding voor vandaag ({entry_date.strftime('%d-%m-%Y')}).",
+        kicker=f"{CLUB_NAME} - blessuremelding",
+    )
+
+    nav_cols = st.columns(2)
+    with nav_cols[0]:
+        if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
+            clear_injury_report_state()
+            st.rerun()
+    with nav_cols[1]:
+        if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
+            st.session_state.pop("tablet_injury_player_id", None)
+            st.session_state.pop("tablet_injury_loc", None)
+            st.session_state.pop("tablet_injury_pain", None)
+            st.session_state.pop("tablet_injury_notes", None)
+            st.rerun()
+
     rpe_header, rpe_sessions = get_cached_rpe_detail(sb, selected_player_id, entry_date)
     existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
     if existing_loc not in INJURY_LOCATION_OPTIONS:
@@ -2090,13 +2107,6 @@ def render_injury_report_page(sb) -> None:
         """,
         unsafe_allow_html=True,
     )
-
-    if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
-        st.session_state.pop("tablet_injury_player_id", None)
-        st.session_state.pop("tablet_injury_loc", None)
-        st.session_state.pop("tablet_injury_pain", None)
-        st.session_state.pop("tablet_injury_notes", None)
-        st.rerun()
 
     with st.form("tablet_injury_form", clear_on_submit=False):
         injury_loc = st.selectbox(
