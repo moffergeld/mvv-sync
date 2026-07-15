@@ -40,6 +40,29 @@ TABLET_COMPLETION_CACHE_TTL_SECONDS = 45
 TABLET_FORM_CACHE_TTL_SECONDS = 300
 RPE_DURATION_OPTIONS = list(range(30, 111, 5))
 RPE_BULK_DURATION_DEFAULT = 60
+INJURY_LOCATION_OPTIONS = [
+    "None",
+    "Foot",
+    "Ankle",
+    "Lower leg",
+    "Knee",
+    "Upper leg",
+    "Hip",
+    "Groin",
+    "Glute",
+    "Lower back",
+    "Abdomen",
+    "Chest",
+    "Shoulder",
+    "Upper arm",
+    "Elbow",
+    "Forearm",
+    "Wrist",
+    "Hand",
+    "Neck",
+    "Head",
+    "Other",
+]
 
 
 st.set_page_config(
@@ -942,39 +965,8 @@ st.markdown(
         margin: 0 !important;
       }
 
-      [class*="st-key-tablet_kpi_action_rpe"] {
-        margin-top: -122px;
-        margin-bottom: 0.15rem;
-        position: relative;
-        z-index: 2;
-      }
-
-      [class*="st-key-tablet_kpi_action_rpe"] button {
-        min-height: 122px !important;
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-        color: transparent !important;
-        font-size: 0 !important;
-      }
-
-      [class*="st-key-tablet_kpi_action_rpe"] button:hover,
-      [class*="st-key-tablet_kpi_action_rpe"] button:active {
-        transform: none !important;
-        background: transparent !important;
-        border: none !important;
-        box-shadow: none !important;
-      }
-
-      [class*="st-key-tablet_kpi_action_rpe"] button p,
-      [class*="st-key-tablet_kpi_action_rpe"] button span,
-      [class*="st-key-tablet_kpi_action_rpe"] button [data-testid="stMarkdownContainer"] {
-        opacity: 0 !important;
-        font-size: 0 !important;
-        margin: 0 !important;
-      }
-
-      [class*="st-key-tablet_bulk_back"] button {
+      [class*="st-key-tablet_bulk_back"] button,
+      [class*="st-key-tablet_injury_back"] button {
         min-height: 3.35rem !important;
         border-radius: 18px !important;
         font-size: 0.98rem !important;
@@ -1271,58 +1263,83 @@ def save_asrm_tablet(sb, player_id, entry_date, muscle_soreness, fatigue, sleep_
     )
 
 
-def save_rpe_tablet(
+def _load_existing_rpe_header(sb, player_id: str, entry_date_iso: str, existing_rpe_entry_id: str | None = None) -> Dict[str, Any]:
+    query = sb.table("rpe_entries").select("*")
+    if str(existing_rpe_entry_id or "").strip():
+        query = query.eq("id", str(existing_rpe_entry_id).strip())
+    else:
+        query = query.eq("player_id", str(player_id)).eq("entry_date", entry_date_iso)
+    rows = query.limit(1).execute().data or []
+    return dict(rows[0]) if rows else {}
+
+
+def _upsert_rpe_header_tablet(
     sb,
     player_id: str,
     entry_date,
-    injury: bool,
-    injury_type: str | None,
-    injury_pain: int | None,
-    notes: str,
-    sessions: List[Dict[str, int]],
+    *,
+    injury: bool | None = None,
+    injury_type: str | None = None,
+    injury_pain: int | None = None,
+    notes: str | None = None,
     existing_rpe_entry_id: str | None = None,
-) -> str:
+) -> Dict[str, Any]:
     entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
     now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
+    existing_header = _load_existing_rpe_header(sb, player_id, entry_date_iso, existing_rpe_entry_id)
+
+    resolved_injury = bool(existing_header.get("injury", False)) if injury is None else bool(injury)
+    resolved_injury_type = existing_header.get("injury_type") if injury_type is None else injury_type
+    resolved_injury_pain = existing_header.get("injury_pain") if injury_pain is None else injury_pain
+    resolved_notes = existing_header.get("notes") if notes is None else (str(notes or "").strip() or None)
+
+    if not resolved_injury:
+        resolved_injury_type = None
+        resolved_injury_pain = None
+
     header_payload = {
         "player_id": str(player_id),
         "entry_date": entry_date_iso,
-        "injury": bool(injury),
-        "injury_type": injury_type,
-        "injury_pain": injury_pain,
-        "notes": str(notes or ""),
+        "injury": resolved_injury,
+        "injury_type": resolved_injury_type,
+        "injury_pain": resolved_injury_pain,
+        "notes": resolved_notes,
         "created_by": get_tablet_created_by(str(player_id)),
         "updated_at": now_iso,
     }
 
-    rpe_entry_id = str(existing_rpe_entry_id or "").strip() or None
+    rpe_entry_id = str(existing_header.get("id") or existing_rpe_entry_id or "").strip() or None
 
     if rpe_entry_id:
         update_payload = dict(header_payload)
         update_payload.pop("created_by", None)
         sb.table("rpe_entries").update(update_payload).eq("id", rpe_entry_id).execute()
     else:
-        existing = (
-            sb.table("rpe_entries")
-            .select("id")
-            .eq("player_id", str(player_id))
-            .eq("entry_date", entry_date_iso)
-            .limit(1)
-            .execute()
-            .data
-            or []
-        )
-        if existing:
-            rpe_entry_id = existing[0].get("id")
-            update_payload = dict(header_payload)
-            update_payload.pop("created_by", None)
-            sb.table("rpe_entries").update(update_payload).eq("id", rpe_entry_id).execute()
-        else:
-            inserted = sb.table("rpe_entries").insert(header_payload).execute().data or []
-            rpe_entry_id = inserted[0].get("id") if inserted else None
+        inserted = sb.table("rpe_entries").insert(header_payload).execute().data or []
+        rpe_entry_id = str(inserted[0].get("id") or "").strip() if inserted else None
 
     if not rpe_entry_id:
         raise RuntimeError("RPE-header kon niet worden opgeslagen.")
+
+    header_snapshot = dict(header_payload)
+    header_snapshot["id"] = rpe_entry_id
+    return header_snapshot
+
+
+def save_rpe_tablet(
+    sb,
+    player_id: str,
+    entry_date,
+    sessions: List[Dict[str, int]],
+    existing_rpe_entry_id: str | None = None,
+) -> str:
+    header_snapshot = _upsert_rpe_header_tablet(
+        sb,
+        player_id=player_id,
+        entry_date=entry_date,
+        existing_rpe_entry_id=existing_rpe_entry_id,
+    )
+    rpe_entry_id = str(header_snapshot.get("id") or "").strip()
 
     if not sessions:
         sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).execute()
@@ -1354,6 +1371,27 @@ def save_rpe_tablet(
 
     return str(rpe_entry_id)
 
+
+def save_injury_tablet(
+    sb,
+    player_id: str,
+    entry_date,
+    injury_type: str | None,
+    injury_pain: int | None,
+    notes: str,
+    existing_rpe_entry_id: str | None = None,
+) -> Dict[str, Any]:
+    return _upsert_rpe_header_tablet(
+        sb,
+        player_id=player_id,
+        entry_date=entry_date,
+        injury=True,
+        injury_type=injury_type,
+        injury_pain=injury_pain,
+        notes=notes,
+        existing_rpe_entry_id=existing_rpe_entry_id,
+    )
+
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
     cm.set(ACCESS_COOKIE_NAME, "1", max_age=ACCESS_COOKIE_SECONDS, key="tablet_access_set")
@@ -1371,6 +1409,12 @@ def lock_tablet() -> None:
         "tablet_player_name",
         "tablet_active_form",
         "tablet_flash",
+        "tablet_bulk_rpe_mode",
+        "tablet_injury_mode",
+        "tablet_injury_player_id",
+        "tablet_injury_loc",
+        "tablet_injury_pain",
+        "tablet_injury_notes",
     ):
         st.session_state.pop(key, None)
     time.sleep(0.10)
@@ -1506,9 +1550,6 @@ def fetch_daily_completion(_sb, entry_date_iso: str) -> Dict[str, List[str]]:
     for entry_id, player_id in entry_map.items():
         session_indexes = sessions_by_entry.get(entry_id, set())
         if session_indexes:
-            rpe1_ids.add(player_id)
-        else:
-            # Fallback voor oudere of half-opgeslagen records: een header telt minimaal als RPE 1.
             rpe1_ids.add(player_id)
         if 2 in session_indexes:
             rpe2_ids.add(player_id)
@@ -1654,20 +1695,27 @@ def clear_selected_player_state(player_id: str | None = None) -> None:
                 f"tablet_asrm_stress_{player_id}",
                 f"tablet_asrm_mood_{player_id}",
                 f"tablet_rpe_stage_{player_id}",
-                f"tablet_rpe_injury_{player_id}",
                 f"tablet_rpe_s1_dur_{player_id}",
                 f"tablet_rpe_s1_dur_choice_{player_id}",
                 f"tablet_rpe_s1_rpe_{player_id}",
                 f"tablet_rpe_s2_dur_{player_id}",
                 f"tablet_rpe_s2_dur_choice_{player_id}",
                 f"tablet_rpe_s2_rpe_{player_id}",
-                f"tablet_rpe_loc_{player_id}",
-                f"tablet_rpe_pain_{player_id}",
-                f"tablet_rpe_notes_{player_id}",
             ]
         )
 
     for key in keys_to_clear:
+        st.session_state.pop(key, None)
+
+
+def clear_injury_report_state() -> None:
+    for key in (
+        "tablet_injury_mode",
+        "tablet_injury_player_id",
+        "tablet_injury_loc",
+        "tablet_injury_pain",
+        "tablet_injury_notes",
+    ):
         st.session_state.pop(key, None)
 
 
@@ -1716,6 +1764,21 @@ def render_player_picker(sb) -> None:
         key=second_rpe_key,
     )
 
+    action_cols = st.columns(2)
+    with action_cols[0]:
+        if st.button("Groeps-RPE invullen", use_container_width=True, key="tablet_open_bulk_rpe"):
+            clear_selected_player_state()
+            clear_injury_report_state()
+            st.session_state["tablet_bulk_rpe_mode"] = True
+            st.rerun()
+    with action_cols[1]:
+        if st.button("Injury melden", use_container_width=True, key="tablet_open_injury"):
+            clear_selected_player_state()
+            clear_injury_report_state()
+            st.session_state["tablet_bulk_rpe_mode"] = False
+            st.session_state["tablet_injury_mode"] = True
+            st.rerun()
+
     total_players = len(players)
     wellness_completed = sum(1 for player in players if player["player_id"] in asrm_ids)
     completed_rpe_ids = rpe2_ids if second_rpe_enabled else rpe1_ids
@@ -1726,11 +1789,6 @@ def render_player_picker(sb) -> None:
         render_kpi_card("Wellness", wellness_completed, total_players, tone="wellness")
     with stat_2:
         render_kpi_card("RPE", rpe_completed, total_players, tone="rpe")
-        if st.button("open_rpe_bulk", use_container_width=True, key="tablet_kpi_action_rpe"):
-            clear_selected_player_state()
-            st.session_state["tablet_bulk_rpe_mode"] = True
-            st.rerun()
-        st.markdown('<div class="mvv-kpi-hint">Tik hier voor groeps-RPE</div>', unsafe_allow_html=True)
 
     cols = st.columns(3)
     for idx, player in enumerate(players):
@@ -1765,6 +1823,7 @@ def render_player_picker(sb) -> None:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
             if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_bulk_rpe_mode"] = False
+                st.session_state["tablet_injury_mode"] = False
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
                 st.session_state["tablet_player_has_wellness"] = wellness_done
@@ -1859,16 +1918,13 @@ def render_bulk_rpe_page(sb) -> None:
                             "rpe": rpe_value,
                         }
                     ]
+                    existing_header, _ = get_cached_rpe_detail(sb, player_id, entry_date)
                     saved_rpe_entry_id = save_rpe_tablet(
                         sb,
                         player_id=player_id,
                         entry_date=entry_date,
-                        injury=False,
-                        injury_type=None,
-                        injury_pain=None,
-                        notes="",
                         sessions=sessions_payload,
-                        existing_rpe_entry_id=None,
+                        existing_rpe_entry_id=str(existing_header.get("id") or "").strip() or None,
                     )
                     set_cached_rpe_detail(
                         player_id,
@@ -1877,10 +1933,10 @@ def render_bulk_rpe_page(sb) -> None:
                             "id": saved_rpe_entry_id,
                             "player_id": player_id,
                             "entry_date": entry_date_iso,
-                            "injury": False,
-                            "injury_type": None,
-                            "injury_pain": None,
-                            "notes": "",
+                            "injury": bool(existing_header.get("injury", False)),
+                            "injury_type": existing_header.get("injury_type"),
+                            "injury_pain": existing_header.get("injury_pain"),
+                            "notes": str(existing_header.get("notes") or ""),
                         },
                         sessions_payload,
                     )
@@ -1933,6 +1989,122 @@ def _normalize_duration_choice(value: int) -> int:
     if duration <= 0:
         return RPE_DURATION_OPTIONS[0]
     return min(RPE_DURATION_OPTIONS, key=lambda option: abs(option - duration))
+
+
+def render_injury_report_page(sb) -> None:
+    entry_date = amsterdam_today()
+    entry_date_iso = entry_date.isoformat()
+    players = get_cached_active_players(sb)
+    if not players:
+        st.warning("Geen actieve spelers gevonden.")
+        return
+
+    render_top_actions(show_back=False)
+    show_flash()
+
+    render_hero(
+        "Injury melden",
+        f"Selecteer een speler en meld de blessure van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
+        kicker=f"{CLUB_NAME} - blessuremelding",
+    )
+
+    if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
+        clear_injury_report_state()
+        st.rerun()
+
+    player_options = [""] + [str(player["player_id"]) for player in players]
+    player_lookup = {str(player["player_id"]): str(player["full_name"]) for player in players}
+    selected_player_id = str(st.session_state.get("tablet_injury_player_id") or "").strip()
+    if selected_player_id not in player_lookup:
+        selected_player_id = ""
+
+    selected_player_id = st.selectbox(
+        "Speler",
+        options=player_options,
+        index=player_options.index(selected_player_id) if selected_player_id in player_options else 0,
+        format_func=lambda value: "Kies speler" if not value else player_lookup.get(value, value),
+        key="tablet_injury_player_id",
+    )
+
+    if not selected_player_id:
+        st.info("Kies eerst een speler voor de blessuremelding.")
+        return
+
+    player_name = player_lookup[selected_player_id]
+    rpe_header, rpe_sessions = get_cached_rpe_detail(sb, selected_player_id, entry_date)
+    existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
+    if existing_loc not in INJURY_LOCATION_OPTIONS:
+        existing_loc = "Other"
+    existing_pain = int(rpe_header.get("injury_pain", 0) or 0)
+    existing_notes = str(rpe_header.get("notes") or "")
+
+    st.markdown(
+        f"""
+        <div class="mvv-section-card">
+          <div class="mvv-form-kicker">Blessure vandaag</div>
+          <div class="mvv-form-title">{html.escape(player_name)}</div>
+          <div class="mvv-form-subtitle">Vul locatie, pijn en een korte opmerking in.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("tablet_injury_form", clear_on_submit=False):
+        injury_loc = st.selectbox(
+            "Locatie",
+            options=INJURY_LOCATION_OPTIONS,
+            index=INJURY_LOCATION_OPTIONS.index(existing_loc),
+            key="tablet_injury_loc",
+        )
+        injury_pain = st.slider(
+            "Pijn (0-10)",
+            0,
+            10,
+            value=existing_pain,
+            key="tablet_injury_pain",
+        )
+        notes = st.text_area(
+            "Opmerking",
+            value=existing_notes,
+            key="tablet_injury_notes",
+            height=140,
+        )
+        injury_submit = st.form_submit_button("Injury opslaan", use_container_width=True)
+
+    if injury_submit:
+        if injury_loc == "None":
+            st.error("Kies een blessurelocatie.")
+            return
+
+        try:
+            saved_header = save_injury_tablet(
+                sb,
+                player_id=selected_player_id,
+                entry_date=entry_date,
+                injury_type=injury_loc,
+                injury_pain=int(injury_pain),
+                notes=notes,
+                existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
+            )
+            set_cached_rpe_detail(
+                selected_player_id,
+                entry_date,
+                {
+                    "id": str(saved_header.get("id") or ""),
+                    "player_id": selected_player_id,
+                    "entry_date": entry_date_iso,
+                    "injury": True,
+                    "injury_type": injury_loc,
+                    "injury_pain": int(injury_pain),
+                    "notes": str(notes or ""),
+                },
+                rpe_sessions,
+            )
+            st.session_state["tablet_flash"] = f"Injury opgeslagen voor {player_name}."
+            clear_injury_report_state()
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Opslaan faalde: {exc}")
 
 
 def render_player_forms(sb, player_id: str, player_name: str) -> None:
@@ -2041,46 +2213,12 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         has_rpe1 = any(int(row.get("session_index", 0) or 0) == 1 for row in rpe_sessions)
         has_rpe2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
         st.session_state["tablet_player_has_rpe"] = has_rpe2 if second_rpe_enabled else has_rpe1
-        injury_default = bool(rpe_header.get("injury", False))
-        injury_locations = [
-            "None",
-            "Foot",
-            "Ankle",
-            "Lower leg",
-            "Knee",
-            "Upper leg",
-            "Hip",
-            "Groin",
-            "Glute",
-            "Lower back",
-            "Abdomen",
-            "Chest",
-            "Shoulder",
-            "Upper arm",
-            "Elbow",
-            "Forearm",
-            "Wrist",
-            "Hand",
-            "Neck",
-            "Head",
-            "Other",
-        ]
-
-        existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
-        if existing_loc not in injury_locations:
-            existing_loc = "Other"
 
         s1_default_dur = _session_value(rpe_sessions, 1, "duration_min", 0)
         s1_default_rpe = _session_value(rpe_sessions, 1, "rpe", 5)
         s2_default_dur = _session_value(rpe_sessions, 2, "duration_min", 0)
         s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
-        notes_default = str(rpe_header.get("notes") or "")
-        injury_pain_default = int(rpe_header.get("injury_pain", 0) or 0)
         stage_key = f"tablet_rpe_stage_{player_id}"
-        injury_key = f"tablet_rpe_injury_{player_id}"
-
-        if injury_key not in st.session_state:
-            st.session_state[injury_key] = injury_default
 
         default_stage = 2 if second_rpe_enabled and has_rpe1 and not has_rpe2 else 1
         if stage_key not in st.session_state:
@@ -2102,20 +2240,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         duration_key = f"tablet_rpe_s{current_rpe_stage}_dur_choice_{player_id}"
         rpe_key = f"tablet_rpe_s{current_rpe_stage}_rpe_{player_id}"
         session_title = f"RPE {current_rpe_stage}"
-
-        if current_rpe_stage == 1:
-            st.markdown('<div class="mvv-toggle-choice-title">Injury</div>', unsafe_allow_html=True)
-            injury = st.radio(
-                "Injury",
-                options=[False, True],
-                index=1 if bool(st.session_state[injury_key]) else 0,
-                format_func=lambda value: "Ja" if value else "Nee",
-                horizontal=True,
-                label_visibility="collapsed",
-                key=injury_key,
-            )
-        else:
-            injury = injury_default
 
         with st.form(f"tablet_rpe_form_{player_id}", clear_on_submit=False):
             _legend_rpe()
@@ -2144,45 +2268,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 key=rpe_key,
             )
 
-            if current_rpe_stage == 1 and injury:
-                st.divider()
-                st.markdown(
-                    """
-                    <div class="mvv-session-title">Injury</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                loc_col, pain_col = st.columns([1.2, 2.0])
-                with loc_col:
-                    injury_loc = st.selectbox(
-                        "Location",
-                        options=injury_locations,
-                        index=injury_locations.index(existing_loc),
-                        key=f"tablet_rpe_loc_{player_id}",
-                    )
-                with pain_col:
-                    injury_pain = st.slider(
-                        "Pain (0-10)",
-                        0,
-                        10,
-                        value=injury_pain_default,
-                        key=f"tablet_rpe_pain_{player_id}",
-                    )
-            else:
-                injury_loc = existing_loc
-                injury_pain = injury_pain_default
-
-            if current_rpe_stage == 1:
-                st.divider()
-                notes = st.text_area(
-                    "Notes (optional)",
-                    value=notes_default,
-                    key=f"tablet_rpe_notes_{player_id}",
-                    height=120,
-                )
-            else:
-                notes = notes_default
-
             rpe_submit = st.form_submit_button(f"{session_title} opslaan", use_container_width=True)
 
         if rpe_submit:
@@ -2207,26 +2292,10 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
 
                 sessions_payload = sorted(sessions_payload, key=lambda row: int(row["session_index"]))
 
-                if current_rpe_stage == 1:
-                    injury_type_to_save = None
-                    injury_pain_to_save = None
-                    if bool(injury):
-                        injury_type_to_save = None if injury_loc == "None" else injury_loc
-                        injury_pain_to_save = int(injury_pain)
-                    notes_to_save = notes
-                else:
-                    injury_type_to_save = None if existing_loc == "None" else existing_loc
-                    injury_pain_to_save = int(injury_pain_default) if injury_default else None
-                    notes_to_save = notes_default
-
                 saved_rpe_entry_id = save_rpe_tablet(
                     sb,
                     player_id=player_id,
                     entry_date=entry_date,
-                    injury=bool(injury_default if current_rpe_stage == 2 else injury),
-                    injury_type=injury_type_to_save,
-                    injury_pain=injury_pain_to_save,
-                    notes=notes_to_save,
                     sessions=sessions_payload,
                     existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
                 )
@@ -2234,10 +2303,10 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     "id": saved_rpe_entry_id,
                     "player_id": str(player_id),
                     "entry_date": entry_date_iso,
-                    "injury": bool(injury_default if current_rpe_stage == 2 else injury),
-                    "injury_type": injury_type_to_save,
-                    "injury_pain": injury_pain_to_save,
-                    "notes": str(notes_to_save or ""),
+                    "injury": bool(rpe_header.get("injury", False)),
+                    "injury_type": rpe_header.get("injury_type"),
+                    "injury_pain": rpe_header.get("injury_pain"),
+                    "notes": str(rpe_header.get("notes") or ""),
                 }
                 set_cached_rpe_detail(
                     player_id,
@@ -2280,9 +2349,12 @@ def main() -> None:
     selected_player_id = str(st.session_state.get("tablet_player_id") or "").strip()
     selected_player_name = str(st.session_state.get("tablet_player_name") or "").strip()
     bulk_rpe_mode = bool(st.session_state.get("tablet_bulk_rpe_mode", False))
+    injury_mode = bool(st.session_state.get("tablet_injury_mode", False))
 
     if selected_player_id and selected_player_name:
         render_player_forms(sb, selected_player_id, selected_player_name)
+    elif injury_mode:
+        render_injury_report_page(sb)
     elif bulk_rpe_mode:
         render_bulk_rpe_page(sb)
     else:
