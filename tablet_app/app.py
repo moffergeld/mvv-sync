@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import extra_streamlit_components as stx
@@ -17,6 +18,7 @@ from supabase import create_client
 THIS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = THIS_DIR.parent
 PAGES_DIR = ROOT_DIR / "pages"
+TABLET_ASSETS_DIR = THIS_DIR / "assets"
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -86,20 +88,32 @@ INJURY_LOCATION_LABELS = {
     "Head": "Hoofd",
     "Other": "Overig",
 }
-INJURY_BODY_SELECTOR_ROWS = [
-    [None, None, ("head", "Head"), None, None],
-    [None, None, ("neck", "Neck"), None, None],
-    [None, ("shoulder_l", "Shoulder"), ("chest", "Chest"), ("shoulder_r", "Shoulder"), None],
-    [None, ("upperarm_l", "Upper arm"), ("abdomen", "Abdomen"), ("upperarm_r", "Upper arm"), None],
-    [None, ("elbow_l", "Elbow"), ("lowerback", "Lower back"), ("elbow_r", "Elbow"), None],
-    [None, ("forearm_l", "Forearm"), ("groin", "Groin"), ("forearm_r", "Forearm"), None],
-    [None, ("wrist_l", "Wrist"), ("glute", "Glute"), ("wrist_r", "Wrist"), None],
-    [("hand_l", "Hand"), None, ("hip", "Hip"), None, ("hand_r", "Hand")],
-    [None, None, ("upperleg", "Upper leg"), None, None],
-    [None, None, ("knee", "Knee"), None, None],
-    [None, None, ("lowerleg", "Lower leg"), None, None],
-    [None, None, ("ankle", "Ankle"), None, None],
-    [None, None, ("foot", "Foot"), None, None],
+INJURY_BODY_IMAGE_MARKERS = [
+    {"id": "head", "value": "Head", "top": 17.5, "left": 50.0, "width": 15.0, "height": 15.0},
+    {"id": "neck", "value": "Neck", "top": 27.5, "left": 50.0, "width": 5.0, "height": 5.0},
+    {"id": "shoulder_l", "value": "Shoulder", "top": 32.5, "left": 40.5, "width": 10.0, "height": 5.0},
+    {"id": "shoulder_r", "value": "Shoulder", "top": 32.5, "left": 59.5, "width": 10.0, "height": 5.0},
+    {"id": "chest", "value": "Chest", "top": 38.0, "left": 50.0, "width": 15.0, "height": 9.0},
+    {"id": "upperarm_l", "value": "Upper arm", "top": 43.0, "left": 37.0, "width": 7.0, "height": 12.0},
+    {"id": "upperarm_r", "value": "Upper arm", "top": 43.0, "left": 63.0, "width": 7.0, "height": 12.0},
+    {"id": "abdomen", "value": "Abdomen", "top": 49.5, "left": 50.0, "width": 11.0, "height": 8.5},
+    {"id": "lowerback", "value": "Lower back", "top": 55.0, "left": 50.0, "width": 11.0, "height": 6.0},
+    {"id": "elbow_l", "value": "Elbow", "top": 51.8, "left": 36.8, "width": 4.6, "height": 4.6},
+    {"id": "elbow_r", "value": "Elbow", "top": 51.8, "left": 63.2, "width": 4.6, "height": 4.6},
+    {"id": "forearm_l", "value": "Forearm", "top": 58.8, "left": 36.0, "width": 5.8, "height": 11.0},
+    {"id": "forearm_r", "value": "Forearm", "top": 58.8, "left": 64.0, "width": 5.8, "height": 11.0},
+    {"id": "wrist_l", "value": "Wrist", "top": 66.2, "left": 35.8, "width": 3.4, "height": 3.0},
+    {"id": "wrist_r", "value": "Wrist", "top": 66.2, "left": 64.2, "width": 3.4, "height": 3.0},
+    {"id": "hand_l", "value": "Hand", "top": 70.8, "left": 29.5, "width": 5.8, "height": 7.0},
+    {"id": "hand_r", "value": "Hand", "top": 70.8, "left": 70.5, "width": 5.8, "height": 7.0},
+    {"id": "groin", "value": "Groin", "top": 60.5, "left": 50.0, "width": 7.2, "height": 5.0},
+    {"id": "glute", "value": "Glute", "top": 67.8, "left": 50.0, "width": 10.5, "height": 6.0},
+    {"id": "hip", "value": "Hip", "top": 73.2, "left": 50.0, "width": 10.2, "height": 5.4},
+    {"id": "upperleg", "value": "Upper leg", "top": 77.0, "left": 50.0, "width": 7.2, "height": 14.2},
+    {"id": "knee", "value": "Knee", "top": 85.0, "left": 50.0, "width": 4.8, "height": 4.8},
+    {"id": "lowerleg", "value": "Lower leg", "top": 91.8, "left": 50.0, "width": 5.6, "height": 11.2},
+    {"id": "ankle", "value": "Ankle", "top": 97.2, "left": 50.0, "width": 3.6, "height": 3.0},
+    {"id": "foot", "value": "Foot", "top": 100.5, "left": 50.0, "width": 7.6, "height": 3.6},
 ]
 
 
@@ -645,16 +659,98 @@ st.markdown(
         color: rgba(20, 7, 10, 0.72) !important;
       }
 
-      .mvv-body-gap {
-        height: 2.8rem;
+      .mvv-body-image-card {
+        margin: 0.2rem auto 0.85rem auto;
+        padding: 0.9rem 0.8rem 1rem 0.8rem;
+        border-radius: 26px;
+        border: 1px solid rgba(200, 16, 46, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: 0 12px 28px rgba(78, 8, 18, 0.06);
       }
 
-      .mvv-body-map-shell {
-        padding: 0.4rem 0 0.2rem 0;
+      .mvv-body-image-stage {
+        position: relative;
+        width: min(100%, 22rem);
+        aspect-ratio: 1 / 1;
+        margin: 0 auto;
+        overflow: visible;
       }
 
-      .mvv-body-map-wrap {
-        max-width: 24rem;
+      .mvv-body-image {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      .mvv-body-marker {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        border: 2px solid rgba(200, 16, 46, 0.22);
+        background: rgba(200, 16, 46, 0.05);
+        box-shadow: 0 6px 14px rgba(78, 8, 18, 0.06);
+        transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+      }
+
+      .mvv-body-marker:hover {
+        transform: translate(-50%, -50%) scale(1.04);
+        border-color: rgba(200, 16, 46, 0.45);
+        background: rgba(200, 16, 46, 0.10);
+      }
+
+      .mvv-body-marker-active {
+        border-color: var(--mvv-red) !important;
+        background: rgba(200, 16, 46, 0.22) !important;
+        box-shadow:
+          0 0 0 5px rgba(200, 16, 46, 0.12),
+          0 10px 22px rgba(78, 8, 18, 0.12) !important;
+      }
+
+      .mvv-body-image-actions {
+        margin-top: 0.95rem;
+        display: flex;
+        justify-content: center;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+      }
+
+      .mvv-body-image-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 9.75rem;
+        min-height: 3rem;
+        padding: 0.55rem 1rem;
+        border-radius: 18px;
+        border: 1px solid rgba(200, 16, 46, 0.18);
+        background: linear-gradient(145deg, #ffffff 0%, #fff4f1 100%);
+        box-shadow: 0 10px 22px rgba(78, 8, 18, 0.06);
+        color: var(--mvv-deep) !important;
+        font-size: 0.92rem;
+        font-weight: 800;
+        text-decoration: none !important;
+      }
+
+      .mvv-body-image-action:hover {
+        border-color: rgba(200, 16, 46, 0.42);
+      }
+
+      .mvv-body-image-action-active {
+        border-color: var(--mvv-red) !important;
+        background: rgba(255, 122, 128, 0.14) !important;
+        color: var(--mvv-red) !important;
+      }
+
+      .mvv-body-image-stage a,
+      .mvv-body-image-actions a {
+        text-decoration: none !important;
+      }
+
+      .mvv-body-image-shell {
+        width: min(100%, 24rem);
         margin: 0 auto;
       }
 
@@ -1068,152 +1164,6 @@ st.markdown(
         border-radius: 20px !important;
         font-size: 0.98rem !important;
       }
-
-      [class*="st-key-tablet_injury_part_"] {
-        margin-top: -0.3rem;
-        margin-bottom: -0.3rem;
-        display: flex;
-        justify-content: center;
-      }
-
-      [class*="st-key-tablet_injury_part_"] button {
-        min-height: 2.8rem !important;
-        border-radius: 999px !important;
-        padding: 0 !important;
-        border: 0 !important;
-        background: #f6c8aa !important;
-        box-shadow: 0 10px 20px rgba(155, 98, 64, 0.08) !important;
-        color: transparent !important;
-        font-size: 0 !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"] button p,
-      [class*="st-key-tablet_injury_part_"] button span,
-      [class*="st-key-tablet_injury_part_"] button [data-testid="stMarkdownContainer"] {
-        color: transparent !important;
-        font-size: 0 !important;
-        line-height: 0 !important;
-        margin: 0 !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"] button:hover {
-        transform: translateY(-1px);
-      }
-
-      [class*="st-key-tablet_injury_part_active_"] button {
-        background: linear-gradient(135deg, #ff8c96 0%, var(--mvv-red) 100%) !important;
-        box-shadow:
-          0 0 0 6px rgba(200, 16, 46, 0.12),
-          0 14px 28px rgba(78, 8, 18, 0.18) !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_head"] button {
-        width: 4.3rem !important;
-        min-height: 4.95rem !important;
-        border-radius: 50% 50% 46% 46% !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_neck"] button {
-        width: 1.5rem !important;
-        min-height: 1.6rem !important;
-        border-radius: 14px !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_shoulder_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_shoulder_r"] button {
-        width: 4.6rem !important;
-        min-height: 2.4rem !important;
-        border-radius: 1.6rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_chest"] button {
-        width: 5.25rem !important;
-        min-height: 3.2rem !important;
-        border-radius: 1.8rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_upperarm_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_upperarm_r"] button {
-        width: 1.85rem !important;
-        min-height: 5rem !important;
-        border-radius: 1.2rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_abdomen"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_lowerback"] button {
-        width: 4.8rem !important;
-        min-height: 4rem !important;
-        border-radius: 1.8rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_elbow_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_elbow_r"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_knee"] button {
-        width: 1.8rem !important;
-        min-height: 1.8rem !important;
-        border-radius: 50% !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_forearm_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_forearm_r"] button {
-        width: 1.6rem !important;
-        min-height: 4.6rem !important;
-        border-radius: 1rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_wrist_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_wrist_r"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_ankle"] button {
-        width: 1.4rem !important;
-        min-height: 1.2rem !important;
-        border-radius: 999px !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_hand_l"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_hand_r"] button {
-        width: 2.3rem !important;
-        min-height: 2.6rem !important;
-        border-radius: 1.2rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_groin"] button,
-      [class*="st-key-tablet_injury_part_"][class*="_glute"] button {
-        width: 3.2rem !important;
-        min-height: 2.35rem !important;
-        border-radius: 1.3rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_hip"] button {
-        width: 4.5rem !important;
-        min-height: 2.5rem !important;
-        border-radius: 1.5rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_upperleg"] button {
-        width: 3rem !important;
-        min-height: 5.3rem !important;
-        border-radius: 1.5rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_lowerleg"] button {
-        width: 2.45rem !important;
-        min-height: 5.7rem !important;
-        border-radius: 1.4rem !important;
-      }
-
-      [class*="st-key-tablet_injury_part_"][class*="_foot"] button {
-        width: 3rem !important;
-        min-height: 1.35rem !important;
-        border-radius: 1rem !important;
-      }
-
-      [class*="st-key-tablet_injury_other"] button,
-      [class*="st-key-tablet_injury_loc_clear"] button {
-        min-height: 3rem !important;
-        border-radius: 18px !important;
-        font-size: 0.92rem !important;
-        padding: 0.5rem 0.75rem !important;
-      }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -1253,6 +1203,46 @@ def logo_html() -> str:
             encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
             return f'<img src="data:image/png;base64,{encoded}" alt="MVV Maastricht logo" />'
     return '<div class="mvv-logo-fallback">MVV</div>'
+
+
+def injury_body_image_src() -> str:
+    image_path = TABLET_ASSETS_DIR / "injury-body.png"
+    if not image_path.exists():
+        return ""
+    encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
+
+def current_query_params_dict() -> Dict[str, str]:
+    params: Dict[str, str] = {}
+    try:
+        keys = list(st.query_params.keys())
+    except Exception:
+        keys = []
+    for key in keys:
+        value = st.query_params.get(key)
+        if value is None:
+            continue
+        params[str(key)] = str(value)
+    return params
+
+
+def injury_location_href(value: str | None) -> str:
+    params = current_query_params_dict()
+    if value and value != "None":
+        params["injury_loc"] = str(value)
+    else:
+        params.pop("injury_loc", None)
+    query = urlencode(params)
+    return f"?{query}" if query else "?"
+
+
+def clear_injury_location_query_param() -> None:
+    try:
+        if "injury_loc" in st.query_params:
+            del st.query_params["injury_loc"]
+    except Exception:
+        pass
 
 
 def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
@@ -1354,35 +1344,44 @@ def render_injury_body_selector(selected_location: str) -> None:
         '<div class="mvv-injury-map-note">Tik op het lichaamsdeel waar de blessure zit.</div>',
         unsafe_allow_html=True,
     )
+    body_src = injury_body_image_src()
+    if not body_src:
+        st.warning("Lichaamsafbeelding ontbreekt.")
+        return
 
-    shell_cols = st.columns([1, 0.95, 1], gap="small")
-    with shell_cols[1]:
-        for row in INJURY_BODY_SELECTOR_ROWS:
-            cols = st.columns([1, 1, 1.15, 1, 1], gap="small")
-            for idx, cell in enumerate(row):
-                with cols[idx]:
-                    if cell is None:
-                        st.markdown('<div class="mvv-body-gap"></div>', unsafe_allow_html=True)
-                        continue
-                    cell_id, value = cell
-                    key_state = "active" if str(selected_location) == value else "idle"
-                    if st.button(
-                        injury_location_label(value),
-                        use_container_width=True,
-                        key=f"tablet_injury_part_{key_state}_{cell_id}",
-                    ):
-                        st.session_state["tablet_injury_loc"] = value
-                        st.rerun()
+    marker_links: List[str] = []
+    for marker in INJURY_BODY_IMAGE_MARKERS:
+        marker_class = "mvv-body-marker-active" if str(selected_location) == str(marker["value"]) else ""
+        marker_links.append(
+            (
+                f'<a class="mvv-body-marker {marker_class}" '
+                f'href="{html.escape(injury_location_href(str(marker["value"])), quote=True)}" '
+                f'aria-label="{html.escape(injury_location_label(str(marker["value"])), quote=True)}" '
+                f'title="{html.escape(injury_location_label(str(marker["value"])), quote=True)}" '
+                f'style="top:{float(marker["top"]):.1f}%;left:{float(marker["left"]):.1f}%;'
+                f'width:{float(marker["width"]):.1f}%;height:{float(marker["height"]):.1f}%;"></a>'
+            )
+        )
 
-    extra_cols = st.columns([1, 1.25, 1.25, 1], gap="small")
-    with extra_cols[1]:
-        if st.button("Overig", use_container_width=True, key="tablet_injury_other"):
-            st.session_state["tablet_injury_loc"] = "Other"
-            st.rerun()
-    with extra_cols[2]:
-        if st.button("Wis locatie", use_container_width=True, key="tablet_injury_loc_clear"):
-            st.session_state["tablet_injury_loc"] = "None"
-            st.rerun()
+    other_class = "mvv-body-image-action-active" if str(selected_location) == "Other" else ""
+    clear_class = "mvv-body-image-action-active" if str(selected_location) == "None" else ""
+    st.markdown(
+        f"""
+        <div class="mvv-body-image-card">
+          <div class="mvv-body-image-shell">
+            <div class="mvv-body-image-stage">
+              <img class="mvv-body-image" src="{body_src}" alt="Lichaamssilhouet" />
+              {''.join(marker_links)}
+            </div>
+          </div>
+          <div class="mvv-body-image-actions">
+            <a class="mvv-body-image-action {other_class}" href="{html.escape(injury_location_href('Other'), quote=True)}">Overig</a>
+            <a class="mvv-body-image-action {clear_class}" href="{html.escape(injury_location_href('None'), quote=True)}">Wis locatie</a>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
     wellness_status = "ok" if has_wellness else "open"
@@ -1996,6 +1995,7 @@ def clear_injury_report_state() -> None:
         "tablet_injury_notes",
     ):
         st.session_state.pop(key, None)
+    clear_injury_location_query_param()
 
 
 def show_flash() -> None:
@@ -2308,6 +2308,7 @@ def render_injury_report_page(sb) -> None:
             with cols[idx % 3]:
                 render_injury_pick_card(player_name, selected=False)
                 if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
+                    clear_injury_location_query_param()
                     st.session_state["tablet_injury_player_id"] = player_id
                     st.session_state.pop("tablet_injury_loc", None)
                     st.session_state.pop("tablet_injury_pain", None)
@@ -2329,6 +2330,7 @@ def render_injury_report_page(sb) -> None:
             st.rerun()
     with nav_cols[1]:
         if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
+            clear_injury_location_query_param()
             st.session_state.pop("tablet_injury_player_id", None)
             st.session_state.pop("tablet_injury_loc", None)
             st.session_state.pop("tablet_injury_pain", None)
@@ -2341,6 +2343,9 @@ def render_injury_report_page(sb) -> None:
         existing_loc = "Other"
     existing_pain = int(rpe_header.get("injury_pain", 0) or 0)
     existing_notes = str(rpe_header.get("notes") or "")
+    query_loc = str(st.query_params.get("injury_loc") or "").strip()
+    if query_loc in INJURY_LOCATION_OPTIONS:
+        st.session_state["tablet_injury_loc"] = query_loc
     selected_injury_loc = str(st.session_state.get("tablet_injury_loc") or existing_loc or "None")
     if selected_injury_loc not in INJURY_LOCATION_OPTIONS:
         selected_injury_loc = "Other"
