@@ -279,10 +279,11 @@ def main() -> None:
             </div>
           </div>
           <div class="reports-copy">
-            Centrale rapportage-ingang voor wedstrijdanalyses, weekoverzichten, seizoensrapportage en staffevaluaties.
+            Centrale rapportage-ingang voor wedstrijdanalyses, maand- en weekoverzichten, seizoensrapportage en staffevaluaties.
           </div>
           <div class="reports-pill-row">
             <span class="reports-pill">Match Reports opent als eigen rapportage-route</span>
+            <span class="reports-pill">Month Report bundelt dagload, weekblokken en leaders per kalendermaand</span>
             <span class="reports-pill">Week Report volgt de team weekstructuur uit de rapportagemap</span>
             <span class="reports-pill">Year Report bundelt het volledige seizoensverhaal in dashboardvorm</span>
           </div>
@@ -292,13 +293,13 @@ def main() -> None:
             <div class="reports-section-kicker">Modules</div>
             <div class="reports-section-title">Kies welke rapportage je wilt openen</div>
           </div>
-          <div class="reports-section-note">3 modules direct beschikbaar</div>
+          <div class="reports-section-note">4 modules direct beschikbaar</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    row = st.columns(3, gap="large")
+    row = st.columns(4, gap="large")
     with row[0]:
         render_tile(
             key="reports_hub_match_reports",
@@ -311,6 +312,16 @@ def main() -> None:
         )
     with row[1]:
         render_tile(
+            key="reports_hub_month_report",
+            kicker="Maand",
+            title="Month Report",
+            copy="Open de maandrapportage met KPI-cards, dagbelasting, weekblokken binnen de maand en squad leaders.",
+            meta="Route voor maandanalyse, teamritme en compacte staffnotities",
+            button_label="Open Month Report",
+            target_page="pages/16_Month_Report.py",
+        )
+    with row[2]:
+        render_tile(
             key="reports_hub_week_report",
             kicker="Week",
             title="Week Report",
@@ -319,7 +330,7 @@ def main() -> None:
             button_label="Open Week Report",
             target_page="pages/14_Week_Report.py",
         )
-    with row[2]:
+    with row[3]:
         render_tile(
             key="reports_hub_year_report",
             kicker="Seizoen",
