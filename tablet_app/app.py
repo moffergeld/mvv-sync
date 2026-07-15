@@ -937,14 +937,16 @@ st.markdown(
         color: #1f8a3b !important;
       }
 
-      [class*="st-key-tablet_pick_"] {
+      [class*="st-key-tablet_pick_"],
+      [class*="st-key-tablet_injury_pick_"] {
         margin-top: -124px;
         margin-bottom: 0.35rem;
         position: relative;
         z-index: 2;
       }
 
-      [class*="st-key-tablet_pick_"] button {
+      [class*="st-key-tablet_pick_"] button,
+      [class*="st-key-tablet_injury_pick_"] button {
         min-height: 124px !important;
         background: transparent !important;
         border: none !important;
@@ -954,7 +956,9 @@ st.markdown(
       }
 
       [class*="st-key-tablet_pick_"] button:hover,
-      [class*="st-key-tablet_pick_"] button:active {
+      [class*="st-key-tablet_pick_"] button:active,
+      [class*="st-key-tablet_injury_pick_"] button:hover,
+      [class*="st-key-tablet_injury_pick_"] button:active {
         transform: none !important;
         background: transparent !important;
         border: none !important;
@@ -963,7 +967,10 @@ st.markdown(
 
       [class*="st-key-tablet_pick_"] button p,
       [class*="st-key-tablet_pick_"] button span,
-      [class*="st-key-tablet_pick_"] button [data-testid="stMarkdownContainer"] {
+      [class*="st-key-tablet_pick_"] button [data-testid="stMarkdownContainer"],
+      [class*="st-key-tablet_injury_pick_"] button p,
+      [class*="st-key-tablet_injury_pick_"] button span,
+      [class*="st-key-tablet_injury_pick_"] button [data-testid="stMarkdownContainer"] {
         opacity: 0 !important;
         font-size: 0 !important;
         margin: 0 !important;
@@ -1111,6 +1118,22 @@ def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: st
             f'<div class="mvv-player-name">{html.escape(player_name)}</div>'
             f'<div class="mvv-player-status">Wellness: <span class="{wellness_class}">{html.escape(wellness_state)}</span> | RPE: <span class="{rpe_class}">{html.escape(rpe_state)}</span></div>'
             f'<div class="mvv-player-next {next_class}">{html.escape(next_step)}</div>'
+            f'</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_injury_pick_card(player_name: str, selected: bool = False) -> None:
+    next_class = "mvv-player-next-ok" if selected else "mvv-player-next-open"
+    next_text = "Geselecteerd" if selected else "Open blessureformulier"
+    subtitle = "Blessuremelding"
+    st.markdown(
+        (
+            f'<div class="mvv-player-card">'
+            f'<div class="mvv-player-name">{html.escape(player_name)}</div>'
+            f'<div class="mvv-player-status">{html.escape(subtitle)}</div>'
+            f'<div class="mvv-player-next {next_class}">{html.escape(next_text)}</div>'
             f'</div>'
         ),
         unsafe_allow_html=True,
@@ -2026,22 +2049,27 @@ def render_injury_report_page(sb) -> None:
         clear_injury_report_state()
         st.rerun()
 
-    player_options = [""] + [str(player["player_id"]) for player in players]
     player_lookup = {str(player["player_id"]): str(player["full_name"]) for player in players}
     selected_player_id = str(st.session_state.get("tablet_injury_player_id") or "").strip()
     if selected_player_id not in player_lookup:
         selected_player_id = ""
 
-    selected_player_id = st.selectbox(
-        "Speler",
-        options=player_options,
-        index=player_options.index(selected_player_id) if selected_player_id in player_options else 0,
-        format_func=lambda value: "Kies speler" if not value else player_lookup.get(value, value),
-        key="tablet_injury_player_id",
-    )
+    st.markdown('<div class="mvv-toggle-choice-title">Speler kiezen</div>', unsafe_allow_html=True)
+    cols = st.columns(3)
+    for idx, player in enumerate(players):
+        player_id = str(player["player_id"])
+        player_name = str(player["full_name"])
+        with cols[idx % 3]:
+            render_injury_pick_card(player_name, selected=player_id == selected_player_id)
+            if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
+                st.session_state["tablet_injury_player_id"] = player_id
+                st.session_state.pop("tablet_injury_loc", None)
+                st.session_state.pop("tablet_injury_pain", None)
+                st.session_state.pop("tablet_injury_notes", None)
+                st.rerun()
 
     if not selected_player_id:
-        st.info("Kies eerst een speler voor de blessuremelding.")
+        st.info("Kies een speler voor de blessuremelding.")
         return
 
     player_name = player_lookup[selected_player_id]
@@ -2062,6 +2090,13 @@ def render_injury_report_page(sb) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
+        st.session_state.pop("tablet_injury_player_id", None)
+        st.session_state.pop("tablet_injury_loc", None)
+        st.session_state.pop("tablet_injury_pain", None)
+        st.session_state.pop("tablet_injury_notes", None)
+        st.rerun()
 
     with st.form("tablet_injury_form", clear_on_submit=False):
         injury_loc = st.selectbox(
