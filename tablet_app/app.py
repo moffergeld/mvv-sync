@@ -660,13 +660,7 @@ st.markdown(
         padding: 0.45rem 0.5rem;
         border-radius: 16px;
         justify-content: center;
-        gap: 0;
-      }
-
-      [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type,
-      [class*="st-key-tablet_rpe_s2_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type,
-      [class*="st-key-tablet_bulk_rpe_dur_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
-        display: none !important;
+        gap: 0.38rem;
       }
 
       [class*="st-key-tablet_rpe_s1_dur_choice_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type,
@@ -1000,10 +994,7 @@ st.markdown(
         min-height: 4.1rem;
         padding: 0.65rem 1rem;
         border-radius: 20px;
-      }
-
-      [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-of-type {
-        display: none !important;
+        gap: 0.5rem;
       }
 
       [class*="st-key-tablet_day_rpe_mode_"] [data-testid="stRadio"] div[role="radiogroup"] label > div:last-of-type {
