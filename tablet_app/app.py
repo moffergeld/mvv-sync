@@ -89,31 +89,31 @@ INJURY_LOCATION_LABELS = {
     "Other": "Overig",
 }
 INJURY_BODY_IMAGE_MARKERS = [
-    {"id": "head", "value": "Head", "top": 17.5, "left": 50.0, "width": 15.0, "height": 15.0},
-    {"id": "neck", "value": "Neck", "top": 27.5, "left": 50.0, "width": 5.0, "height": 5.0},
-    {"id": "shoulder_l", "value": "Shoulder", "top": 32.5, "left": 40.5, "width": 10.0, "height": 5.0},
-    {"id": "shoulder_r", "value": "Shoulder", "top": 32.5, "left": 59.5, "width": 10.0, "height": 5.0},
-    {"id": "chest", "value": "Chest", "top": 38.0, "left": 50.0, "width": 15.0, "height": 9.0},
-    {"id": "upperarm_l", "value": "Upper arm", "top": 43.0, "left": 37.0, "width": 7.0, "height": 12.0},
-    {"id": "upperarm_r", "value": "Upper arm", "top": 43.0, "left": 63.0, "width": 7.0, "height": 12.0},
-    {"id": "abdomen", "value": "Abdomen", "top": 49.5, "left": 50.0, "width": 11.0, "height": 8.5},
-    {"id": "lowerback", "value": "Lower back", "top": 55.0, "left": 50.0, "width": 11.0, "height": 6.0},
-    {"id": "elbow_l", "value": "Elbow", "top": 51.8, "left": 36.8, "width": 4.6, "height": 4.6},
-    {"id": "elbow_r", "value": "Elbow", "top": 51.8, "left": 63.2, "width": 4.6, "height": 4.6},
-    {"id": "forearm_l", "value": "Forearm", "top": 58.8, "left": 36.0, "width": 5.8, "height": 11.0},
-    {"id": "forearm_r", "value": "Forearm", "top": 58.8, "left": 64.0, "width": 5.8, "height": 11.0},
-    {"id": "wrist_l", "value": "Wrist", "top": 66.2, "left": 35.8, "width": 3.4, "height": 3.0},
-    {"id": "wrist_r", "value": "Wrist", "top": 66.2, "left": 64.2, "width": 3.4, "height": 3.0},
-    {"id": "hand_l", "value": "Hand", "top": 70.8, "left": 29.5, "width": 5.8, "height": 7.0},
-    {"id": "hand_r", "value": "Hand", "top": 70.8, "left": 70.5, "width": 5.8, "height": 7.0},
-    {"id": "groin", "value": "Groin", "top": 60.5, "left": 50.0, "width": 7.2, "height": 5.0},
-    {"id": "glute", "value": "Glute", "top": 67.8, "left": 50.0, "width": 10.5, "height": 6.0},
-    {"id": "hip", "value": "Hip", "top": 73.2, "left": 50.0, "width": 10.2, "height": 5.4},
-    {"id": "upperleg", "value": "Upper leg", "top": 77.0, "left": 50.0, "width": 7.2, "height": 14.2},
-    {"id": "knee", "value": "Knee", "top": 85.0, "left": 50.0, "width": 4.8, "height": 4.8},
-    {"id": "lowerleg", "value": "Lower leg", "top": 91.8, "left": 50.0, "width": 5.6, "height": 11.2},
-    {"id": "ankle", "value": "Ankle", "top": 97.2, "left": 50.0, "width": 3.6, "height": 3.0},
-    {"id": "foot", "value": "Foot", "top": 100.5, "left": 50.0, "width": 7.6, "height": 3.6},
+    {"id": "head", "value": "Head", "top": 18.7, "left": 50.0, "width": 13.8, "height": 13.8},
+    {"id": "neck", "value": "Neck", "top": 27.2, "left": 50.0, "width": 4.1, "height": 4.2},
+    {"id": "shoulder_l", "value": "Shoulder", "top": 31.4, "left": 42.2, "width": 8.8, "height": 4.3},
+    {"id": "shoulder_r", "value": "Shoulder", "top": 31.4, "left": 57.8, "width": 8.8, "height": 4.3},
+    {"id": "chest", "value": "Chest", "top": 36.5, "left": 50.0, "width": 13.6, "height": 8.1},
+    {"id": "upperarm_l", "value": "Upper arm", "top": 40.5, "left": 40.7, "width": 5.8, "height": 12.2},
+    {"id": "upperarm_r", "value": "Upper arm", "top": 40.5, "left": 59.3, "width": 5.8, "height": 12.2},
+    {"id": "abdomen", "value": "Abdomen", "top": 47.8, "left": 50.0, "width": 10.6, "height": 8.0},
+    {"id": "lowerback", "value": "Lower back", "top": 53.3, "left": 50.0, "width": 9.8, "height": 5.4},
+    {"id": "elbow_l", "value": "Elbow", "top": 45.8, "left": 40.6, "width": 4.0, "height": 4.0},
+    {"id": "elbow_r", "value": "Elbow", "top": 45.8, "left": 59.4, "width": 4.0, "height": 4.0},
+    {"id": "forearm_l", "value": "Forearm", "top": 51.2, "left": 40.5, "width": 4.9, "height": 9.7},
+    {"id": "forearm_r", "value": "Forearm", "top": 51.2, "left": 59.5, "width": 4.9, "height": 9.7},
+    {"id": "wrist_l", "value": "Wrist", "top": 56.6, "left": 40.5, "width": 2.8, "height": 2.6},
+    {"id": "wrist_r", "value": "Wrist", "top": 56.6, "left": 59.5, "width": 2.8, "height": 2.6},
+    {"id": "hand_l", "value": "Hand", "top": 59.3, "left": 40.2, "width": 5.0, "height": 5.8},
+    {"id": "hand_r", "value": "Hand", "top": 59.3, "left": 59.8, "width": 5.0, "height": 5.8},
+    {"id": "groin", "value": "Groin", "top": 59.8, "left": 50.0, "width": 6.6, "height": 4.2},
+    {"id": "glute", "value": "Glute", "top": 63.2, "left": 50.0, "width": 9.2, "height": 4.8},
+    {"id": "hip", "value": "Hip", "top": 66.6, "left": 50.0, "width": 9.6, "height": 4.8},
+    {"id": "upperleg", "value": "Upper leg", "top": 69.9, "left": 50.0, "width": 6.8, "height": 11.8},
+    {"id": "knee", "value": "Knee", "top": 75.8, "left": 50.0, "width": 4.2, "height": 4.2},
+    {"id": "lowerleg", "value": "Lower leg", "top": 81.8, "left": 50.0, "width": 5.0, "height": 10.2},
+    {"id": "ankle", "value": "Ankle", "top": 87.4, "left": 50.0, "width": 3.2, "height": 2.6},
+    {"id": "foot", "value": "Foot", "top": 91.2, "left": 50.0, "width": 7.0, "height": 2.8},
 ]
 
 
@@ -689,21 +689,21 @@ st.markdown(
         position: absolute;
         transform: translate(-50%, -50%);
         border-radius: 999px;
-        border: 2px solid rgba(200, 16, 46, 0.22);
-        background: rgba(200, 16, 46, 0.05);
-        box-shadow: 0 6px 14px rgba(78, 8, 18, 0.06);
+        border: 2px solid rgba(200, 16, 46, 0.16);
+        background: rgba(200, 16, 46, 0.025);
+        box-shadow: 0 4px 10px rgba(78, 8, 18, 0.04);
         transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
       }
 
       .mvv-body-marker:hover {
         transform: translate(-50%, -50%) scale(1.04);
-        border-color: rgba(200, 16, 46, 0.45);
-        background: rgba(200, 16, 46, 0.10);
+        border-color: rgba(200, 16, 46, 0.34);
+        background: rgba(200, 16, 46, 0.07);
       }
 
       .mvv-body-marker-active {
         border-color: var(--mvv-red) !important;
-        background: rgba(200, 16, 46, 0.22) !important;
+        background: rgba(200, 16, 46, 0.16) !important;
         box-shadow:
           0 0 0 5px rgba(200, 16, 46, 0.12),
           0 10px 22px rgba(78, 8, 18, 0.12) !important;
