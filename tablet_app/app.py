@@ -63,6 +63,45 @@ INJURY_LOCATION_OPTIONS = [
     "Head",
     "Other",
 ]
+INJURY_LOCATION_LABELS = {
+    "None": "Geen",
+    "Foot": "Voet",
+    "Ankle": "Enkel",
+    "Lower leg": "Onderbeen",
+    "Knee": "Knie",
+    "Upper leg": "Bovenbeen",
+    "Hip": "Heup",
+    "Groin": "Lies",
+    "Glute": "Bil",
+    "Lower back": "Onderrug",
+    "Abdomen": "Buik",
+    "Chest": "Borst",
+    "Shoulder": "Schouder",
+    "Upper arm": "Bovenarm",
+    "Elbow": "Elleboog",
+    "Forearm": "Onderarm",
+    "Wrist": "Pols",
+    "Hand": "Hand",
+    "Neck": "Nek",
+    "Head": "Hoofd",
+    "Other": "Overig",
+}
+INJURY_BODY_SELECTOR_ROWS = [
+    [None, None, ("head", "Head"), None, None],
+    [None, None, ("neck", "Neck"), None, None],
+    [None, ("shoulder_l", "Shoulder"), ("chest", "Chest"), ("shoulder_r", "Shoulder"), None],
+    [None, ("upperarm_l", "Upper arm"), ("abdomen", "Abdomen"), ("upperarm_r", "Upper arm"), None],
+    [None, ("elbow_l", "Elbow"), ("lowerback", "Lower back"), ("elbow_r", "Elbow"), None],
+    [None, ("forearm_l", "Forearm"), ("groin", "Groin"), ("forearm_r", "Forearm"), None],
+    [None, ("wrist_l", "Wrist"), ("glute", "Glute"), ("wrist_r", "Wrist"), None],
+    [("hand_l", "Hand"), None, ("hip", "Hip"), None, ("hand_r", "Hand")],
+    [None, None, ("upperleg", "Upper leg"), None, None],
+    [None, None, ("knee", "Knee"), None, None],
+    [None, None, ("lowerleg", "Lower leg"), None, None],
+    [None, None, ("ankle", "Ankle"), None, None],
+    [None, None, ("foot", "Foot"), None, None],
+    [None, ("other", "Other"), None, None, None],
+]
 
 
 st.set_page_config(
@@ -600,6 +639,17 @@ st.markdown(
         height: 1.45rem;
       }
 
+      .mvv-injury-map-note {
+        margin: 0.15rem 0 0.7rem 0;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: rgba(20, 7, 10, 0.72) !important;
+      }
+
+      .mvv-body-gap {
+        height: 3.2rem;
+      }
+
       .stApp [data-testid="stRadio"] {
         margin: 0.35rem 0 1rem;
       }
@@ -1010,6 +1060,36 @@ st.markdown(
         border-radius: 20px !important;
         font-size: 0.98rem !important;
       }
+
+      [class*="st-key-tablet_injury_loc_idle_"] button,
+      [class*="st-key-tablet_injury_loc_active_"] button,
+      [class*="st-key-tablet_injury_loc_clear"] button {
+        min-height: 3.2rem !important;
+        border-radius: 18px !important;
+        font-size: 0.88rem !important;
+        line-height: 1.05 !important;
+        white-space: normal !important;
+        padding: 0.45rem 0.55rem !important;
+      }
+
+      [class*="st-key-tablet_injury_loc_idle_"] button {
+        background: rgba(255, 255, 255, 0.90) !important;
+        border: 1px solid rgba(200, 16, 46, 0.18) !important;
+        color: var(--mvv-deep) !important;
+        box-shadow: 0 10px 22px rgba(78, 8, 18, 0.06) !important;
+      }
+
+      [class*="st-key-tablet_injury_loc_active_"] button {
+        background: linear-gradient(135deg, var(--mvv-red) 0%, var(--mvv-dark-red) 100%) !important;
+        border: 1px solid rgba(143, 11, 32, 0.9) !important;
+        color: #ffffff !important;
+        box-shadow: 0 14px 28px rgba(78, 8, 18, 0.18) !important;
+      }
+
+      [class*="st-key-tablet_injury_loc_active_"] button p,
+      [class*="st-key-tablet_injury_loc_active_"] button span {
+        color: #ffffff !important;
+      }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
         .tablet-hero { border-radius: 20px; padding: 1rem; }
@@ -1138,6 +1218,41 @@ def render_injury_pick_card(player_name: str, selected: bool = False) -> None:
         ),
         unsafe_allow_html=True,
     )
+
+
+def injury_location_label(value: str) -> str:
+    return INJURY_LOCATION_LABELS.get(str(value), str(value or "Geen"))
+
+
+def render_injury_body_selector(selected_location: str) -> None:
+    st.markdown('<div class="mvv-toggle-choice-title">Locatie kiezen</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mvv-injury-map-note">Tik op het lichaamsdeel waar de blessure zit.</div>',
+        unsafe_allow_html=True,
+    )
+
+    for row in INJURY_BODY_SELECTOR_ROWS:
+        cols = st.columns([1, 1, 1.2, 1, 1], gap="small")
+        for idx, cell in enumerate(row):
+            with cols[idx]:
+                if cell is None:
+                    st.markdown('<div class="mvv-body-gap"></div>', unsafe_allow_html=True)
+                    continue
+                cell_id, value = cell
+                key_state = "active" if str(selected_location) == value else "idle"
+                if st.button(
+                    injury_location_label(value),
+                    use_container_width=True,
+                    key=f"tablet_injury_loc_{key_state}_{cell_id}",
+                ):
+                    st.session_state["tablet_injury_loc"] = value
+                    st.rerun()
+
+    clear_cols = st.columns([1, 1.2, 1], gap="small")
+    with clear_cols[1]:
+        if st.button("Wis locatie", use_container_width=True, key="tablet_injury_loc_clear"):
+            st.session_state["tablet_injury_loc"] = "None"
+            st.rerun()
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
     wellness_status = "ok" if has_wellness else "open"
@@ -2096,6 +2211,10 @@ def render_injury_report_page(sb) -> None:
         existing_loc = "Other"
     existing_pain = int(rpe_header.get("injury_pain", 0) or 0)
     existing_notes = str(rpe_header.get("notes") or "")
+    selected_injury_loc = str(st.session_state.get("tablet_injury_loc") or existing_loc or "None")
+    if selected_injury_loc not in INJURY_LOCATION_OPTIONS:
+        selected_injury_loc = "Other"
+    st.session_state["tablet_injury_loc"] = selected_injury_loc
 
     st.markdown(
         f"""
@@ -2108,13 +2227,13 @@ def render_injury_report_page(sb) -> None:
         unsafe_allow_html=True,
     )
 
+    render_injury_body_selector(selected_injury_loc)
+    st.markdown(
+        f'<div class="mvv-load-pill">Gekozen locatie: <strong>{html.escape(injury_location_label(selected_injury_loc))}</strong></div>',
+        unsafe_allow_html=True,
+    )
+
     with st.form("tablet_injury_form", clear_on_submit=False):
-        injury_loc = st.selectbox(
-            "Locatie",
-            options=INJURY_LOCATION_OPTIONS,
-            index=INJURY_LOCATION_OPTIONS.index(existing_loc),
-            key="tablet_injury_loc",
-        )
         injury_pain = st.slider(
             "Pijn (0-10)",
             0,
@@ -2131,7 +2250,7 @@ def render_injury_report_page(sb) -> None:
         injury_submit = st.form_submit_button("Injury opslaan", use_container_width=True)
 
     if injury_submit:
-        if injury_loc == "None":
+        if selected_injury_loc == "None":
             st.error("Kies een blessurelocatie.")
             return
 
@@ -2140,7 +2259,7 @@ def render_injury_report_page(sb) -> None:
                 sb,
                 player_id=selected_player_id,
                 entry_date=entry_date,
-                injury_type=injury_loc,
+                injury_type=selected_injury_loc,
                 injury_pain=int(injury_pain),
                 notes=notes,
                 existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
@@ -2153,7 +2272,7 @@ def render_injury_report_page(sb) -> None:
                     "player_id": selected_player_id,
                     "entry_date": entry_date_iso,
                     "injury": True,
-                    "injury_type": injury_loc,
+                    "injury_type": selected_injury_loc,
                     "injury_pain": int(injury_pain),
                     "notes": str(notes or ""),
                 },
