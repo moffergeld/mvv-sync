@@ -100,7 +100,6 @@ INJURY_BODY_SELECTOR_ROWS = [
     [None, None, ("lowerleg", "Lower leg"), None, None],
     [None, None, ("ankle", "Ankle"), None, None],
     [None, None, ("foot", "Foot"), None, None],
-    [None, ("other", "Other"), None, None, None],
 ]
 
 
@@ -647,7 +646,16 @@ st.markdown(
       }
 
       .mvv-body-gap {
-        height: 3.2rem;
+        height: 2.8rem;
+      }
+
+      .mvv-body-map-shell {
+        padding: 0.4rem 0 0.2rem 0;
+      }
+
+      .mvv-body-map-wrap {
+        max-width: 24rem;
+        margin: 0 auto;
       }
 
       .stApp [data-testid="stRadio"] {
@@ -1061,34 +1069,150 @@ st.markdown(
         font-size: 0.98rem !important;
       }
 
-      [class*="st-key-tablet_injury_loc_idle_"] button,
-      [class*="st-key-tablet_injury_loc_active_"] button,
-      [class*="st-key-tablet_injury_loc_clear"] button {
+      [class*="st-key-tablet_injury_part_"] {
+        margin-top: -0.3rem;
+        margin-bottom: -0.3rem;
+        display: flex;
+        justify-content: center;
+      }
+
+      [class*="st-key-tablet_injury_part_"] button {
+        min-height: 2.8rem !important;
+        border-radius: 999px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        background: #f6c8aa !important;
+        box-shadow: 0 10px 20px rgba(155, 98, 64, 0.08) !important;
+        color: transparent !important;
+        font-size: 0 !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"] button p,
+      [class*="st-key-tablet_injury_part_"] button span,
+      [class*="st-key-tablet_injury_part_"] button [data-testid="stMarkdownContainer"] {
+        color: transparent !important;
+        font-size: 0 !important;
+        line-height: 0 !important;
+        margin: 0 !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"] button:hover {
+        transform: translateY(-1px);
+      }
+
+      [class*="st-key-tablet_injury_part_active_"] button {
+        background: linear-gradient(135deg, #ff8c96 0%, var(--mvv-red) 100%) !important;
+        box-shadow:
+          0 0 0 6px rgba(200, 16, 46, 0.12),
+          0 14px 28px rgba(78, 8, 18, 0.18) !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_head"] button {
+        width: 4.3rem !important;
+        min-height: 4.95rem !important;
+        border-radius: 50% 50% 46% 46% !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_neck"] button {
+        width: 1.5rem !important;
+        min-height: 1.6rem !important;
+        border-radius: 14px !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_shoulder_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_shoulder_r"] button {
+        width: 4.6rem !important;
+        min-height: 2.4rem !important;
+        border-radius: 1.6rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_chest"] button {
+        width: 5.25rem !important;
         min-height: 3.2rem !important;
+        border-radius: 1.8rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_upperarm_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_upperarm_r"] button {
+        width: 1.85rem !important;
+        min-height: 5rem !important;
+        border-radius: 1.2rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_abdomen"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_lowerback"] button {
+        width: 4.8rem !important;
+        min-height: 4rem !important;
+        border-radius: 1.8rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_elbow_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_elbow_r"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_knee"] button {
+        width: 1.8rem !important;
+        min-height: 1.8rem !important;
+        border-radius: 50% !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_forearm_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_forearm_r"] button {
+        width: 1.6rem !important;
+        min-height: 4.6rem !important;
+        border-radius: 1rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_wrist_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_wrist_r"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_ankle"] button {
+        width: 1.4rem !important;
+        min-height: 1.2rem !important;
+        border-radius: 999px !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_hand_l"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_hand_r"] button {
+        width: 2.3rem !important;
+        min-height: 2.6rem !important;
+        border-radius: 1.2rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_groin"] button,
+      [class*="st-key-tablet_injury_part_"][class*="_glute"] button {
+        width: 3.2rem !important;
+        min-height: 2.35rem !important;
+        border-radius: 1.3rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_hip"] button {
+        width: 4.5rem !important;
+        min-height: 2.5rem !important;
+        border-radius: 1.5rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_upperleg"] button {
+        width: 3rem !important;
+        min-height: 5.3rem !important;
+        border-radius: 1.5rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_lowerleg"] button {
+        width: 2.45rem !important;
+        min-height: 5.7rem !important;
+        border-radius: 1.4rem !important;
+      }
+
+      [class*="st-key-tablet_injury_part_"][class*="_foot"] button {
+        width: 3rem !important;
+        min-height: 1.35rem !important;
+        border-radius: 1rem !important;
+      }
+
+      [class*="st-key-tablet_injury_other"] button,
+      [class*="st-key-tablet_injury_loc_clear"] button {
+        min-height: 3rem !important;
         border-radius: 18px !important;
-        font-size: 0.88rem !important;
-        line-height: 1.05 !important;
-        white-space: normal !important;
-        padding: 0.45rem 0.55rem !important;
-      }
-
-      [class*="st-key-tablet_injury_loc_idle_"] button {
-        background: rgba(255, 255, 255, 0.90) !important;
-        border: 1px solid rgba(200, 16, 46, 0.18) !important;
-        color: var(--mvv-deep) !important;
-        box-shadow: 0 10px 22px rgba(78, 8, 18, 0.06) !important;
-      }
-
-      [class*="st-key-tablet_injury_loc_active_"] button {
-        background: linear-gradient(135deg, var(--mvv-red) 0%, var(--mvv-dark-red) 100%) !important;
-        border: 1px solid rgba(143, 11, 32, 0.9) !important;
-        color: #ffffff !important;
-        box-shadow: 0 14px 28px rgba(78, 8, 18, 0.18) !important;
-      }
-
-      [class*="st-key-tablet_injury_loc_active_"] button p,
-      [class*="st-key-tablet_injury_loc_active_"] button span {
-        color: #ffffff !important;
+        font-size: 0.92rem !important;
+        padding: 0.5rem 0.75rem !important;
       }
       @media (max-width: 768px) {
         .block-container { padding-left: 0.75rem; padding-right: 0.75rem; }
@@ -1231,25 +1355,31 @@ def render_injury_body_selector(selected_location: str) -> None:
         unsafe_allow_html=True,
     )
 
-    for row in INJURY_BODY_SELECTOR_ROWS:
-        cols = st.columns([1, 1, 1.2, 1, 1], gap="small")
-        for idx, cell in enumerate(row):
-            with cols[idx]:
-                if cell is None:
-                    st.markdown('<div class="mvv-body-gap"></div>', unsafe_allow_html=True)
-                    continue
-                cell_id, value = cell
-                key_state = "active" if str(selected_location) == value else "idle"
-                if st.button(
-                    injury_location_label(value),
-                    use_container_width=True,
-                    key=f"tablet_injury_loc_{key_state}_{cell_id}",
-                ):
-                    st.session_state["tablet_injury_loc"] = value
-                    st.rerun()
+    shell_cols = st.columns([1, 0.95, 1], gap="small")
+    with shell_cols[1]:
+        for row in INJURY_BODY_SELECTOR_ROWS:
+            cols = st.columns([1, 1, 1.15, 1, 1], gap="small")
+            for idx, cell in enumerate(row):
+                with cols[idx]:
+                    if cell is None:
+                        st.markdown('<div class="mvv-body-gap"></div>', unsafe_allow_html=True)
+                        continue
+                    cell_id, value = cell
+                    key_state = "active" if str(selected_location) == value else "idle"
+                    if st.button(
+                        injury_location_label(value),
+                        use_container_width=True,
+                        key=f"tablet_injury_part_{key_state}_{cell_id}",
+                    ):
+                        st.session_state["tablet_injury_loc"] = value
+                        st.rerun()
 
-    clear_cols = st.columns([1, 1.2, 1], gap="small")
-    with clear_cols[1]:
+    extra_cols = st.columns([1, 1.25, 1.25, 1], gap="small")
+    with extra_cols[1]:
+        if st.button("Overig", use_container_width=True, key="tablet_injury_other"):
+            st.session_state["tablet_injury_loc"] = "Other"
+            st.rerun()
+    with extra_cols[2]:
         if st.button("Wis locatie", use_container_width=True, key="tablet_injury_loc_clear"):
             st.session_state["tablet_injury_loc"] = "None"
             st.rerun()
