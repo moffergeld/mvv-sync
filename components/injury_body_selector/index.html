@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Injury Body Selector</title>
+    <style>
+      :root {
+        --mvv-red: #c8102e;
+        --mvv-deep: #14070a;
+        --mvv-border: rgba(200, 16, 46, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        font-family: Inter, Arial, sans-serif;
+        color: var(--mvv-deep);
+      }
+
+      body {
+        padding: 4px 0 6px;
+      }
+
+      .selector-card {
+        margin: 0 auto;
+        padding: 0.9rem 0.8rem 1rem;
+        border-radius: 26px;
+        border: 1px solid rgba(200, 16, 46, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: 0 12px 28px rgba(78, 8, 18, 0.06);
+      }
+
+      .selector-shell {
+        width: min(100%, 42rem);
+        margin: 0 auto;
+      }
+
+      .selector-stage {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+      }
+
+      .body-image {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: contain;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .marker {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        border: 2px solid rgba(200, 16, 46, 0.18);
+        background: rgba(200, 16, 46, 0.03);
+        box-shadow: 0 4px 10px rgba(78, 8, 18, 0.04);
+        cursor: pointer;
+        transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+      }
+
+      .marker:hover {
+        transform: translate(-50%, -50%) scale(1.04);
+        border-color: rgba(200, 16, 46, 0.4);
+        background: rgba(200, 16, 46, 0.09);
+      }
+
+      .marker.active {
+        border-color: var(--mvv-red);
+        background: rgba(200, 16, 46, 0.18);
+        box-shadow:
+          0 0 0 5px rgba(200, 16, 46, 0.10),
+          0 10px 22px rgba(78, 8, 18, 0.12);
+      }
+
+      .actions {
+        margin-top: 0.95rem;
+        display: flex;
+        justify-content: center;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+      }
+
+      .action {
+        min-width: 10rem;
+        min-height: 3rem;
+        padding: 0.55rem 1rem;
+        border-radius: 18px;
+        border: 1px solid var(--mvv-border);
+        background: linear-gradient(145deg, #ffffff 0%, #fff4f1 100%);
+        box-shadow: 0 10px 22px rgba(78, 8, 18, 0.06);
+        color: var(--mvv-deep);
+        font-size: 0.94rem;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .action.active {
+        border-color: var(--mvv-red);
+        background: rgba(255, 122, 128, 0.14);
+        color: var(--mvv-red);
+      }
+
+      @media (max-width: 700px) {
+        .selector-card {
+          padding: 0.7rem 0.55rem 0.85rem;
+        }
+
+        .actions {
+          gap: 0.6rem;
+        }
+
+        .action {
+          min-width: 8.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const sendMessage = (type, payload = {}) => {
+        window.parent.postMessage(
+          {
+            isStreamlitMessage: true,
+            type,
+            ...payload,
+          },
+          "*",
+        );
+      };
+
+      const setFrameHeight = () => {
+        const height = Math.max(
+          document.body.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.scrollHeight,
+          document.documentElement.offsetHeight,
+        );
+        sendMessage("streamlit:setFrameHeight", { height });
+      };
+
+      const setComponentValue = (value) => {
+        sendMessage("streamlit:setComponentValue", { value });
+      };
+
+      const labelFor = (value, labels) => {
+        if (labels && Object.prototype.hasOwnProperty.call(labels, value)) {
+          return labels[value];
+        }
+        return value || "";
+      };
+
+      const render = (args) => {
+        const root = document.getElementById("root");
+        const imageSrc = args.imageSrc || "";
+        const markers = Array.isArray(args.markers) ? args.markers : [];
+        const labels = args.labels || {};
+        const currentValue = args.value || "None";
+
+        root.innerHTML = "";
+
+        const card = document.createElement("div");
+        card.className = "selector-card";
+
+        const shell = document.createElement("div");
+        shell.className = "selector-shell";
+
+        const stage = document.createElement("div");
+        stage.className = "selector-stage";
+
+        const image = document.createElement("img");
+        image.className = "body-image";
+        image.src = imageSrc;
+        image.alt = "Lichaam voorkant en achterkant";
+        stage.appendChild(image);
+
+        markers.forEach((marker) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "marker";
+          if ((marker.value || "") === currentValue) {
+            button.classList.add("active");
+          }
+          button.style.top = `${marker.top}%`;
+          button.style.left = `${marker.left}%`;
+          button.style.width = `${marker.width}%`;
+          button.style.height = `${marker.height}%`;
+          button.setAttribute("aria-label", labelFor(marker.value, labels));
+          button.title = labelFor(marker.value, labels);
+          button.addEventListener("click", () => setComponentValue(marker.value || "None"));
+          stage.appendChild(button);
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        [
+          { value: "Other", label: labelFor("Other", labels) || "Overig" },
+          { value: "None", label: "Wis locatie" },
+        ].forEach((actionData) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "action";
+          if (actionData.value === currentValue) {
+            button.classList.add("active");
+          }
+          button.textContent = actionData.label;
+          button.addEventListener("click", () => setComponentValue(actionData.value));
+          actions.appendChild(button);
+        });
+
+        shell.appendChild(stage);
+        card.appendChild(shell);
+        card.appendChild(actions);
+        root.appendChild(card);
+
+        window.requestAnimationFrame(setFrameHeight);
+      };
+
+      window.addEventListener("message", (event) => {
+        if (!event.data || event.data.type !== "streamlit:render") {
+          return;
+        }
+        render(event.data.args || {});
+      });
+
+      window.addEventListener("load", () => {
+        sendMessage("streamlit:componentReady", { apiVersion: 1 });
+        setFrameHeight();
+      });
+
+      window.addEventListener("resize", () => {
+        window.requestAnimationFrame(setFrameHeight);
+      });
+    </script>
+  </body>
+</html>

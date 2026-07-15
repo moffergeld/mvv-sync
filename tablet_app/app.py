@@ -7,11 +7,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
-from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import extra_streamlit_components as stx
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client
 
 
@@ -19,6 +19,10 @@ THIS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = THIS_DIR.parent
 PAGES_DIR = ROOT_DIR / "pages"
 TABLET_ASSETS_DIR = THIS_DIR / "assets"
+INJURY_BODY_SELECTOR_COMPONENT = components.declare_component(
+    "mvv_injury_body_selector",
+    path=str(ROOT_DIR / "components" / "injury_body_selector"),
+)
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -89,31 +93,51 @@ INJURY_LOCATION_LABELS = {
     "Other": "Overig",
 }
 INJURY_BODY_IMAGE_MARKERS = [
-    {"id": "head", "value": "Head", "top": 18.7, "left": 50.0, "width": 13.8, "height": 13.8},
-    {"id": "neck", "value": "Neck", "top": 27.2, "left": 50.0, "width": 4.1, "height": 4.2},
-    {"id": "shoulder_l", "value": "Shoulder", "top": 31.4, "left": 42.2, "width": 8.8, "height": 4.3},
-    {"id": "shoulder_r", "value": "Shoulder", "top": 31.4, "left": 57.8, "width": 8.8, "height": 4.3},
-    {"id": "chest", "value": "Chest", "top": 36.5, "left": 50.0, "width": 13.6, "height": 8.1},
-    {"id": "upperarm_l", "value": "Upper arm", "top": 40.5, "left": 40.7, "width": 5.8, "height": 12.2},
-    {"id": "upperarm_r", "value": "Upper arm", "top": 40.5, "left": 59.3, "width": 5.8, "height": 12.2},
-    {"id": "abdomen", "value": "Abdomen", "top": 47.8, "left": 50.0, "width": 10.6, "height": 8.0},
-    {"id": "lowerback", "value": "Lower back", "top": 53.3, "left": 50.0, "width": 9.8, "height": 5.4},
-    {"id": "elbow_l", "value": "Elbow", "top": 45.8, "left": 40.6, "width": 4.0, "height": 4.0},
-    {"id": "elbow_r", "value": "Elbow", "top": 45.8, "left": 59.4, "width": 4.0, "height": 4.0},
-    {"id": "forearm_l", "value": "Forearm", "top": 51.2, "left": 40.5, "width": 4.9, "height": 9.7},
-    {"id": "forearm_r", "value": "Forearm", "top": 51.2, "left": 59.5, "width": 4.9, "height": 9.7},
-    {"id": "wrist_l", "value": "Wrist", "top": 56.6, "left": 40.5, "width": 2.8, "height": 2.6},
-    {"id": "wrist_r", "value": "Wrist", "top": 56.6, "left": 59.5, "width": 2.8, "height": 2.6},
-    {"id": "hand_l", "value": "Hand", "top": 59.3, "left": 40.2, "width": 5.0, "height": 5.8},
-    {"id": "hand_r", "value": "Hand", "top": 59.3, "left": 59.8, "width": 5.0, "height": 5.8},
-    {"id": "groin", "value": "Groin", "top": 59.8, "left": 50.0, "width": 6.6, "height": 4.2},
-    {"id": "glute", "value": "Glute", "top": 63.2, "left": 50.0, "width": 9.2, "height": 4.8},
-    {"id": "hip", "value": "Hip", "top": 66.6, "left": 50.0, "width": 9.6, "height": 4.8},
-    {"id": "upperleg", "value": "Upper leg", "top": 69.9, "left": 50.0, "width": 6.8, "height": 11.8},
-    {"id": "knee", "value": "Knee", "top": 75.8, "left": 50.0, "width": 4.2, "height": 4.2},
-    {"id": "lowerleg", "value": "Lower leg", "top": 81.8, "left": 50.0, "width": 5.0, "height": 10.2},
-    {"id": "ankle", "value": "Ankle", "top": 87.4, "left": 50.0, "width": 3.2, "height": 2.6},
-    {"id": "foot", "value": "Foot", "top": 91.2, "left": 50.0, "width": 7.0, "height": 2.8},
+    {"id": "front_head", "value": "Head", "top": 10.6, "left": 29.1, "width": 8.8, "height": 12.8},
+    {"id": "back_head", "value": "Head", "top": 10.9, "left": 70.7, "width": 8.8, "height": 12.8},
+    {"id": "front_neck", "value": "Neck", "top": 19.2, "left": 29.1, "width": 4.2, "height": 4.0},
+    {"id": "back_neck", "value": "Neck", "top": 19.6, "left": 70.7, "width": 4.2, "height": 4.0},
+    {"id": "front_shoulder_left", "value": "Shoulder", "top": 23.5, "left": 23.3, "width": 9.0, "height": 4.9},
+    {"id": "front_shoulder_right", "value": "Shoulder", "top": 23.5, "left": 34.9, "width": 9.0, "height": 4.9},
+    {"id": "back_shoulder_left", "value": "Shoulder", "top": 23.5, "left": 64.6, "width": 9.0, "height": 4.9},
+    {"id": "back_shoulder_right", "value": "Shoulder", "top": 23.5, "left": 76.8, "width": 9.0, "height": 4.9},
+    {"id": "front_chest", "value": "Chest", "top": 32.2, "left": 29.1, "width": 15.2, "height": 10.8},
+    {"id": "front_upperarm_left", "value": "Upper arm", "top": 40.3, "left": 18.1, "width": 5.8, "height": 13.0},
+    {"id": "front_upperarm_right", "value": "Upper arm", "top": 40.3, "left": 40.1, "width": 5.8, "height": 13.0},
+    {"id": "back_upperarm_left", "value": "Upper arm", "top": 40.2, "left": 58.6, "width": 5.8, "height": 13.0},
+    {"id": "back_upperarm_right", "value": "Upper arm", "top": 40.2, "left": 82.8, "width": 5.8, "height": 13.0},
+    {"id": "front_elbow_left", "value": "Elbow", "top": 36.2, "left": 16.3, "width": 4.2, "height": 4.2},
+    {"id": "front_elbow_right", "value": "Elbow", "top": 36.2, "left": 41.7, "width": 4.2, "height": 4.2},
+    {"id": "back_elbow_left", "value": "Elbow", "top": 36.1, "left": 57.0, "width": 4.2, "height": 4.2},
+    {"id": "back_elbow_right", "value": "Elbow", "top": 36.1, "left": 84.4, "width": 4.2, "height": 4.2},
+    {"id": "front_forearm_left", "value": "Forearm", "top": 48.4, "left": 16.3, "width": 5.2, "height": 13.8},
+    {"id": "front_forearm_right", "value": "Forearm", "top": 48.4, "left": 41.6, "width": 5.2, "height": 13.8},
+    {"id": "back_forearm_left", "value": "Forearm", "top": 48.4, "left": 56.9, "width": 5.2, "height": 13.8},
+    {"id": "back_forearm_right", "value": "Forearm", "top": 48.4, "left": 84.4, "width": 5.2, "height": 13.8},
+    {"id": "front_wrist_left", "value": "Wrist", "top": 59.5, "left": 16.0, "width": 3.2, "height": 3.2},
+    {"id": "front_wrist_right", "value": "Wrist", "top": 59.5, "left": 41.9, "width": 3.2, "height": 3.2},
+    {"id": "back_wrist_left", "value": "Wrist", "top": 59.6, "left": 56.6, "width": 3.2, "height": 3.2},
+    {"id": "back_wrist_right", "value": "Wrist", "top": 59.6, "left": 84.8, "width": 3.2, "height": 3.2},
+    {"id": "front_hand_left", "value": "Hand", "top": 63.3, "left": 12.9, "width": 4.8, "height": 6.0},
+    {"id": "front_hand_right", "value": "Hand", "top": 63.3, "left": 43.8, "width": 4.8, "height": 6.0},
+    {"id": "back_hand_left", "value": "Hand", "top": 63.3, "left": 54.1, "width": 4.8, "height": 6.0},
+    {"id": "back_hand_right", "value": "Hand", "top": 63.3, "left": 86.8, "width": 4.8, "height": 6.0},
+    {"id": "front_abdomen", "value": "Abdomen", "top": 44.8, "left": 29.1, "width": 12.2, "height": 9.6},
+    {"id": "front_groin", "value": "Groin", "top": 54.0, "left": 29.1, "width": 6.8, "height": 4.6},
+    {"id": "back_lowerback", "value": "Lower back", "top": 44.5, "left": 70.7, "width": 11.2, "height": 11.6},
+    {"id": "front_hip", "value": "Hip", "top": 60.0, "left": 29.1, "width": 12.8, "height": 5.8},
+    {"id": "back_glute", "value": "Glute", "top": 58.3, "left": 70.7, "width": 12.8, "height": 7.4},
+    {"id": "back_hip", "value": "Hip", "top": 63.8, "left": 70.7, "width": 12.8, "height": 5.8},
+    {"id": "front_upperleg", "value": "Upper leg", "top": 69.5, "left": 29.1, "width": 12.0, "height": 15.6},
+    {"id": "back_upperleg", "value": "Upper leg", "top": 69.4, "left": 70.7, "width": 12.0, "height": 15.6},
+    {"id": "front_knee", "value": "Knee", "top": 81.0, "left": 29.1, "width": 7.8, "height": 6.4},
+    {"id": "back_knee", "value": "Knee", "top": 81.0, "left": 70.7, "width": 7.8, "height": 6.4},
+    {"id": "front_lowerleg", "value": "Lower leg", "top": 88.5, "left": 29.1, "width": 8.8, "height": 13.8},
+    {"id": "back_lowerleg", "value": "Lower leg", "top": 88.5, "left": 70.7, "width": 8.8, "height": 13.8},
+    {"id": "front_ankle", "value": "Ankle", "top": 95.0, "left": 29.1, "width": 5.0, "height": 3.4},
+    {"id": "back_ankle", "value": "Ankle", "top": 95.0, "left": 70.7, "width": 5.0, "height": 3.4},
+    {"id": "front_foot", "value": "Foot", "top": 98.0, "left": 29.1, "width": 11.0, "height": 3.8},
+    {"id": "back_foot", "value": "Foot", "top": 98.0, "left": 70.7, "width": 11.0, "height": 3.8},
 ]
 
 
@@ -1213,38 +1237,6 @@ def injury_body_image_src() -> str:
     return f"data:image/png;base64,{encoded}"
 
 
-def current_query_params_dict() -> Dict[str, str]:
-    params: Dict[str, str] = {}
-    try:
-        keys = list(st.query_params.keys())
-    except Exception:
-        keys = []
-    for key in keys:
-        value = st.query_params.get(key)
-        if value is None:
-            continue
-        params[str(key)] = str(value)
-    return params
-
-
-def injury_location_href(value: str | None) -> str:
-    params = current_query_params_dict()
-    if value and value != "None":
-        params["injury_loc"] = str(value)
-    else:
-        params.pop("injury_loc", None)
-    query = urlencode(params)
-    return f"?{query}" if query else "?"
-
-
-def clear_injury_location_query_param() -> None:
-    try:
-        if "injury_loc" in st.query_params:
-            del st.query_params["injury_loc"]
-    except Exception:
-        pass
-
-
 def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
     st.markdown(
         f"""
@@ -1338,50 +1330,24 @@ def injury_location_label(value: str) -> str:
     return INJURY_LOCATION_LABELS.get(str(value), str(value or "Geen"))
 
 
-def render_injury_body_selector(selected_location: str) -> None:
+def render_injury_body_selector(selected_location: str) -> str:
     st.markdown('<div class="mvv-toggle-choice-title">Locatie kiezen</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="mvv-injury-map-note">Tik op het lichaamsdeel waar de blessure zit.</div>',
-        unsafe_allow_html=True,
-    )
     body_src = injury_body_image_src()
     if not body_src:
         st.warning("Lichaamsafbeelding ontbreekt.")
-        return
+        return str(selected_location or "None")
 
-    marker_links: List[str] = []
-    for marker in INJURY_BODY_IMAGE_MARKERS:
-        marker_class = "mvv-body-marker-active" if str(selected_location) == str(marker["value"]) else ""
-        marker_links.append(
-            (
-                f'<a class="mvv-body-marker {marker_class}" '
-                f'href="{html.escape(injury_location_href(str(marker["value"])), quote=True)}" '
-                f'aria-label="{html.escape(injury_location_label(str(marker["value"])), quote=True)}" '
-                f'title="{html.escape(injury_location_label(str(marker["value"])), quote=True)}" '
-                f'style="top:{float(marker["top"]):.1f}%;left:{float(marker["left"]):.1f}%;'
-                f'width:{float(marker["width"]):.1f}%;height:{float(marker["height"]):.1f}%;"></a>'
-            )
-        )
-
-    other_class = "mvv-body-image-action-active" if str(selected_location) == "Other" else ""
-    clear_class = "mvv-body-image-action-active" if str(selected_location) == "None" else ""
-    st.markdown(
-        f"""
-        <div class="mvv-body-image-card">
-          <div class="mvv-body-image-shell">
-            <div class="mvv-body-image-stage">
-              <img class="mvv-body-image" src="{body_src}" alt="Lichaamssilhouet" />
-              {''.join(marker_links)}
-            </div>
-          </div>
-          <div class="mvv-body-image-actions">
-            <a class="mvv-body-image-action {other_class}" href="{html.escape(injury_location_href('Other'), quote=True)}">Overig</a>
-            <a class="mvv-body-image-action {clear_class}" href="{html.escape(injury_location_href('None'), quote=True)}">Wis locatie</a>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    component_value = INJURY_BODY_SELECTOR_COMPONENT(
+        imageSrc=body_src,
+        markers=INJURY_BODY_IMAGE_MARKERS,
+        labels=INJURY_LOCATION_LABELS,
+        value=str(selected_location or "None"),
+        key="tablet_injury_body_selector",
+        default=str(selected_location or "None"),
     )
+    if str(component_value or "").strip() in INJURY_LOCATION_OPTIONS:
+        return str(component_value)
+    return str(selected_location or "None")
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
     wellness_status = "ok" if has_wellness else "open"
@@ -1995,7 +1961,6 @@ def clear_injury_report_state() -> None:
         "tablet_injury_notes",
     ):
         st.session_state.pop(key, None)
-    clear_injury_location_query_param()
 
 
 def show_flash() -> None:
@@ -2308,7 +2273,6 @@ def render_injury_report_page(sb) -> None:
             with cols[idx % 3]:
                 render_injury_pick_card(player_name, selected=False)
                 if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
-                    clear_injury_location_query_param()
                     st.session_state["tablet_injury_player_id"] = player_id
                     st.session_state.pop("tablet_injury_loc", None)
                     st.session_state.pop("tablet_injury_pain", None)
@@ -2330,7 +2294,6 @@ def render_injury_report_page(sb) -> None:
             st.rerun()
     with nav_cols[1]:
         if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
-            clear_injury_location_query_param()
             st.session_state.pop("tablet_injury_player_id", None)
             st.session_state.pop("tablet_injury_loc", None)
             st.session_state.pop("tablet_injury_pain", None)
@@ -2343,13 +2306,9 @@ def render_injury_report_page(sb) -> None:
         existing_loc = "Other"
     existing_pain = int(rpe_header.get("injury_pain", 0) or 0)
     existing_notes = str(rpe_header.get("notes") or "")
-    query_loc = str(st.query_params.get("injury_loc") or "").strip()
-    if query_loc in INJURY_LOCATION_OPTIONS:
-        st.session_state["tablet_injury_loc"] = query_loc
     selected_injury_loc = str(st.session_state.get("tablet_injury_loc") or existing_loc or "None")
     if selected_injury_loc not in INJURY_LOCATION_OPTIONS:
         selected_injury_loc = "Other"
-    st.session_state["tablet_injury_loc"] = selected_injury_loc
 
     st.markdown(
         f"""
@@ -2362,7 +2321,8 @@ def render_injury_report_page(sb) -> None:
         unsafe_allow_html=True,
     )
 
-    render_injury_body_selector(selected_injury_loc)
+    selected_injury_loc = render_injury_body_selector(selected_injury_loc)
+    st.session_state["tablet_injury_loc"] = selected_injury_loc
     st.markdown(
         f'<div class="mvv-load-pill">Gekozen locatie: <strong>{html.escape(injury_location_label(selected_injury_loc))}</strong></div>',
         unsafe_allow_html=True,
