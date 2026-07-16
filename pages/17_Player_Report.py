@@ -82,6 +82,15 @@ SUM_COLUMNS = [
     "avg_hr",
 ]
 
+RECENT_SESSION_PERIOD_LABELS = {
+    "current_scope": "Huidige selectie",
+    "last_14_days": "Laatste 14 dagen",
+    "last_30_days": "Laatste 30 dagen",
+    "last_6_weeks": "Laatste 6 weken",
+    "last_3_months": "Laatste 3 maanden",
+    "full_history": "Volledige historie",
+}
+
 
 def render_css() -> None:
     background = (
@@ -631,6 +640,31 @@ def build_sessions_table(scope_df: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def filter_recent_sessions(
+    player_df: pd.DataFrame,
+    scope_df: pd.DataFrame,
+    scope_mode: str,
+    scope_end: pd.Timestamp,
+    period_key: str,
+) -> tuple[pd.DataFrame, str]:
+    scope_label = {"Week": "weekselectie", "Month": "maandselectie", "Year": "seizoensselectie"}.get(scope_mode, "selectie")
+    if period_key == "current_scope":
+        return scope_df.copy(), f"Binnen de huidige {scope_label}"
+    if period_key == "full_history":
+        return player_df.copy(), "Volledige spelerhistorie"
+
+    window_days = {
+        "last_14_days": 14,
+        "last_30_days": 30,
+        "last_6_weeks": 42,
+        "last_3_months": 90,
+    }.get(period_key, 30)
+    end_point = pd.Timestamp(scope_end).normalize()
+    start_point = end_point - pd.Timedelta(days=window_days - 1)
+    filtered = player_df[(player_df["datum"] >= start_point) & (player_df["datum"] <= end_point)].copy()
+    return filtered, f"{start_point:%d/%m/%Y} t/m {end_point:%d/%m/%Y}"
+
+
 def build_player_notes(
     scope_df: pd.DataFrame,
     summary: dict[str, object],
@@ -1060,6 +1094,28 @@ def main() -> None:
     sessions_table = build_sessions_table(scope_df)
     notes = build_player_notes(scope_df, summary, monitoring_summary, scope_mode)
 
+    max_recent_session_count = max(1, len(player_df.index))
+    recent_session_count = int(st.session_state.get("player_report_recent_session_count", min(15, max_recent_session_count)))
+    recent_session_count = max(1, min(recent_session_count, max_recent_session_count))
+    recent_session_period_key = str(st.session_state.get("player_report_recent_session_period", "current_scope"))
+    if recent_session_period_key not in RECENT_SESSION_PERIOD_LABELS:
+        recent_session_period_key = "current_scope"
+
+    recent_sessions_source_df, recent_sessions_period_label = filter_recent_sessions(
+        player_df,
+        scope_df,
+        scope_mode,
+        scope_end,
+        recent_session_period_key,
+    )
+    recent_sessions_table = build_sessions_table(recent_sessions_source_df)
+    recent_sessions_preview = recent_sessions_table.head(recent_session_count).copy()
+    recent_sessions_visible = min(recent_session_count, len(recent_sessions_table.index))
+    recent_sessions_subtitle = (
+        f"Toont {_format_int(recent_sessions_visible)} van {_format_int(len(recent_sessions_table.index))} "
+        f"Summary-sessies | {recent_sessions_period_label}"
+    )
+
     badges = [
         f"Speler: {target_player_name}",
         f"Scope: {scope_mode}",
@@ -1086,7 +1142,7 @@ def main() -> None:
             period_label=period_label,
             summary=summary,
             monitoring_summary=monitoring_summary,
-            sessions_df=sessions_table,
+            sessions_df=recent_sessions_preview,
             monitoring_group_df=monitoring_group_df,
             notes=notes,
         )
@@ -1243,12 +1299,36 @@ def main() -> None:
             )
 
     with tab_sessions:
+        session_filter_count_col, session_filter_period_col = st.columns([0.34, 0.66], gap="large")
+        with session_filter_count_col:
+            st.markdown('<div class="player-report-filter-label">Aantal recente sessies</div>', unsafe_allow_html=True)
+            st.number_input(
+                "Aantal recente sessies",
+                min_value=1,
+                max_value=max_recent_session_count,
+                value=recent_session_count,
+                step=1,
+                label_visibility="collapsed",
+                key="player_report_recent_session_count",
+            )
+        with session_filter_period_col:
+            st.markdown('<div class="player-report-filter-label">Periode recente sessies</div>', unsafe_allow_html=True)
+            period_options = list(RECENT_SESSION_PERIOD_LABELS.keys())
+            st.selectbox(
+                "Periode recente sessies",
+                options=period_options,
+                index=period_options.index(recent_session_period_key),
+                format_func=lambda value: RECENT_SESSION_PERIOD_LABELS.get(value, value),
+                label_visibility="collapsed",
+                key="player_report_recent_session_period",
+            )
+
         sessions_left, sessions_right = st.columns(2, gap="large")
         with sessions_left:
             render_html_panel(
                 "Recent Sessions",
                 build_table_html(
-                    sessions_table.head(15),
+                    recent_sessions_preview,
                     [
                         ("datum_label", "Datum", None),
                         ("type", "Type", None),
@@ -1260,7 +1340,7 @@ def main() -> None:
                         ("max_speed", "Top Speed", _format_speed),
                     ],
                 ),
-                "Laatste 15 Summary-sessies binnen de gekozen selectie",
+                recent_sessions_subtitle,
             )
         with sessions_right:
             notes_html = (
