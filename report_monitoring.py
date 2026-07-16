@@ -6,13 +6,20 @@ from typing import Iterable, Optional
 import pandas as pd
 import streamlit as st
 
-from readiness_utils import enrich_wellness_scores
+from readiness_utils import WELLNESS_ALL_COLS, enrich_wellness_scores
 
 
-MONITORING_COLUMNS = [
-    "entry_date",
-    "player_id",
-    "player_name",
+WELLNESS_PARAMETER_SPECS: list[tuple[str, str]] = [
+    ("muscle_soreness", "Muscle Soreness"),
+    ("fatigue", "Fatigue"),
+    ("sleep_quality", "Sleep Quality"),
+    ("stress", "Stress"),
+    ("mood", "Mood"),
+]
+WELLNESS_PARAMETER_COLUMNS = [column for column, _ in WELLNESS_PARAMETER_SPECS]
+
+MONITORING_NUMERIC_COLUMNS = [
+    *WELLNESS_PARAMETER_COLUMNS,
     "wellness_physical",
     "wellness_mental",
     "wellness_avg",
@@ -20,6 +27,13 @@ MONITORING_COLUMNS = [
     "avg_rpe",
     "rpe_load",
     "duration_min",
+]
+
+MONITORING_COLUMNS = [
+    "entry_date",
+    "player_id",
+    "player_name",
+    *MONITORING_NUMERIC_COLUMNS,
 ]
 
 
@@ -33,6 +47,42 @@ def _df(rows: list[dict]) -> pd.DataFrame:
 
 def _coerce_date(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce").dt.date
+
+
+def _empty_grouped_summary() -> pd.DataFrame:
+    base_columns = [
+        "bucket",
+        "label",
+        "wellness_players",
+        "rpe_players",
+        *WELLNESS_PARAMETER_COLUMNS,
+        *(f"{column}_std" for column in WELLNESS_PARAMETER_COLUMNS),
+        "wellness_avg",
+        "readiness_score",
+        "avg_rpe",
+        "avg_rpe_std",
+        "rpe_load",
+        "rpe_load_std",
+        "duration_min",
+    ]
+    return pd.DataFrame(columns=base_columns)
+
+
+def _empty_player_summary() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "player_id",
+            "player_name",
+            "wellness_days",
+            "rpe_days",
+            *WELLNESS_PARAMETER_COLUMNS,
+            "wellness_avg",
+            "readiness_score",
+            "avg_rpe",
+            "rpe_load",
+            "duration_min",
+        ]
+    )
 
 
 @st.cache_data(show_spinner=False, ttl=120)
@@ -158,7 +208,15 @@ def build_monitoring_dataset(
         if not rpe_df.empty:
             rpe_df = rpe_df[rpe_df["player_id"].astype(str).isin(valid_ids)].copy()
 
-    wellness_cols = ["entry_date", "player_id", "wellness_physical", "wellness_mental", "wellness_avg", "readiness_score"]
+    wellness_cols = [
+        "entry_date",
+        "player_id",
+        *WELLNESS_PARAMETER_COLUMNS,
+        "wellness_physical",
+        "wellness_mental",
+        "wellness_avg",
+        "readiness_score",
+    ]
     rpe_cols = ["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"]
 
     if wellness_df.empty and rpe_df.empty:
@@ -177,7 +235,7 @@ def build_monitoring_dataset(
     lookup = {str(key): str(value) for key, value in (player_lookup or {}).items() if str(key).strip()}
     merged["player_name"] = merged["player_id"].map(lookup).fillna(merged["player_id"])
 
-    for numeric_col in ["wellness_physical", "wellness_mental", "wellness_avg", "readiness_score", "avg_rpe", "rpe_load", "duration_min"]:
+    for numeric_col in MONITORING_NUMERIC_COLUMNS:
         if numeric_col not in merged.columns:
             merged[numeric_col] = pd.NA
         merged[numeric_col] = pd.to_numeric(merged[numeric_col], errors="coerce")
@@ -187,20 +245,24 @@ def build_monitoring_dataset(
 
 
 def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
+    empty_summary: dict[str, object] = {
+        "wellness_players": 0,
+        "rpe_players": 0,
+        "wellness_entries": 0,
+        "rpe_entries": 0,
+        "wellness_physical": float("nan"),
+        "wellness_mental": float("nan"),
+        "wellness_avg": float("nan"),
+        "readiness_avg": float("nan"),
+        "avg_rpe": float("nan"),
+        "rpe_load": float("nan"),
+        "duration_min": float("nan"),
+    }
+    for column in WELLNESS_PARAMETER_COLUMNS:
+        empty_summary[column] = float("nan")
+
     if df is None or df.empty:
-        return {
-            "wellness_players": 0,
-            "rpe_players": 0,
-            "wellness_entries": 0,
-            "rpe_entries": 0,
-            "wellness_physical": float("nan"),
-            "wellness_mental": float("nan"),
-            "wellness_avg": float("nan"),
-            "readiness_avg": float("nan"),
-            "avg_rpe": float("nan"),
-            "rpe_load": float("nan"),
-            "duration_min": float("nan"),
-        }
+        return empty_summary
 
     wellness_mask = df["wellness_avg"].notna()
     rpe_mask = df["avg_rpe"].notna()
@@ -212,7 +274,7 @@ def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
     elif rpe_mask.any():
         avg_rpe = float(pd.to_numeric(df.loc[rpe_mask, "avg_rpe"], errors="coerce").mean())
 
-    return {
+    summary = {
         "wellness_players": int(df.loc[wellness_mask, "player_id"].nunique()),
         "rpe_players": int(df.loc[rpe_mask, "player_id"].nunique()),
         "wellness_entries": int(wellness_mask.sum()),
@@ -225,25 +287,14 @@ def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
         "rpe_load": total_load if total_load > 0 else float("nan"),
         "duration_min": total_duration if total_duration > 0 else float("nan"),
     }
+    for column in WELLNESS_PARAMETER_COLUMNS:
+        summary[column] = float(pd.to_numeric(df[column], errors="coerce").mean()) if df[column].notna().any() else float("nan")
+    return summary
 
 
 def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> pd.DataFrame:
     if df is None or df.empty:
-        return pd.DataFrame(
-            columns=[
-                "bucket",
-                "label",
-                "wellness_players",
-                "rpe_players",
-                "wellness_physical",
-                "wellness_mental",
-                "wellness_avg",
-                "readiness_score",
-                "avg_rpe",
-                "rpe_load",
-                "duration_min",
-            ]
-        )
+        return _empty_grouped_summary()
 
     tmp = df.copy()
     ts = pd.to_datetime(tmp["entry_date"], errors="coerce")
@@ -263,17 +314,22 @@ def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> p
     tmp["wellness_present"] = tmp["wellness_avg"].notna()
     tmp["rpe_present"] = tmp["avg_rpe"].notna()
 
+    aggregation: dict[str, tuple[str, str]] = {
+        "wellness_avg": ("wellness_avg", "mean"),
+        "readiness_score": ("readiness_score", "mean"),
+        "avg_rpe_mean": ("avg_rpe", "mean"),
+        "avg_rpe_std": ("avg_rpe", "std"),
+        "rpe_load": ("rpe_load", "sum"),
+        "rpe_load_std": ("rpe_load", "std"),
+        "duration_min": ("duration_min", "sum"),
+    }
+    for column in WELLNESS_PARAMETER_COLUMNS:
+        aggregation[column] = (column, "mean")
+        aggregation[f"{column}_std"] = (column, "std")
+
     grouped = (
         tmp.groupby(["bucket", "label"], as_index=False)
-        .agg(
-            wellness_physical=("wellness_physical", "mean"),
-            wellness_mental=("wellness_mental", "mean"),
-            wellness_avg=("wellness_avg", "mean"),
-            readiness_score=("readiness_score", "mean"),
-            avg_rpe_mean=("avg_rpe", "mean"),
-            rpe_load=("rpe_load", "sum"),
-            duration_min=("duration_min", "sum"),
-        )
+        .agg(**aggregation)
         .sort_values("bucket")
         .reset_index(drop=True)
     )
@@ -306,39 +362,27 @@ def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> p
 
 def build_monitoring_player_summary(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
-        return pd.DataFrame(
-            columns=[
-                "player_id",
-                "player_name",
-                "wellness_days",
-                "rpe_days",
-                "wellness_physical",
-                "wellness_mental",
-                "wellness_avg",
-                "readiness_score",
-                "avg_rpe",
-                "rpe_load",
-                "duration_min",
-            ]
-        )
+        return _empty_player_summary()
 
     tmp = df.copy()
     tmp["wellness_present"] = tmp["wellness_avg"].notna()
     tmp["rpe_present"] = tmp["avg_rpe"].notna()
 
+    aggregation: dict[str, tuple[str, str]] = {
+        "wellness_days": ("wellness_present", "sum"),
+        "rpe_days": ("rpe_present", "sum"),
+        "wellness_avg": ("wellness_avg", "mean"),
+        "readiness_score": ("readiness_score", "mean"),
+        "avg_rpe_mean": ("avg_rpe", "mean"),
+        "rpe_load": ("rpe_load", "sum"),
+        "duration_min": ("duration_min", "sum"),
+    }
+    for column in WELLNESS_PARAMETER_COLUMNS:
+        aggregation[column] = (column, "mean")
+
     grouped = (
         tmp.groupby(["player_id", "player_name"], as_index=False)
-        .agg(
-            wellness_days=("wellness_present", "sum"),
-            rpe_days=("rpe_present", "sum"),
-            wellness_physical=("wellness_physical", "mean"),
-            wellness_mental=("wellness_mental", "mean"),
-            wellness_avg=("wellness_avg", "mean"),
-            readiness_score=("readiness_score", "mean"),
-            avg_rpe_mean=("avg_rpe", "mean"),
-            rpe_load=("rpe_load", "sum"),
-            duration_min=("duration_min", "sum"),
-        )
+        .agg(**aggregation)
         .reset_index(drop=True)
     )
 

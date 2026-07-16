@@ -11,6 +11,7 @@ import streamlit as st
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from report_monitoring import (
+    WELLNESS_PARAMETER_SPECS,
     build_monitoring_dataset,
     build_monitoring_grouped_summary,
     build_monitoring_player_summary,
@@ -773,15 +774,20 @@ def build_bar_chart(
     height: int = 350,
     hover_format: str = ":,.0f",
     y_range: tuple[float, float] | None = None,
+    error_column: str | None = None,
 ) -> go.Figure:
     fig = base_figure(title, height=height)
     if df.empty or value_column not in df.columns or label_column not in df.columns:
         return fig
+    error_values = None
+    if error_column and error_column in df.columns:
+        error_values = df[error_column].fillna(0)
     fig.add_trace(
         go.Bar(
             x=df[label_column],
             y=df[value_column],
             marker_color=color,
+            error_y=dict(type="data", array=error_values, color=MVV_RED_BRIGHT, thickness=1.4) if error_values is not None else None,
             text=[value_formatter(value) for value in df[value_column]],
             textposition="outside",
             cliponaxis=False,
@@ -908,6 +914,14 @@ def build_leaderboard_chart(player_table: pd.DataFrame, column: str, title: str,
 
 
 def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, object]) -> str:
+    wellness_cards = [
+        (
+            label,
+            _format_decimal(monitoring_summary[column], 1),
+            f"Gemiddelde {label.lower()} in deze maand",
+        )
+        for column, label in WELLNESS_PARAMETER_SPECS
+    ]
     cards = [
         ("Active Players", _format_int(summary["active_players"]), "Unieke GPS-spelers in deze maand"),
         ("Player Sessions", _format_int(summary["player_sessions"]), "Totaal aantal Summary-sessies"),
@@ -917,8 +931,7 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
         ("Speed Exposures", _format_int(summary["speed_exposures"]), "Sessies >= 90% van individuele seizoensmax"),
         ("Dist / Player", _format_distance(summary["dist_per_player"]), "Team totaal gedeeld door actieve spelers"),
         ("Top Speed", _format_speed(summary["top_speed"]), "Hoogste topsnelheid in de gekozen maand"),
-        ("Wellness Physical", _format_decimal(monitoring_summary["wellness_physical"], 1), "Gemiddelde muscle soreness + fatigue"),
-        ("Wellness Mental", _format_decimal(monitoring_summary["wellness_mental"], 1), "Gemiddelde sleep, stress en mood"),
+        *wellness_cards,
         ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen teamgemiddelde RPE in deze maand"),
         ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE binnen de maand"),
     ]
@@ -1103,8 +1116,12 @@ def main() -> None:
     summary = build_month_summary(month_df, history_row.iloc[0] if not history_row.empty else None)
     notes = build_month_notes(summary, day_table, week_table, player_table)
     if monitoring_summary["wellness_entries"]:
+        wellness_note = ", ".join(
+            f"{label.lower()} {_format_decimal(monitoring_summary[column], 1)}"
+            for column, label in WELLNESS_PARAMETER_SPECS
+        )
         notes.append(
-            f"Wellness gemiddeld: physical {_format_decimal(monitoring_summary['wellness_physical'], 1)} en mental {_format_decimal(monitoring_summary['wellness_mental'], 1)} op basis van {_format_int(monitoring_summary['wellness_entries'])} entries."
+            f"Wellness gemiddeld: {wellness_note} op basis van {_format_int(monitoring_summary['wellness_entries'])} entries."
         )
     if monitoring_summary["rpe_entries"]:
         notes.append(
@@ -1287,67 +1304,35 @@ def main() -> None:
         if monitoring_df.empty:
             st.info("Geen wellness- of RPE-data beschikbaar voor deze maand.")
         else:
-            monitoring_row_one = st.columns(2, gap="large")
-            with monitoring_row_one[0]:
-                render_plot_panel(
-                    "Daily Wellness Physical",
-                    build_bar_chart(
-                        monitoring_day_table,
-                        "label",
-                        "wellness_physical",
-                        "Daily Team Wellness Physical",
-                        MVV_RED_DEEP,
-                        _format_decimal,
-                        hover_format=":.1f",
-                        y_range=(0, 10),
-                    ),
-                    "Gemiddelde muscle soreness en fatigue per dag",
-                )
-            with monitoring_row_one[1]:
-                render_plot_panel(
-                    "Daily Wellness Mental",
-                    build_bar_chart(
-                        monitoring_day_table,
-                        "label",
-                        "wellness_mental",
-                        "Daily Team Wellness Mental",
-                        MVV_RED_BRIGHT,
-                        _format_decimal,
-                        hover_format=":.1f",
-                        y_range=(0, 10),
-                    ),
-                    "Gemiddelde sleep quality, stress en mood per dag",
-                )
-
-            monitoring_row_two = st.columns(2, gap="large")
-            with monitoring_row_two[0]:
-                render_plot_panel(
-                    "Daily Weighted RPE",
-                    build_bar_chart(
-                        monitoring_day_table,
-                        "label",
-                        "avg_rpe",
-                        "Daily Team Weighted RPE",
-                        MVV_RED_DEEP,
-                        _format_decimal,
-                        hover_format=":.1f",
-                        y_range=(0, 10),
-                    ),
-                    "Gewogen team-RPE per dag",
-                )
-            with monitoring_row_two[1]:
-                render_plot_panel(
-                    "Daily RPE Load",
-                    build_bar_chart(
-                        monitoring_day_table,
-                        "label",
-                        "rpe_load",
-                        "Daily Team RPE Load",
-                        MVV_RED_BRIGHT,
-                        _format_int,
-                    ),
-                    "Totale duration x RPE per dag",
-                )
+            monitoring_specs = [
+                ("muscle_soreness", "Muscle Soreness", "Gemiddelde muscle soreness per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
+                ("fatigue", "Fatigue", "Gemiddelde fatigue per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
+                ("sleep_quality", "Sleep Quality", "Gemiddelde sleep quality per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
+                ("stress", "Stress", "Gemiddelde stress per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
+                ("mood", "Mood", "Gemiddelde mood per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
+                ("avg_rpe", "Weighted RPE", "Gewogen team-RPE per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
+                ("rpe_load", "RPE Load", "Totale duration x RPE per dag met spreiding per speler", MVV_RED_DEEP, _format_int, ":,.0f", None),
+            ]
+            for idx in range(0, len(monitoring_specs), 2):
+                cols = st.columns(2, gap="large")
+                for col_container, spec in zip(cols, monitoring_specs[idx : idx + 2]):
+                    column, label, subtitle, color, formatter, hover_format, y_range = spec
+                    with col_container:
+                        render_plot_panel(
+                            f"Daily {label} +/- SD",
+                            build_bar_chart(
+                                monitoring_day_table,
+                                "label",
+                                column,
+                                f"Daily Team {label}",
+                                color,
+                                formatter,
+                                hover_format=hover_format,
+                                y_range=y_range,
+                                error_column=f"{column}_std",
+                            ),
+                            subtitle,
+                        )
 
             render_html_panel(
                 "Monitoring by Day",
@@ -1357,14 +1342,17 @@ def main() -> None:
                         ("label", "Dag", None),
                         ("wellness_players", "Wellness Players", _format_int),
                         ("rpe_players", "RPE Players", _format_int),
-                        ("wellness_physical", "Physical", _format_decimal),
-                        ("wellness_mental", "Mental", _format_decimal),
+                        ("muscle_soreness", "Muscle", _format_decimal),
+                        ("fatigue", "Fatigue", _format_decimal),
+                        ("sleep_quality", "Sleep", _format_decimal),
+                        ("stress", "Stress", _format_decimal),
+                        ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
                         ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
-                "Dagoverzicht van wellness, readiness en RPE",
+                "Dagoverzicht van alle wellness-parameters, readiness en RPE",
             )
 
             render_html_panel(
@@ -1375,8 +1363,11 @@ def main() -> None:
                         ("player_name", "Speler", None),
                         ("wellness_days", "Wellness Days", _format_int),
                         ("rpe_days", "RPE Days", _format_int),
-                        ("wellness_physical", "Physical", _format_decimal),
-                        ("wellness_mental", "Mental", _format_decimal),
+                        ("muscle_soreness", "Muscle", _format_decimal),
+                        ("fatigue", "Fatigue", _format_decimal),
+                        ("sleep_quality", "Sleep", _format_decimal),
+                        ("stress", "Stress", _format_decimal),
+                        ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
                         ("rpe_load", "RPE Load", _format_int),

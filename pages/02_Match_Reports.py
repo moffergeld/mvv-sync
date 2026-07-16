@@ -37,7 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
-from report_monitoring import build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
+from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
 # -----------------------------
@@ -802,11 +802,15 @@ def render_kpi_row(df_phase: pd.DataFrame) -> None:
 
 def render_monitoring_summary_row(summary: dict[str, Any]) -> None:
     cards = [
-        ("Wellness Physical", _fmt_dec1(summary.get("wellness_physical")), f"{int(summary.get('wellness_players', 0) or 0)} spelers met wellness"),
-        ("Wellness Mental", _fmt_dec1(summary.get("wellness_mental")), "Sleep, stress en mood op matchdag"),
-        ("Avg RPE", _fmt_dec1(summary.get("avg_rpe")), f"{int(summary.get('rpe_players', 0) or 0)} spelers met RPE"),
-        ("RPE Load", _fmt_int0(summary.get("rpe_load")), "Totale duration x RPE op matchdag"),
+        (label, _fmt_dec1(summary.get(column)), f"Gemiddelde {label.lower()} op matchdag")
+        for column, label in WELLNESS_PARAMETER_SPECS
     ]
+    cards.extend(
+        [
+            ("Avg RPE", _fmt_dec1(summary.get("avg_rpe")), f"{int(summary.get('rpe_players', 0) or 0)} spelers met RPE"),
+            ("RPE Load", _fmt_int0(summary.get("rpe_load")), "Totale duration x RPE op matchdag"),
+        ]
+    )
     html_cards = "".join(
         '<div class="mr-summary-card">'
         f'<div class="mr-summary-label">{html.escape(label)}</div>'
@@ -824,8 +828,11 @@ def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
         return
 
     show_df = monitoring_players.copy().head(18)
-    show_df["Physical"] = show_df["wellness_physical"].map(_fmt_dec1)
-    show_df["Mental"] = show_df["wellness_mental"].map(_fmt_dec1)
+    show_df["Muscle"] = show_df["muscle_soreness"].map(_fmt_dec1)
+    show_df["Fatigue"] = show_df["fatigue"].map(_fmt_dec1)
+    show_df["Sleep"] = show_df["sleep_quality"].map(_fmt_dec1)
+    show_df["Stress"] = show_df["stress"].map(_fmt_dec1)
+    show_df["Mood"] = show_df["mood"].map(_fmt_dec1)
     show_df["Readiness"] = show_df["readiness_score"].map(_fmt_dec1)
     show_df["Avg RPE"] = show_df["avg_rpe"].map(_fmt_dec1)
     show_df["RPE Load"] = show_df["rpe_load"].map(_fmt_int0)
@@ -837,8 +844,11 @@ def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
                 "player_name",
                 "Wellness Days",
                 "RPE Days",
-                "Physical",
-                "Mental",
+                "Muscle",
+                "Fatigue",
+                "Sleep",
+                "Stress",
+                "Mood",
                 "Readiness",
                 "Avg RPE",
                 "RPE Load",

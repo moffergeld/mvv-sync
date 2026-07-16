@@ -13,6 +13,7 @@ from acwr_settings import compute_chronic_series, get_acwr_mode_meta
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from report_monitoring import (
+    WELLNESS_PARAMETER_SPECS,
     build_monitoring_dataset,
     build_monitoring_grouped_summary,
     build_monitoring_player_summary,
@@ -670,6 +671,7 @@ def build_bar_line_chart(
     line_label: str | None = None,
     line_color: str = MVV_RED_BRIGHT,
     primary_y_range: tuple[float, float] | None = None,
+    error_column: str | None = None,
 ) -> go.Figure:
     fig = make_subplots(specs=[[{"secondary_y": bool(line_column)}]])
     fig.update_layout(
@@ -685,12 +687,17 @@ def build_bar_line_chart(
     if df.empty:
         return fig
 
+    error_values = None
+    if error_column and error_column in df.columns:
+        error_values = df[error_column].fillna(0)
+
     fig.add_trace(
         go.Bar(
             name=bar_label,
             x=df["week_label"],
             y=df[bar_column],
             marker_color=bar_color,
+            error_y=dict(type="data", array=error_values, color=MVV_RED_BRIGHT, thickness=1.4) if error_values is not None else None,
         ),
         secondary_y=False,
     )
@@ -841,6 +848,14 @@ def build_leaderboard_chart(df: pd.DataFrame, column: str, title: str, formatter
 
 
 def build_cards_html(kpis: dict[str, object], monitoring_summary: dict[str, object]) -> str:
+    wellness_cards = [
+        (
+            label,
+            _format_decimal(monitoring_summary[column], 1),
+            f"Seizoensgemiddelde {label.lower()}",
+        )
+        for column, label in WELLNESS_PARAMETER_SPECS
+    ]
     cards = [
         ("Players", _format_int(kpis["players"]), "Aantal unieke spelers met geldige GPS-data"),
         ("Weeks", _format_int(kpis["weeks"]), "Actieve GPS-weken in deze selectie"),
@@ -850,8 +865,7 @@ def build_cards_html(kpis: dict[str, object], monitoring_summary: dict[str, obje
         ("Total Duration", _format_hours(kpis["duration_hours"]), "Opgetelde trainings- en matchduur"),
         ("Peak Week", _format_distance(kpis["peak_week"]), "Hoogste teamweek op total distance"),
         ("Top Speed", _format_speed(kpis["top_speed"]), "Hoogste geregistreerde topsnelheid"),
-        ("Wellness Physical", _format_decimal(monitoring_summary["wellness_physical"], 1), "Seizoensgemiddelde muscle soreness + fatigue"),
-        ("Wellness Mental", _format_decimal(monitoring_summary["wellness_mental"], 1), "Seizoensgemiddelde sleep, stress en mood"),
+        *wellness_cards,
         ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen teamgemiddelde RPE over de selectie"),
         ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE over de selectie"),
     ]
@@ -1025,8 +1039,12 @@ def main() -> None:
     kpis = calculate_season_kpis(season_df, weekly_df)
     notes = build_team_alerts(weekly_df, acwr_meta)
     if monitoring_summary["wellness_entries"]:
+        wellness_note = ", ".join(
+            f"{label.lower()} {_format_decimal(monitoring_summary[column], 1)}"
+            for column, label in WELLNESS_PARAMETER_SPECS
+        )
         notes.append(
-            f"Wellness gemiddeld over het seizoen: physical {_format_decimal(monitoring_summary['wellness_physical'], 1)} en mental {_format_decimal(monitoring_summary['wellness_mental'], 1)}."
+            f"Wellness gemiddeld over het seizoen: {wellness_note}."
         )
     if monitoring_summary["rpe_entries"]:
         notes.append(
@@ -1171,60 +1189,33 @@ def main() -> None:
         if monitoring_df.empty:
             st.info("Geen wellness- of RPE-data beschikbaar voor dit seizoen.")
         else:
-            monitoring_row_one = st.columns(2, gap="large")
-            with monitoring_row_one[0]:
-                render_plot_panel(
-                    "Weekly Wellness Physical",
-                    build_bar_line_chart(
-                        monitoring_weekly,
-                        title="Weekly Team Wellness Physical",
-                        bar_column="wellness_physical",
-                        bar_label="Physical",
-                        bar_color=MVV_RED_DEEP,
-                        primary_y_range=(0, 10),
-                    ),
-                    "Wekelijks gemiddelde muscle soreness en fatigue",
-                )
-            with monitoring_row_one[1]:
-                render_plot_panel(
-                    "Weekly Wellness Mental",
-                    build_bar_line_chart(
-                        monitoring_weekly,
-                        title="Weekly Team Wellness Mental",
-                        bar_column="wellness_mental",
-                        bar_label="Mental",
-                        bar_color=MVV_RED_BRIGHT,
-                        primary_y_range=(0, 10),
-                    ),
-                    "Wekelijks gemiddelde sleep quality, stress en mood",
-                )
-
-            monitoring_row_two = st.columns(2, gap="large")
-            with monitoring_row_two[0]:
-                render_plot_panel(
-                    "Weekly Weighted RPE",
-                    build_bar_line_chart(
-                        monitoring_weekly,
-                        title="Weekly Team Weighted RPE",
-                        bar_column="avg_rpe",
-                        bar_label="Avg RPE",
-                        bar_color=MVV_RED_DEEP,
-                        primary_y_range=(0, 10),
-                    ),
-                    "Gewogen team-RPE per week",
-                )
-            with monitoring_row_two[1]:
-                render_plot_panel(
-                    "Weekly RPE Load",
-                    build_bar_line_chart(
-                        monitoring_weekly,
-                        title="Weekly Team RPE Load",
-                        bar_column="rpe_load",
-                        bar_label="RPE Load",
-                        bar_color=MVV_RED_BRIGHT,
-                    ),
-                    "Totale duration x RPE per week",
-                )
+            monitoring_specs = [
+                ("muscle_soreness", "Muscle Soreness", "Wekelijks gemiddelde muscle soreness", MVV_RED_DEEP, (0, 10)),
+                ("fatigue", "Fatigue", "Wekelijks gemiddelde fatigue", MVV_RED_BRIGHT, (0, 10)),
+                ("sleep_quality", "Sleep Quality", "Wekelijks gemiddelde sleep quality", MVV_RED_DEEP, (0, 10)),
+                ("stress", "Stress", "Wekelijks gemiddelde stress", MVV_RED_BRIGHT, (0, 10)),
+                ("mood", "Mood", "Wekelijks gemiddelde mood", MVV_RED_DEEP, (0, 10)),
+                ("avg_rpe", "Weighted RPE", "Gewogen team-RPE per week", MVV_RED_BRIGHT, (0, 10)),
+                ("rpe_load", "RPE Load", "Totale duration x RPE per week met spreiding per speler", MVV_RED_DEEP, None),
+            ]
+            for idx in range(0, len(monitoring_specs), 2):
+                cols = st.columns(2, gap="large")
+                for col_container, spec in zip(cols, monitoring_specs[idx : idx + 2]):
+                    column, label, subtitle, color, y_range = spec
+                    with col_container:
+                        render_plot_panel(
+                            f"Weekly {label} +/- SD",
+                            build_bar_line_chart(
+                                monitoring_weekly,
+                                title=f"Weekly Team {label}",
+                                bar_column=column,
+                                bar_label=label,
+                                bar_color=color,
+                                primary_y_range=y_range,
+                                error_column=f"{column}_std",
+                            ),
+                            subtitle,
+                        )
 
             render_html_panel(
                 "Monitoring by Week",
@@ -1234,14 +1225,17 @@ def main() -> None:
                         ("week_label", "Week", None),
                         ("wellness_players", "Wellness Players", _format_int),
                         ("rpe_players", "RPE Players", _format_int),
-                        ("wellness_physical", "Physical", _format_decimal),
-                        ("wellness_mental", "Mental", _format_decimal),
+                        ("muscle_soreness", "Muscle", _format_decimal),
+                        ("fatigue", "Fatigue", _format_decimal),
+                        ("sleep_quality", "Sleep", _format_decimal),
+                        ("stress", "Stress", _format_decimal),
+                        ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
                         ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
-                "Weekoverzicht van wellness, readiness en RPE",
+                "Weekoverzicht van alle wellness-parameters, readiness en RPE",
             )
 
             render_html_panel(
@@ -1252,8 +1246,11 @@ def main() -> None:
                         ("player_name", "Speler", None),
                         ("wellness_days", "Wellness Days", _format_int),
                         ("rpe_days", "RPE Days", _format_int),
-                        ("wellness_physical", "Physical", _format_decimal),
-                        ("wellness_mental", "Mental", _format_decimal),
+                        ("muscle_soreness", "Muscle", _format_decimal),
+                        ("fatigue", "Fatigue", _format_decimal),
+                        ("sleep_quality", "Sleep", _format_decimal),
+                        ("stress", "Stress", _format_decimal),
+                        ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
                         ("rpe_load", "RPE Load", _format_int),
