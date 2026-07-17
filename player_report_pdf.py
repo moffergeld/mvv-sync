@@ -116,7 +116,7 @@ def build_player_report_pdf_bytes(
         fontName="Helvetica-Bold",
         fontSize=7.2,
         leading=9,
-        textColor=colors.HexColor("#A9B7CC"),
+        textColor=colors.HexColor("#6A768B"),
         alignment=TA_LEFT,
     )
     card_value_style = ParagraphStyle(
@@ -125,7 +125,7 @@ def build_player_report_pdf_bytes(
         fontName="Helvetica-Bold",
         fontSize=15.6,
         leading=17,
-        textColor=colors.white,
+        textColor=colors.HexColor("#0B1020"),
         alignment=TA_LEFT,
     )
     card_foot_style = ParagraphStyle(
@@ -134,7 +134,7 @@ def build_player_report_pdf_bytes(
         fontName="Helvetica",
         fontSize=7.2,
         leading=9,
-        textColor=colors.HexColor("#D7DFEB"),
+        textColor=colors.HexColor("#7A8598"),
         alignment=TA_LEFT,
     )
     note_style = ParagraphStyle(
@@ -218,8 +218,8 @@ def build_player_report_pdf_bytes(
         height: float = 220,
     ) -> Drawing:
         drawing = Drawing(width, height)
-        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#0B1020"), strokeColor=colors.HexColor("#1E2A3E"), strokeWidth=1))
-        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.white))
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
 
         chart = VerticalBarChart()
         chart.x = 32
@@ -227,24 +227,24 @@ def build_player_report_pdf_bytes(
         chart.height = height - 82
         chart.width = width - 56
         chart.data = data_series
-        chart.strokeColor = colors.HexColor("#A9B7CC")
+        chart.strokeColor = colors.HexColor("#94A3B8")
         chart.valueAxis.valueMin = 0
         peak = max((max(series) if series else 0) for series in data_series)
         chart.valueAxis.valueMax = max(1, peak * 1.18)
-        chart.valueAxis.strokeColor = colors.HexColor("#4A5870")
-        chart.valueAxis.gridStrokeColor = colors.HexColor("#283347")
+        chart.valueAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#E5EAF1")
         chart.valueAxis.gridStrokeDashArray = [2, 2]
         chart.valueAxis.visibleGrid = True
-        chart.valueAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.valueAxis.labels.fillColor = colors.HexColor("#5B6576")
         chart.valueAxis.labels.fontName = "Helvetica"
         chart.valueAxis.labels.fontSize = 7
         chart.categoryAxis.categoryNames = labels
-        chart.categoryAxis.strokeColor = colors.HexColor("#4A5870")
+        chart.categoryAxis.strokeColor = colors.HexColor("#B8C4D3")
         chart.categoryAxis.labels.boxAnchor = "ne"
         chart.categoryAxis.labels.angle = 30
         chart.categoryAxis.labels.dx = -4
         chart.categoryAxis.labels.dy = -2
-        chart.categoryAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#5B6576")
         chart.categoryAxis.labels.fontName = "Helvetica"
         chart.categoryAxis.labels.fontSize = 7
         chart.barSpacing = 3
@@ -261,7 +261,7 @@ def build_player_report_pdf_bytes(
         legend_x = 16
         for fill_hex, legend_label in zip(series_colors, legend_labels):
             drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
-            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#D7DFEB")))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
             legend_x += 92
         return drawing
 
@@ -275,8 +275,8 @@ def build_player_report_pdf_bytes(
         height: float = 230,
     ) -> Drawing:
         drawing = Drawing(width, height)
-        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#0B1020"), strokeColor=colors.HexColor("#1E2A3E"), strokeWidth=1))
-        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.white))
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
 
         chart = HorizontalLineChart()
         chart.x = 32
@@ -287,16 +287,16 @@ def build_player_report_pdf_bytes(
         chart.joinedLines = 1
         chart.valueAxis.valueMin = 0
         chart.valueAxis.valueMax = 10
-        chart.valueAxis.strokeColor = colors.HexColor("#4A5870")
-        chart.valueAxis.gridStrokeColor = colors.HexColor("#283347")
+        chart.valueAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#E5EAF1")
         chart.valueAxis.gridStrokeDashArray = [2, 2]
         chart.valueAxis.visibleGrid = True
-        chart.valueAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.valueAxis.labels.fillColor = colors.HexColor("#5B6576")
         chart.valueAxis.labels.fontName = "Helvetica"
         chart.valueAxis.labels.fontSize = 7
         chart.categoryAxis.categoryNames = labels
-        chart.categoryAxis.strokeColor = colors.HexColor("#4A5870")
-        chart.categoryAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.categoryAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#5B6576")
         chart.categoryAxis.labels.fontName = "Helvetica"
         chart.categoryAxis.labels.fontSize = 7
         chart.categoryAxis.labels.angle = 25
@@ -314,7 +314,7 @@ def build_player_report_pdf_bytes(
         legend_x = 16
         for fill_hex, legend_label in zip(series_colors, legend_labels):
             drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
-            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#D7DFEB")))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
             legend_x += 96
         return drawing
 
@@ -349,28 +349,28 @@ def build_player_report_pdf_bytes(
     story.append(Spacer(1, 10))
 
     visual_cards = [
-        build_metric_card("Sessies", _fmt_int(summary.get("sessions")), "Summary-sessies in deze selectie", "#121A2B", "#30415E"),
-        build_metric_card("Actieve dagen", _fmt_int(summary.get("active_days")), "Unieke trainings- of wedstrijddagen", "#121A2B", "#30415E"),
-        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Totale loopbelasting binnen scope", "#121A2B", "#30415E"),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#121A2B", "#30415E"),
-        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totaal aantal sprintacties", "#171223", "#5B2740"),
-        build_metric_card("Accelerations", _fmt_int(summary.get("total_accelerations")), "Totale acceleraties in scope", "#171223", "#5B2740"),
-        build_metric_card("Decelerations", _fmt_int(summary.get("total_decelerations")), "Totale deceleraties in scope", "#171223", "#5B2740"),
-        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#171223", "#5B2740"),
-        build_metric_card("Duur", _fmt_minutes(summary.get("duration_min")), "Totale sessieduur", "#0F1726", "#2B3952"),
+        build_metric_card("Sessies", _fmt_int(summary.get("sessions")), "Summary-sessies in deze selectie", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Actieve dagen", _fmt_int(summary.get("active_days")), "Unieke trainings- of wedstrijddagen", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Totale loopbelasting binnen scope", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totaal aantal sprintacties", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Accelerations", _fmt_int(summary.get("total_accelerations")), "Totale acceleraties in scope", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Decelerations", _fmt_int(summary.get("total_decelerations")), "Totale deceleraties in scope", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Duur", _fmt_minutes(summary.get("duration_min")), "Totale sessieduur", "#F8FAFC", "#D7DEE8"),
         build_metric_card(
             "Avg Intensity",
             _fmt_dec(summary.get("distance_per_min"), 1) + " m/min" if not pd.isna(summary.get("distance_per_min")) else "--",
             "Gemiddelde meters per minuut",
-            "#0F1726",
-            "#2B3952",
+            "#F8FAFC",
+            "#D7DEE8",
         ),
-        build_metric_card("Trainingen", _fmt_int(summary.get("training_sessions")), "Aantal trainingssessies", "#0F1726", "#2B3952"),
-        build_metric_card("Wedstrijden", _fmt_int(summary.get("match_sessions")), "Aantal matchsituaties", "#0F1726", "#2B3952"),
-        build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#111826", "#2F3D56"),
-        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gewogen gemiddelde RPE", "#111826", "#2F3D56"),
-        build_metric_card("RPE Load", _fmt_int(monitoring_summary.get("rpe_load")), "Totale duration x RPE", "#111826", "#2F3D56"),
-        build_metric_card("Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#111826", "#2F3D56"),
+        build_metric_card("Trainingen", _fmt_int(summary.get("training_sessions")), "Aantal trainingssessies", "#F8FAFC", "#D7DEE8"),
+        build_metric_card("Wedstrijden", _fmt_int(summary.get("match_sessions")), "Aantal matchsituaties", "#F8FAFC", "#D7DEE8"),
+        build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gewogen gemiddelde RPE", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("RPE Load", _fmt_int(monitoring_summary.get("rpe_load")), "Totale duration x RPE", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#FFF7F8", "#E8C5CB"),
     ]
     story.append(Paragraph("Visual Snapshot", section_style))
     story.append(build_card_grid(visual_cards))
