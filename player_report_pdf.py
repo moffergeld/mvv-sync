@@ -54,7 +54,7 @@ def build_player_report_pdf_bytes(
     from reportlab.graphics.charts.linecharts import HorizontalLineChart
     from reportlab.graphics.shapes import Drawing, Rect, String
     from reportlab.graphics.widgets.markers import makeMarker
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -373,9 +373,15 @@ def build_player_report_pdf_bytes(
         build_metric_card("RPE Load", _fmt_int(monitoring_summary.get("rpe_load")), "Totale duration x RPE", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#FFF7F8", "#E8C5CB"),
     ]
-    story.append(Paragraph("Visual Snapshot", section_style))
-    story.append(build_card_grid(visual_cards))
-    story.append(Spacer(1, 8))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Visual Snapshot", section_style),
+                build_card_grid(visual_cards),
+                Spacer(1, 8),
+            ]
+        )
+    )
 
     chart_sessions_df = sessions_df.head(8).copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
     if not chart_sessions_df.empty:
@@ -414,9 +420,15 @@ def build_player_report_pdf_bytes(
                 ]
             )
         )
-        story.append(Paragraph("Session Charts", section_style))
-        story.append(chart_grid)
-        story.append(Spacer(1, 8))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Session Charts", section_style),
+                    chart_grid,
+                    Spacer(1, 8),
+                ]
+            )
+        )
 
     chart_monitoring_df = monitoring_group_df.tail(8).copy() if isinstance(monitoring_group_df, pd.DataFrame) else pd.DataFrame()
     if not chart_monitoring_df.empty and {"label", "readiness_score", "avg_rpe"}.issubset(chart_monitoring_df.columns):
@@ -431,9 +443,15 @@ def build_player_report_pdf_bytes(
             ["#EA3351", "#F5D2D8"],
             ["Readiness", "Avg RPE"],
         )
-        story.append(Paragraph("Monitoring Chart", section_style))
-        story.append(monitoring_chart)
-        story.append(Spacer(1, 8))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Monitoring Chart", section_style),
+                    monitoring_chart,
+                    Spacer(1, 8),
+                ]
+            )
+        )
 
     summary_rows = [
         ["Metriek", "Waarde", "Metriek", "Waarde"],
@@ -468,9 +486,15 @@ def build_player_report_pdf_bytes(
             ]
         )
     )
-    story.append(Paragraph("Detailed Summary", section_style))
-    story.append(summary_table)
-    story.append(Spacer(1, 8))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Detailed Summary", section_style),
+                summary_table,
+                Spacer(1, 8),
+            ]
+        )
+    )
 
     monitoring_rows = [
         ["Monitoring", "Waarde", "Monitoring", "Waarde"],
@@ -497,9 +521,15 @@ def build_player_report_pdf_bytes(
             ]
         )
     )
-    story.append(Paragraph("Wellness &amp; RPE", section_style))
-    story.append(monitoring_table)
-    story.append(Spacer(1, 8))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Wellness &amp; RPE", section_style),
+                monitoring_table,
+                Spacer(1, 8),
+            ]
+        )
+    )
 
     sessions_preview = sessions_df.head(12).copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
     if not sessions_preview.empty:
@@ -538,9 +568,15 @@ def build_player_report_pdf_bytes(
                 ]
             )
         )
-        story.append(Paragraph("Recent Sessions", section_style))
-        story.append(session_table)
-        story.append(Spacer(1, 8))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Recent Sessions", section_style),
+                    session_table,
+                    Spacer(1, 8),
+                ]
+            )
+        )
 
     monitoring_preview = monitoring_group_df.head(12).copy() if isinstance(monitoring_group_df, pd.DataFrame) else pd.DataFrame()
     if not monitoring_preview.empty:
@@ -577,17 +613,24 @@ def build_player_report_pdf_bytes(
                 ]
             )
         )
-        story.append(Paragraph("Monitoring Timeline", section_style))
-        story.append(grouped_table)
-        story.append(Spacer(1, 8))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Monitoring Timeline", section_style),
+                    grouped_table,
+                    Spacer(1, 8),
+                ]
+            )
+        )
 
-    story.append(Paragraph("Notes", section_style))
     note_list = list(notes)
     if not note_list:
         note_list = ["Geen extra notities beschikbaar voor deze selectie."]
+    note_flowables: list[object] = [Paragraph("Notes", section_style)]
     for note in note_list[:8]:
-        story.append(Paragraph(f"&bull; {note}", note_style))
-        story.append(Spacer(1, 2))
+        note_flowables.append(Paragraph(f"&bull; {note}", note_style))
+        note_flowables.append(Spacer(1, 2))
+    story.append(KeepTogether(note_flowables))
 
     doc.build(story)
     return buffer.getvalue()
