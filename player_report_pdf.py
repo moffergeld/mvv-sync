@@ -72,7 +72,7 @@ def build_player_report_pdf_bytes(
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
         fontSize=24,
-        textColor=colors.white,
+        textColor=colors.HexColor("#0B1020"),
         spaceAfter=2,
     )
     kicker_style = ParagraphStyle(
@@ -80,7 +80,7 @@ def build_player_report_pdf_bytes(
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
         fontSize=9,
-        textColor=colors.HexColor("#F6B8C4"),
+        textColor=colors.HexColor("#C8102E"),
         leading=11,
         spaceAfter=3,
     )
@@ -90,7 +90,7 @@ def build_player_report_pdf_bytes(
         fontName="Helvetica",
         fontSize=9.2,
         leading=12,
-        textColor=colors.HexColor("#E7ECF4"),
+        textColor=colors.HexColor("#4C5668"),
         alignment=TA_LEFT,
     )
     section_style = ParagraphStyle(
@@ -336,8 +336,9 @@ def build_player_report_pdf_bytes(
     hero_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0B1020")),
-                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#1E2A3E")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FBFCFE")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#D7DEE8")),
+                ("LINEABOVE", (0, 0), (-1, 0), 2, colors.HexColor("#C8102E")),
                 ("LEFTPADDING", (0, 0), (-1, -1), 12),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 12),
                 ("TOPPADDING", (0, 0), (-1, -1), 10),
