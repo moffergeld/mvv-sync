@@ -50,6 +50,10 @@ def build_player_report_pdf_bytes(
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.linecharts import HorizontalLineChart
+    from reportlab.graphics.shapes import Drawing, Rect, String
+    from reportlab.graphics.widgets.markers import makeMarker
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     buffer = BytesIO()
@@ -191,6 +195,129 @@ def build_player_report_pdf_bytes(
         )
         return grid
 
+    def build_session_chart_labels(chart_df: pd.DataFrame) -> list[str]:
+        counts: dict[str, int] = {}
+        labels: list[str] = []
+        for _, row in chart_df.iterrows():
+            base = str(row.get("datum_label") or "--")[:5]
+            counts[base] = counts.get(base, 0) + 1
+            session_suffix = counts[base]
+            type_value = str(row.get("type") or "").strip().lower()
+            type_suffix = "M" if "match" in type_value or "wedstrijd" in type_value else "T"
+            duplicate_suffix = f"-{session_suffix}" if session_suffix > 1 else ""
+            labels.append(f"{base}{duplicate_suffix}-{type_suffix}")
+        return labels
+
+    def build_bar_chart_drawing(
+        title: str,
+        labels: list[str],
+        data_series: list[list[float]],
+        series_colors: list[str],
+        legend_labels: list[str],
+        width: float = 352,
+        height: float = 220,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#0B1020"), strokeColor=colors.HexColor("#1E2A3E"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.white))
+
+        chart = VerticalBarChart()
+        chart.x = 32
+        chart.y = 44
+        chart.height = height - 82
+        chart.width = width - 56
+        chart.data = data_series
+        chart.strokeColor = colors.HexColor("#A9B7CC")
+        chart.valueAxis.valueMin = 0
+        peak = max((max(series) if series else 0) for series in data_series)
+        chart.valueAxis.valueMax = max(1, peak * 1.18)
+        chart.valueAxis.strokeColor = colors.HexColor("#4A5870")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#283347")
+        chart.valueAxis.gridStrokeDashArray = [2, 2]
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.categoryNames = labels
+        chart.categoryAxis.strokeColor = colors.HexColor("#4A5870")
+        chart.categoryAxis.labels.boxAnchor = "ne"
+        chart.categoryAxis.labels.angle = 30
+        chart.categoryAxis.labels.dx = -4
+        chart.categoryAxis.labels.dy = -2
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 7
+        chart.barSpacing = 3
+        chart.groupSpacing = 9
+        chart.barWidth = 8 if len(data_series) > 1 else 14
+
+        for index, fill_hex in enumerate(series_colors):
+            chart.bars[index].fillColor = colors.HexColor(fill_hex)
+            chart.bars[index].strokeColor = colors.HexColor(fill_hex)
+
+        drawing.add(chart)
+
+        legend_y = 16
+        legend_x = 16
+        for fill_hex, legend_label in zip(series_colors, legend_labels):
+            drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#D7DFEB")))
+            legend_x += 92
+        return drawing
+
+    def build_line_chart_drawing(
+        title: str,
+        labels: list[str],
+        data_series: list[list[float]],
+        series_colors: list[str],
+        legend_labels: list[str],
+        width: float = 724,
+        height: float = 230,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#0B1020"), strokeColor=colors.HexColor("#1E2A3E"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.white))
+
+        chart = HorizontalLineChart()
+        chart.x = 32
+        chart.y = 42
+        chart.height = height - 80
+        chart.width = width - 56
+        chart.data = data_series
+        chart.joinedLines = 1
+        chart.valueAxis.valueMin = 0
+        chart.valueAxis.valueMax = 10
+        chart.valueAxis.strokeColor = colors.HexColor("#4A5870")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#283347")
+        chart.valueAxis.gridStrokeDashArray = [2, 2]
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.categoryNames = labels
+        chart.categoryAxis.strokeColor = colors.HexColor("#4A5870")
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#D7DFEB")
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 7
+        chart.categoryAxis.labels.angle = 25
+        chart.categoryAxis.labels.boxAnchor = "ne"
+        chart.categoryAxis.labels.dx = -2
+
+        for index, fill_hex in enumerate(series_colors):
+            chart.lines[index].strokeColor = colors.HexColor(fill_hex)
+            chart.lines[index].strokeWidth = 2
+            chart.lines[index].symbol = makeMarker("FilledCircle")
+
+        drawing.add(chart)
+
+        legend_y = 16
+        legend_x = 16
+        for fill_hex, legend_label in zip(series_colors, legend_labels):
+            drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#D7DFEB")))
+            legend_x += 96
+        return drawing
+
     story: list[object] = []
 
     hero_table = Table(
@@ -248,6 +375,64 @@ def build_player_report_pdf_bytes(
     story.append(Paragraph("Visual Snapshot", section_style))
     story.append(build_card_grid(visual_cards))
     story.append(Spacer(1, 8))
+
+    chart_sessions_df = sessions_df.head(8).copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
+    if not chart_sessions_df.empty:
+        chart_sessions_df = chart_sessions_df.iloc[::-1].reset_index(drop=True)
+        session_labels = build_session_chart_labels(chart_sessions_df)
+        session_distance_chart = build_bar_chart_drawing(
+            "Session Distance per sessie",
+            session_labels,
+            [pd.to_numeric(chart_sessions_df["total_distance"], errors="coerce").fillna(0).tolist()],
+            ["#6E1222"],
+            ["Total Distance"],
+        )
+        session_accel_chart = build_bar_chart_drawing(
+            "Accelerations vs Decelerations per sessie",
+            session_labels,
+            [
+                pd.to_numeric(chart_sessions_df["total_accelerations"], errors="coerce").fillna(0).tolist(),
+                pd.to_numeric(chart_sessions_df["total_decelerations"], errors="coerce").fillna(0).tolist(),
+            ],
+            ["#EA3351", "#F5D2D8"],
+            ["Accelerations", "Decelerations"],
+        )
+        chart_grid = Table(
+            [[session_distance_chart, session_accel_chart]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
+        )
+        chart_grid.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(Paragraph("Session Charts", section_style))
+        story.append(chart_grid)
+        story.append(Spacer(1, 8))
+
+    chart_monitoring_df = monitoring_group_df.tail(8).copy() if isinstance(monitoring_group_df, pd.DataFrame) else pd.DataFrame()
+    if not chart_monitoring_df.empty and {"label", "readiness_score", "avg_rpe"}.issubset(chart_monitoring_df.columns):
+        monitoring_labels = [str(value) for value in chart_monitoring_df["label"].fillna("--").tolist()]
+        monitoring_chart = build_line_chart_drawing(
+            "Readiness en RPE trend",
+            monitoring_labels,
+            [
+                pd.to_numeric(chart_monitoring_df["readiness_score"], errors="coerce").fillna(0).tolist(),
+                pd.to_numeric(chart_monitoring_df["avg_rpe"], errors="coerce").fillna(0).tolist(),
+            ],
+            ["#EA3351", "#F5D2D8"],
+            ["Readiness", "Avg RPE"],
+        )
+        story.append(Paragraph("Monitoring Chart", section_style))
+        story.append(monitoring_chart)
+        story.append(Spacer(1, 8))
 
     summary_rows = [
         ["Metriek", "Waarde", "Metriek", "Waarde"],
