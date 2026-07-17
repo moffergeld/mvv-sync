@@ -152,7 +152,7 @@ def render_css() -> None:
           background: linear-gradient(180deg, rgba(18, 25, 42, 0.96), rgba(11, 16, 29, 0.96));
           box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
           padding: 1.15rem 1.05rem 1rem 1.05rem;
-          min-height: 250px;
+          min-height: 205px;
         }
 
         .reports-card-kicker {
@@ -175,7 +175,7 @@ def render_css() -> None:
           margin-top: 0.7rem;
           color: rgba(255,255,255,0.82);
           line-height: 1.55;
-          min-height: 3.2rem;
+          min-height: 2.6rem;
         }
 
         .reports-card-meta {
@@ -232,13 +232,14 @@ def render_tile(
     button_label: str,
     target_page: str,
 ) -> None:
+    meta_html = f'<div class="reports-card-meta">{meta}</div>' if meta else ""
     st.markdown(
         f"""
         <div class="reports-card">
           <div class="reports-card-kicker">{kicker}</div>
           <div class="reports-card-title">{title}</div>
           <div class="reports-card-copy">{copy}</div>
-          <div class="reports-card-meta">{meta}</div>
+          {meta_html}
         """,
         unsafe_allow_html=True,
     )
@@ -279,20 +280,17 @@ def main() -> None:
             </div>
           </div>
           <div class="reports-copy">
-            Centrale rapportage-ingang voor wedstrijdanalyses, speleroverzichten, maand- en weekoverzichten, seizoensrapportage en staffevaluaties.
+            Open hier alle wedstrijd-, speler-, week-, maand- en seizoensrapportages.
           </div>
           <div class="reports-pill-row">
-            <span class="reports-pill">Match Reports opent als eigen rapportage-route</span>
-            <span class="reports-pill">Player Report bundelt week, maand en seizoen per individuele speler</span>
-            <span class="reports-pill">Month Report bundelt dagload, weekblokken en leaders per kalendermaand</span>
-            <span class="reports-pill">Week Report volgt de team weekstructuur uit de rapportagemap</span>
-            <span class="reports-pill">Year Report bundelt het volledige seizoensverhaal in dashboardvorm</span>
+            <span class="reports-pill">Team- en spelerrapportages op een plek</span>
+            <span class="reports-pill">Direct openen per workflow</span>
           </div>
         </div>
         <div class="reports-section-head">
           <div>
             <div class="reports-section-kicker">Modules</div>
-            <div class="reports-section-title">Kies welke rapportage je wilt openen</div>
+            <div class="reports-section-title">Open een rapportage</div>
           </div>
           <div class="reports-section-note">5 modules direct beschikbaar</div>
         </div>
@@ -306,8 +304,8 @@ def main() -> None:
             key="reports_hub_match_reports",
             kicker="Wedstrijd",
             title="Match Reports",
-            copy="Open de wedstrijdrapportage met filters, score-overzicht, fasekeuze en per-speler GPS-analyse.",
-            meta="Route voor matchselectie, KPI's en teamrapportage",
+            copy="Wedstrijdselectie met score, fases en GPS-analyse.",
+            meta="",
             button_label="Open Match Reports",
             target_page="pages/02_Match_Reports.py",
         )
@@ -316,8 +314,8 @@ def main() -> None:
             key="reports_hub_player_report",
             kicker="Speler",
             title="Player Report",
-            copy="Open de individuele rapportage en schakel tussen week-, maand- en seizoensscope per speler, inclusief wellness, RPE en PDF-export.",
-            meta="Route voor individuele speleranalyse, trendbewaking en export",
+            copy="Individuele rapportage per week, maand of seizoen.",
+            meta="",
             button_label="Open Player Report",
             target_page="pages/17_Player_Report.py",
         )
@@ -326,8 +324,8 @@ def main() -> None:
             key="reports_hub_month_report",
             kicker="Maand",
             title="Month Report",
-            copy="Open de maandrapportage met KPI-cards, dagbelasting, weekblokken binnen de maand en squad leaders.",
-            meta="Route voor maandanalyse, teamritme en compacte staffnotities",
+            copy="Maandoverzicht met KPI's, dagload en leaders.",
+            meta="",
             button_label="Open Month Report",
             target_page="pages/16_Month_Report.py",
         )
@@ -336,8 +334,8 @@ def main() -> None:
             key="reports_hub_week_report",
             kicker="Week",
             title="Week Report",
-            copy="Open de webversie van de team weekrapportage met KPI-cards, dagbelasting, spreiding en leaders.",
-            meta="Route voor teamweekanalyse, training vs match en weeknotities",
+            copy="Weekrapportage met load, spreiding en leaders.",
+            meta="",
             button_label="Open Week Report",
             target_page="pages/14_Week_Report.py",
         )
@@ -346,8 +344,8 @@ def main() -> None:
             key="reports_hub_year_report",
             kicker="Seizoen",
             title="Year Report",
-            copy="Open de seizoensrapportage met team workload trend, ACWR, speed load, top weeks en analyst notes.",
-            meta="Route voor jaaroverzicht, loadprofiel en staffinzichten over de hele selectie",
+            copy="Seizoensoverzicht met workload, trends en piekweken.",
+            meta="",
             button_label="Open Year Report",
             target_page="pages/15_Year_Report.py",
         )
