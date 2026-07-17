@@ -29,6 +29,11 @@ def _fmt_speed(value: object) -> str:
     return "--" if base == "--" else f"{base} km/h"
 
 
+def _fmt_minutes(value: object) -> str:
+    base = _fmt_int(value)
+    return "--" if base == "--" else f"{base} min"
+
+
 def build_player_report_pdf_bytes(
     *,
     player_name: str,
@@ -41,6 +46,7 @@ def build_player_report_pdf_bytes(
     notes: Iterable[str],
 ) -> bytes:
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
@@ -61,18 +67,27 @@ def build_player_report_pdf_bytes(
         "mvv_title",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=23,
-        textColor=colors.HexColor("#0B1020"),
-        spaceAfter=4,
+        fontSize=24,
+        textColor=colors.white,
+        spaceAfter=2,
     )
     kicker_style = ParagraphStyle(
         "mvv_kicker",
         parent=styles["Normal"],
         fontName="Helvetica-Bold",
         fontSize=9,
-        textColor=colors.HexColor("#C8102E"),
+        textColor=colors.HexColor("#F6B8C4"),
         leading=11,
-        spaceAfter=12,
+        spaceAfter=3,
+    )
+    hero_body_style = ParagraphStyle(
+        "mvv_hero_body",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9.2,
+        leading=12,
+        textColor=colors.HexColor("#E7ECF4"),
+        alignment=TA_LEFT,
     )
     section_style = ParagraphStyle(
         "mvv_section",
@@ -91,17 +106,161 @@ def build_player_report_pdf_bytes(
         leading=12,
         textColor=colors.HexColor("#182134"),
     )
+    card_label_style = ParagraphStyle(
+        "mvv_card_label",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=7.2,
+        leading=9,
+        textColor=colors.HexColor("#A9B7CC"),
+        alignment=TA_LEFT,
+    )
+    card_value_style = ParagraphStyle(
+        "mvv_card_value",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=15.6,
+        leading=17,
+        textColor=colors.white,
+        alignment=TA_LEFT,
+    )
+    card_foot_style = ParagraphStyle(
+        "mvv_card_foot",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.2,
+        leading=9,
+        textColor=colors.HexColor("#D7DFEB"),
+        alignment=TA_LEFT,
+    )
+    note_style = ParagraphStyle(
+        "mvv_note",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#182134"),
+        leftIndent=4,
+    )
+
+    card_width = doc.width / 4.0
+
+    def build_metric_card(label: str, value: str, foot: str, background_hex: str, border_hex: str) -> Table:
+        card = Table(
+            [
+                [Paragraph(label.upper(), card_label_style)],
+                [Paragraph(value, card_value_style)],
+                [Paragraph(foot, card_foot_style)],
+            ],
+            colWidths=[card_width - 10],
+        )
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(background_hex)),
+                    ("BOX", (0, 0), (-1, -1), 0.9, colors.HexColor(border_hex)),
+                    ("LINEABOVE", (0, 0), (-1, 0), 1.3, colors.HexColor(border_hex)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return card
+
+    def build_card_grid(cards: list[Table], columns: int = 4) -> Table:
+        rows: list[list[object]] = []
+        for index in range(0, len(cards), columns):
+            row: list[object] = list(cards[index : index + columns])
+            while len(row) < columns:
+                row.append("")
+            rows.append(row)
+        grid = Table(rows, colWidths=[doc.width / columns] * columns, hAlign="LEFT")
+        grid.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return grid
 
     story: list[object] = []
-    story.append(Paragraph("Player Report", title_style))
-    story.append(Paragraph(f"MVV Maastricht | {player_name} | {scope_label} | {period_label}", kicker_style))
+
+    hero_table = Table(
+        [
+            [Paragraph("Player Report", title_style)],
+            [Paragraph(f"MVV Maastricht | {player_name} | {scope_label} | {period_label}", kicker_style)],
+            [
+                Paragraph(
+                    "Individuele rapportage met GPS-load, accelerations, decelerations, wellness en RPE voor dezelfde geselecteerde scope als in het dashboard.",
+                    hero_body_style,
+                )
+            ],
+        ],
+        colWidths=[doc.width],
+    )
+    hero_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#0B1020")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#1E2A3E")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    story.append(hero_table)
+    story.append(Spacer(1, 10))
+
+    visual_cards = [
+        build_metric_card("Sessies", _fmt_int(summary.get("sessions")), "Summary-sessies in deze selectie", "#121A2B", "#30415E"),
+        build_metric_card("Actieve dagen", _fmt_int(summary.get("active_days")), "Unieke trainings- of wedstrijddagen", "#121A2B", "#30415E"),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Totale loopbelasting binnen scope", "#121A2B", "#30415E"),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#121A2B", "#30415E"),
+        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totaal aantal sprintacties", "#171223", "#5B2740"),
+        build_metric_card("Accelerations", _fmt_int(summary.get("total_accelerations")), "Totale acceleraties in scope", "#171223", "#5B2740"),
+        build_metric_card("Decelerations", _fmt_int(summary.get("total_decelerations")), "Totale deceleraties in scope", "#171223", "#5B2740"),
+        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#171223", "#5B2740"),
+        build_metric_card("Duur", _fmt_minutes(summary.get("duration_min")), "Totale sessieduur", "#0F1726", "#2B3952"),
+        build_metric_card(
+            "Avg Intensity",
+            _fmt_dec(summary.get("distance_per_min"), 1) + " m/min" if not pd.isna(summary.get("distance_per_min")) else "--",
+            "Gemiddelde meters per minuut",
+            "#0F1726",
+            "#2B3952",
+        ),
+        build_metric_card("Trainingen", _fmt_int(summary.get("training_sessions")), "Aantal trainingssessies", "#0F1726", "#2B3952"),
+        build_metric_card("Wedstrijden", _fmt_int(summary.get("match_sessions")), "Aantal matchsituaties", "#0F1726", "#2B3952"),
+        build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#111826", "#2F3D56"),
+        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gewogen gemiddelde RPE", "#111826", "#2F3D56"),
+        build_metric_card("RPE Load", _fmt_int(monitoring_summary.get("rpe_load")), "Totale duration x RPE", "#111826", "#2F3D56"),
+        build_metric_card("Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#111826", "#2F3D56"),
+    ]
+    story.append(Paragraph("Visual Snapshot", section_style))
+    story.append(build_card_grid(visual_cards))
+    story.append(Spacer(1, 8))
 
     summary_rows = [
         ["Metriek", "Waarde", "Metriek", "Waarde"],
         ["Sessies", _fmt_int(summary.get("sessions")), "Actieve dagen", _fmt_int(summary.get("active_days"))],
         ["Total Distance", _fmt_distance(summary.get("total_distance")), "HSR / HSD", _fmt_distance(summary.get("hsr_hsd"))],
-        ["Sprints", _fmt_int(summary.get("sprints")), "Duur", _fmt_int(summary.get("duration_min")) + " min" if not pd.isna(summary.get("duration_min")) else "--"],
-        ["Avg Intensity", _fmt_dec(summary.get("distance_per_min"), 1) + " m/min" if not pd.isna(summary.get("distance_per_min")) else "--", "Top Speed", _fmt_speed(summary.get("top_speed"))],
+        ["Sprints", _fmt_int(summary.get("sprints")), "Duur", _fmt_minutes(summary.get("duration_min"))],
+        ["Accelerations", _fmt_int(summary.get("total_accelerations")), "Decelerations", _fmt_int(summary.get("total_decelerations"))],
+        [
+            "Avg Intensity",
+            _fmt_dec(summary.get("distance_per_min"), 1) + " m/min" if not pd.isna(summary.get("distance_per_min")) else "--",
+            "Top Speed",
+            _fmt_speed(summary.get("top_speed")),
+        ],
         ["Trainingen", _fmt_int(summary.get("training_sessions")), "Wedstrijden", _fmt_int(summary.get("match_sessions"))],
     ]
     summary_table = Table(summary_rows, colWidths=[42 * mm, 34 * mm, 42 * mm, 34 * mm])
@@ -123,7 +282,7 @@ def build_player_report_pdf_bytes(
             ]
         )
     )
-    story.append(Paragraph("Summary", section_style))
+    story.append(Paragraph("Detailed Summary", section_style))
     story.append(summary_table)
     story.append(Spacer(1, 8))
 
@@ -158,7 +317,7 @@ def build_player_report_pdf_bytes(
 
     sessions_preview = sessions_df.head(12).copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
     if not sessions_preview.empty:
-        session_rows = [["Datum", "Type", "Event", "Distance", "HSR/HSD", "Sprints", "Max Speed"]]
+        session_rows = [["Datum", "Type", "Event", "Distance", "HSR/HSD", "Sprints", "Accel", "Decel", "Max Speed"]]
         for _, row in sessions_preview.iterrows():
             session_rows.append(
                 [
@@ -168,12 +327,14 @@ def build_player_report_pdf_bytes(
                     _fmt_distance(row.get("total_distance")),
                     _fmt_distance(row.get("hsr_hsd")),
                     _fmt_int(row.get("number_of_sprints")),
+                    _fmt_int(row.get("total_accelerations")),
+                    _fmt_int(row.get("total_decelerations")),
                     _fmt_speed(row.get("max_speed")),
                 ]
             )
         session_table = Table(
             session_rows,
-            colWidths=[24 * mm, 28 * mm, 42 * mm, 28 * mm, 28 * mm, 18 * mm, 24 * mm],
+            colWidths=[22 * mm, 24 * mm, 38 * mm, 24 * mm, 24 * mm, 15 * mm, 16 * mm, 16 * mm, 21 * mm],
             repeatRows=1,
         )
         session_table.setStyle(
@@ -185,7 +346,7 @@ def build_player_report_pdf_bytes(
                     ("BACKGROUND", (0, 1), (-1, -1), colors.white),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F7FB")]),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D7DEE8")),
-                    ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.4),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ]
@@ -239,7 +400,7 @@ def build_player_report_pdf_bytes(
     if not note_list:
         note_list = ["Geen extra notities beschikbaar voor deze selectie."]
     for note in note_list[:8]:
-        story.append(Paragraph(f"• {note}", body_style))
+        story.append(Paragraph(f"&bull; {note}", note_style))
         story.append(Spacer(1, 2))
 
     doc.build(story)

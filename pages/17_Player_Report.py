@@ -517,6 +517,8 @@ def build_scope_summary(scope_df: pd.DataFrame) -> dict[str, object]:
             "total_distance": float("nan"),
             "hsr_hsd": float("nan"),
             "sprints": float("nan"),
+            "total_accelerations": float("nan"),
+            "total_decelerations": float("nan"),
             "duration_min": float("nan"),
             "distance_per_min": float("nan"),
             "top_speed": float("nan"),
@@ -527,6 +529,7 @@ def build_scope_summary(scope_df: pd.DataFrame) -> dict[str, object]:
     total_duration = float(scope_df["duration"].sum())
     total_distance = float(scope_df["total_distance"].sum())
     total_accelerations = float(scope_df["total_accelerations"].sum())
+    total_decelerations = float(scope_df["total_decelerations"].sum())
     return {
         "sessions": float(len(scope_df)),
         "active_days": float(scope_df["datum"].nunique()),
@@ -535,6 +538,8 @@ def build_scope_summary(scope_df: pd.DataFrame) -> dict[str, object]:
         "total_distance": total_distance,
         "hsr_hsd": float(scope_df["hsr_hsd"].sum()),
         "sprints": float(scope_df["number_of_sprints"].sum()),
+        "total_accelerations": total_accelerations,
+        "total_decelerations": total_decelerations,
         "duration_min": total_duration,
         "distance_per_min": (total_distance / total_duration) if total_duration > 0 else float("nan"),
         "top_speed": float(scope_df["max_speed"].max()) if scope_df["max_speed"].notna().any() else float("nan"),
@@ -634,6 +639,8 @@ def build_sessions_table(scope_df: pd.DataFrame) -> pd.DataFrame:
             "total_distance",
             "hsr_hsd",
             "number_of_sprints",
+            "total_accelerations",
+            "total_decelerations",
             "duration",
             "max_speed",
         ]
