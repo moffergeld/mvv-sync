@@ -2407,6 +2407,10 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         kicker=f"{CLUB_NAME} · speler check-in",
     )
 
+    if st.button("Terug naar overzicht", use_container_width=True, key=f"tablet_back_overview_{player_id}"):
+        clear_selected_player_state(player_id)
+        st.rerun()
+
     default_form = st.session_state.get("tablet_active_form", "RPE" if has_wellness else "Wellness")
     if default_form not in ["Wellness", "RPE"]:
         default_form = "Wellness"
@@ -2603,11 +2607,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     st.rerun()
             except Exception as exc:
                 st.error(f"Opslaan faalde: {exc}")
-    if st.button("Klaar / volgende speler", use_container_width=True, key=f"tablet_done_{player_id}"):
-        clear_selected_player_state(player_id)
-        st.rerun()
-
-
 def main() -> None:
     ensure_tablet_access()
 
