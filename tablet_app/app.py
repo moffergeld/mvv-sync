@@ -1464,6 +1464,10 @@ def _second_rpe_mode_key(entry_date_iso: str) -> str:
     return f"tablet_day_rpe_mode_{entry_date_iso.replace('-', '_')}"
 
 
+def _second_rpe_mode_widget_key(entry_date_iso: str) -> str:
+    return f"{_second_rpe_mode_key(entry_date_iso)}_widget"
+
+
 def second_rpe_enabled_for_date(entry_date_iso: str) -> bool:
     return bool(st.session_state.get(_second_rpe_mode_key(entry_date_iso), False))
 
@@ -1995,8 +1999,11 @@ def render_player_picker(sb) -> None:
     )
 
     second_rpe_key = _second_rpe_mode_key(entry_date_iso)
+    second_rpe_widget_key = _second_rpe_mode_widget_key(entry_date_iso)
     if second_rpe_key not in st.session_state:
         st.session_state[second_rpe_key] = False
+    if second_rpe_widget_key not in st.session_state:
+        st.session_state[second_rpe_widget_key] = bool(st.session_state.get(second_rpe_key, False))
     top_cols = st.columns([1.25, 1, 1], gap="small")
     with top_cols[0]:
         st.markdown('<div class="mvv-toggle-choice-title">RPE modus</div>', unsafe_allow_html=True)
@@ -2007,8 +2014,9 @@ def render_player_picker(sb) -> None:
             format_func=lambda value: "2 RPE" if value else "1 RPE",
             horizontal=True,
             label_visibility="collapsed",
-            key=second_rpe_key,
+            key=second_rpe_widget_key,
         )
+        st.session_state[second_rpe_key] = bool(second_rpe_enabled)
 
     with top_cols[1]:
         st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
