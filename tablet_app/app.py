@@ -1977,6 +1977,28 @@ def render_top_actions(show_back: bool = False) -> None:
     # Geen navigatieknoppen bovenaan de tabletpagina's.
     return
 
+
+def _pending_rpe_stage(second_rpe_enabled: bool, rpe1_done: bool, rpe2_done: bool) -> int:
+    if second_rpe_enabled:
+        if not rpe1_done:
+            return 1
+        if not rpe2_done:
+            return 2
+        return 0
+    return 0 if rpe1_done else 1
+
+
+def _player_next_step_label(wellness_done: bool, second_rpe_enabled: bool, rpe1_done: bool, rpe2_done: bool) -> str:
+    if not wellness_done:
+        return "Open wellness"
+    pending_stage = _pending_rpe_stage(second_rpe_enabled, rpe1_done, rpe2_done)
+    if pending_stage == 2:
+        return "Open RPE 2"
+    if pending_stage == 1:
+        return "Open RPE 1" if second_rpe_enabled else "Open RPE"
+    return "Controleer invoer"
+
+
 def render_player_picker(sb) -> None:
     entry_date = amsterdam_today()
     entry_date_iso = entry_date.isoformat()
@@ -2052,6 +2074,7 @@ def render_player_picker(sb) -> None:
         wellness_done = player_id in asrm_ids
         rpe1_done = player_id in rpe1_ids
         rpe2_done = player_id in rpe2_ids
+        pending_stage = _pending_rpe_stage(second_rpe_enabled, rpe1_done, rpe2_done)
         wellness_state = "OK" if wellness_done else "OPEN"
         if second_rpe_enabled:
             if rpe2_done:
@@ -2064,16 +2087,7 @@ def render_player_picker(sb) -> None:
             rpe_state = "OK" if rpe1_done else "OPEN"
 
         rpe_done = rpe2_done if second_rpe_enabled else rpe1_done
-        if not wellness_done:
-            next_step = "Open wellness"
-        elif second_rpe_enabled and not rpe1_done:
-            next_step = "Open RPE 1"
-        elif second_rpe_enabled and not rpe2_done:
-            next_step = "Open RPE 2"
-        elif not second_rpe_enabled and not rpe1_done:
-            next_step = "Open RPE"
-        else:
-            next_step = "Controleer invoer"
+        next_step = _player_next_step_label(wellness_done, second_rpe_enabled, rpe1_done, rpe2_done)
         with cols[idx % 3]:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
             if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
@@ -2083,6 +2097,8 @@ def render_player_picker(sb) -> None:
                 st.session_state["tablet_player_name"] = player_name
                 st.session_state["tablet_player_has_wellness"] = wellness_done
                 st.session_state["tablet_player_has_rpe"] = rpe_done
+                if pending_stage in (1, 2):
+                    st.session_state[f"tablet_rpe_stage_{player_id}"] = pending_stage
                 # Belangrijk: als wellness vandaag bestaat, start direct op RPE.
                 st.session_state["tablet_active_form"] = "RPE" if wellness_done else "Wellness"
                 st.rerun()
@@ -2091,6 +2107,7 @@ def render_player_picker(sb) -> None:
 def render_bulk_rpe_page(sb) -> None:
     entry_date = amsterdam_today()
     entry_date_iso = entry_date.isoformat()
+    second_rpe_enabled = second_rpe_enabled_for_date(entry_date_iso)
     players = get_cached_active_players(sb)
     if not players:
         st.warning("Geen actieve spelers gevonden.")
@@ -2099,11 +2116,23 @@ def render_bulk_rpe_page(sb) -> None:
     completion = get_cached_daily_completion(sb, entry_date_iso)
     asrm_ids = set(completion.get("asrm_ids", []))
     rpe1_ids = set(completion.get("rpe_ids", []))
-    ready_players = [
-        player
-        for player in players
-        if str(player.get("player_id")) in asrm_ids and str(player.get("player_id")) not in rpe1_ids
-    ]
+    rpe2_ids = set(completion.get("rpe2_ids", []))
+    ready_players: List[Dict[str, Any]] = []
+    for player in players:
+        player_id = str(player.get("player_id") or "")
+        if player_id not in asrm_ids:
+            continue
+        rpe1_done = player_id in rpe1_ids
+        rpe2_done = player_id in rpe2_ids
+        pending_stage = _pending_rpe_stage(second_rpe_enabled, rpe1_done, rpe2_done)
+        if pending_stage in (1, 2):
+            ready_players.append(
+                {
+                    "player_id": player_id,
+                    "full_name": str(player.get("full_name") or ""),
+                    "pending_stage": pending_stage,
+                }
+            )
     render_top_actions(show_back=False)
     show_flash()
 
@@ -2137,11 +2166,12 @@ def render_bulk_rpe_page(sb) -> None:
         for player in ready_players:
             player_id = str(player["player_id"])
             player_name = str(player["full_name"])
+            pending_stage = int(player.get("pending_stage", 1) or 1)
             row_name_col, row_slider_col = st.columns([1.3, 3.2], gap="large")
             with row_name_col:
                 st.markdown(
                     f'<div class="mvv-bulk-player-name">{html.escape(player_name)}</div>'
-                    '<div class="mvv-bulk-player-note">RPE invoer</div>',
+                    f'<div class="mvv-bulk-player-note">RPE {pending_stage} invoer</div>',
                     unsafe_allow_html=True,
                 )
             with row_slider_col:
@@ -2164,16 +2194,29 @@ def render_bulk_rpe_page(sb) -> None:
             for player in ready_players:
                 player_id = str(player["player_id"])
                 player_name = str(player["full_name"])
+                pending_stage = int(player.get("pending_stage", 1) or 1)
                 rpe_value = int(st.session_state.get(f"tablet_bulk_rpe_rpe_{player_id}", 5) or 5)
                 try:
-                    sessions_payload = [
-                        {
-                            "session_index": 1,
-                            "duration_min": shared_duration_value,
-                            "rpe": rpe_value,
-                        }
-                    ]
-                    existing_header, _ = get_cached_rpe_detail(sb, player_id, entry_date)
+                    existing_header, existing_sessions = get_cached_rpe_detail(sb, player_id, entry_date)
+                    sessions_payload: List[Dict[str, int]] = []
+                    current_session_payload = {
+                        "session_index": pending_stage,
+                        "duration_min": shared_duration_value,
+                        "rpe": rpe_value,
+                    }
+                    if pending_stage == 1:
+                        sessions_payload.append(current_session_payload)
+                        existing_session_2 = _existing_session_payload(existing_sessions, 2)
+                        if existing_session_2:
+                            sessions_payload.append(existing_session_2)
+                    else:
+                        existing_session_1 = _existing_session_payload(existing_sessions, 1)
+                        if existing_session_1 is None:
+                            raise RuntimeError("RPE 1 ontbreekt nog voor deze speler.")
+                        sessions_payload.append(existing_session_1)
+                        sessions_payload.append(current_session_payload)
+
+                    sessions_payload = sorted(sessions_payload, key=lambda row: int(row["session_index"]))
                     saved_rpe_entry_id = save_rpe_tablet(
                         sb,
                         player_id=player_id,
@@ -2195,7 +2238,13 @@ def render_bulk_rpe_page(sb) -> None:
                         },
                         sessions_payload,
                     )
-                    update_cached_daily_completion(sb, player_id, entry_date_iso, has_rpe=True)
+                    update_cached_daily_completion(
+                        sb,
+                        player_id,
+                        entry_date_iso,
+                        has_rpe=True,
+                        has_rpe2=True if pending_stage == 2 else None,
+                    )
                     saved_count += 1
                 except Exception as player_exc:
                     failed_players.append(f"{player_name} ({player_exc})")
