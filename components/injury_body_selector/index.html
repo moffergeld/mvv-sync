@@ -128,6 +128,9 @@
   <body>
     <div id="root"></div>
     <script>
+      let readyIntervalId = null;
+      let hasRenderedOnce = false;
+
       const sendMessage = (type, payload = {}) => {
         window.parent.postMessage(
           {
@@ -151,6 +154,32 @@
 
       const setComponentValue = (value) => {
         sendMessage("streamlit:setComponentValue", { value });
+      };
+
+      const announceReady = () => {
+        sendMessage("streamlit:componentReady", { apiVersion: 1 });
+      };
+
+      const startReadyLoop = () => {
+        if (readyIntervalId !== null) {
+          return;
+        }
+        announceReady();
+        readyIntervalId = window.setInterval(() => {
+          if (hasRenderedOnce) {
+            window.clearInterval(readyIntervalId);
+            readyIntervalId = null;
+            return;
+          }
+          announceReady();
+        }, 250);
+      };
+
+      const stopReadyLoop = () => {
+        if (readyIntervalId !== null) {
+          window.clearInterval(readyIntervalId);
+          readyIntervalId = null;
+        }
       };
 
       const labelFor = (value, labels) => {
@@ -231,16 +260,22 @@
         if (!event.data || event.data.type !== "streamlit:render") {
           return;
         }
+        hasRenderedOnce = true;
+        stopReadyLoop();
         render(event.data.args || {});
       });
 
       window.addEventListener("load", () => {
-        sendMessage("streamlit:componentReady", { apiVersion: 1 });
+        startReadyLoop();
         setFrameHeight();
       });
 
       window.addEventListener("resize", () => {
         window.requestAnimationFrame(setFrameHeight);
+      });
+
+      window.addEventListener("beforeunload", () => {
+        stopReadyLoop();
       });
     </script>
   </body>
