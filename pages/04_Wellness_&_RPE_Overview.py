@@ -9,7 +9,6 @@ from pages.Subscripts.wr_common import fetch_active_players_cached
 from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
 from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
-from pages.Subscripts.wr_tab_injury import render_wellness_rpe_tab_injury
 from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="Wellness & RPE Overview", layout="wide", initial_sidebar_state="expanded")
@@ -463,7 +462,7 @@ def render_staff_wellness_rpe_page():
     )
 
     # Tabs with custom styling
-    tab_labels = ["Dag", "Week", "Injury", "Checklist"]
+    tab_labels = ["Dag", "Week", "Checklist"]
     tabs_shell = st.container()
     with tabs_shell:
         st.markdown('<div class="mvv-hero-tabs-anchor"></div>', unsafe_allow_html=True)
@@ -476,9 +475,6 @@ def render_staff_wellness_rpe_page():
             render_wellness_rpe_tab_week(sb, sb_url_key, pid_to_name)
 
         with tabs[2]:
-            render_wellness_rpe_tab_injury(sb, sb_url_key, pid_to_name)
-
-        with tabs[3]:
             render_wellness_rpe_tab_checklist(sb, sb_url_key, pid_to_name)
 
     render_sidebar_footer(profile)

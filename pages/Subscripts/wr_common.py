@@ -478,35 +478,6 @@ def fetch_rpe_sessions_for_ids_cached(
 
 
 # -----------------------------
-# Injury fetch
-# -----------------------------
-@st.cache_data(show_spinner=False, ttl=60)
-def fetch_rpe_injuries_range_cached(sb_url_key: str, _sb, d0_iso: str, d1_iso: str) -> pd.DataFrame:
-    rows = (
-        _sb.table("rpe_entries")
-        .select("id,player_id,entry_date,injury,injury_type,injury_pain,attachment_url,notes,created_at,updated_at")
-        .gte("entry_date", d0_iso)
-        .lte("entry_date", d1_iso)
-        .execute()
-        .data
-        or []
-    )
-    df = _df(rows)
-    if df.empty:
-        return df
-
-    df["id"] = df["id"].astype(str)
-    df["player_id"] = df["player_id"].astype(str)
-    df["entry_date"] = _coerce_date(df["entry_date"])
-    df["injury_pain"] = pd.to_numeric(df["injury_pain"], errors="coerce")
-    if "injury" in df.columns:
-        df["injury"] = _bool_mask(df["injury"])
-    else:
-        df["injury"] = False
-    return df
-
-
-# -----------------------------
 # RPE computations
 # -----------------------------
 def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.DataFrame:

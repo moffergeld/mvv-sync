@@ -11,18 +11,12 @@ from zoneinfo import ZoneInfo
 
 import extra_streamlit_components as stx
 import streamlit as st
-import streamlit.components.v1 as components
 from supabase import create_client
 
 
 THIS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = THIS_DIR.parent
 PAGES_DIR = ROOT_DIR / "pages"
-TABLET_ASSETS_DIR = THIS_DIR / "assets"
-INJURY_BODY_SELECTOR_COMPONENT = components.declare_component(
-    "mvv_injury_body_selector",
-    path=str(ROOT_DIR / "components" / "injury_body_selector"),
-)
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -46,99 +40,6 @@ TABLET_COMPLETION_CACHE_TTL_SECONDS = 45
 TABLET_FORM_CACHE_TTL_SECONDS = 300
 RPE_DURATION_OPTIONS = list(range(30, 111, 5))
 RPE_BULK_DURATION_DEFAULT = 60
-INJURY_LOCATION_OPTIONS = [
-    "None",
-    "Foot",
-    "Ankle",
-    "Lower leg",
-    "Knee",
-    "Upper leg",
-    "Hip",
-    "Groin",
-    "Glute",
-    "Lower back",
-    "Abdomen",
-    "Chest",
-    "Shoulder",
-    "Upper arm",
-    "Elbow",
-    "Forearm",
-    "Wrist",
-    "Hand",
-    "Neck",
-    "Head",
-    "Other",
-]
-INJURY_LOCATION_LABELS = {
-    "None": "Geen",
-    "Foot": "Voet",
-    "Ankle": "Enkel",
-    "Lower leg": "Onderbeen",
-    "Knee": "Knie",
-    "Upper leg": "Bovenbeen",
-    "Hip": "Heup",
-    "Groin": "Lies",
-    "Glute": "Bil",
-    "Lower back": "Onderrug",
-    "Abdomen": "Buik",
-    "Chest": "Borst",
-    "Shoulder": "Schouder",
-    "Upper arm": "Bovenarm",
-    "Elbow": "Elleboog",
-    "Forearm": "Onderarm",
-    "Wrist": "Pols",
-    "Hand": "Hand",
-    "Neck": "Nek",
-    "Head": "Hoofd",
-    "Other": "Overig",
-}
-INJURY_BODY_IMAGE_MARKERS = [
-    {"id": "front_head", "value": "Head", "top": 10.6, "left": 29.1, "width": 8.8, "height": 12.8},
-    {"id": "back_head", "value": "Head", "top": 10.9, "left": 70.7, "width": 8.8, "height": 12.8},
-    {"id": "front_neck", "value": "Neck", "top": 19.2, "left": 29.1, "width": 4.2, "height": 4.0},
-    {"id": "back_neck", "value": "Neck", "top": 19.6, "left": 70.7, "width": 4.2, "height": 4.0},
-    {"id": "front_shoulder_left", "value": "Shoulder", "top": 23.5, "left": 23.3, "width": 9.0, "height": 4.9},
-    {"id": "front_shoulder_right", "value": "Shoulder", "top": 23.5, "left": 34.9, "width": 9.0, "height": 4.9},
-    {"id": "back_shoulder_left", "value": "Shoulder", "top": 23.5, "left": 64.6, "width": 9.0, "height": 4.9},
-    {"id": "back_shoulder_right", "value": "Shoulder", "top": 23.5, "left": 76.8, "width": 9.0, "height": 4.9},
-    {"id": "front_chest", "value": "Chest", "top": 32.2, "left": 29.1, "width": 15.2, "height": 10.8},
-    {"id": "front_upperarm_left", "value": "Upper arm", "top": 40.3, "left": 18.1, "width": 5.8, "height": 13.0},
-    {"id": "front_upperarm_right", "value": "Upper arm", "top": 40.3, "left": 40.1, "width": 5.8, "height": 13.0},
-    {"id": "back_upperarm_left", "value": "Upper arm", "top": 40.2, "left": 58.6, "width": 5.8, "height": 13.0},
-    {"id": "back_upperarm_right", "value": "Upper arm", "top": 40.2, "left": 82.8, "width": 5.8, "height": 13.0},
-    {"id": "front_elbow_left", "value": "Elbow", "top": 36.2, "left": 16.3, "width": 4.2, "height": 4.2},
-    {"id": "front_elbow_right", "value": "Elbow", "top": 36.2, "left": 41.7, "width": 4.2, "height": 4.2},
-    {"id": "back_elbow_left", "value": "Elbow", "top": 36.1, "left": 57.0, "width": 4.2, "height": 4.2},
-    {"id": "back_elbow_right", "value": "Elbow", "top": 36.1, "left": 84.4, "width": 4.2, "height": 4.2},
-    {"id": "front_forearm_left", "value": "Forearm", "top": 48.4, "left": 16.3, "width": 5.2, "height": 13.8},
-    {"id": "front_forearm_right", "value": "Forearm", "top": 48.4, "left": 41.6, "width": 5.2, "height": 13.8},
-    {"id": "back_forearm_left", "value": "Forearm", "top": 48.4, "left": 56.9, "width": 5.2, "height": 13.8},
-    {"id": "back_forearm_right", "value": "Forearm", "top": 48.4, "left": 84.4, "width": 5.2, "height": 13.8},
-    {"id": "front_wrist_left", "value": "Wrist", "top": 59.5, "left": 16.0, "width": 3.2, "height": 3.2},
-    {"id": "front_wrist_right", "value": "Wrist", "top": 59.5, "left": 41.9, "width": 3.2, "height": 3.2},
-    {"id": "back_wrist_left", "value": "Wrist", "top": 59.6, "left": 56.6, "width": 3.2, "height": 3.2},
-    {"id": "back_wrist_right", "value": "Wrist", "top": 59.6, "left": 84.8, "width": 3.2, "height": 3.2},
-    {"id": "front_hand_left", "value": "Hand", "top": 63.3, "left": 12.9, "width": 4.8, "height": 6.0},
-    {"id": "front_hand_right", "value": "Hand", "top": 63.3, "left": 43.8, "width": 4.8, "height": 6.0},
-    {"id": "back_hand_left", "value": "Hand", "top": 63.3, "left": 54.1, "width": 4.8, "height": 6.0},
-    {"id": "back_hand_right", "value": "Hand", "top": 63.3, "left": 86.8, "width": 4.8, "height": 6.0},
-    {"id": "front_abdomen", "value": "Abdomen", "top": 44.8, "left": 29.1, "width": 12.2, "height": 9.6},
-    {"id": "front_groin", "value": "Groin", "top": 54.0, "left": 29.1, "width": 6.8, "height": 4.6},
-    {"id": "back_lowerback", "value": "Lower back", "top": 44.5, "left": 70.7, "width": 11.2, "height": 11.6},
-    {"id": "front_hip", "value": "Hip", "top": 60.0, "left": 29.1, "width": 12.8, "height": 5.8},
-    {"id": "back_glute", "value": "Glute", "top": 58.3, "left": 70.7, "width": 12.8, "height": 7.4},
-    {"id": "back_hip", "value": "Hip", "top": 63.8, "left": 70.7, "width": 12.8, "height": 5.8},
-    {"id": "front_upperleg", "value": "Upper leg", "top": 69.5, "left": 29.1, "width": 12.0, "height": 15.6},
-    {"id": "back_upperleg", "value": "Upper leg", "top": 69.4, "left": 70.7, "width": 12.0, "height": 15.6},
-    {"id": "front_knee", "value": "Knee", "top": 81.0, "left": 29.1, "width": 7.8, "height": 6.4},
-    {"id": "back_knee", "value": "Knee", "top": 81.0, "left": 70.7, "width": 7.8, "height": 6.4},
-    {"id": "front_lowerleg", "value": "Lower leg", "top": 88.5, "left": 29.1, "width": 8.8, "height": 13.8},
-    {"id": "back_lowerleg", "value": "Lower leg", "top": 88.5, "left": 70.7, "width": 8.8, "height": 13.8},
-    {"id": "front_ankle", "value": "Ankle", "top": 95.0, "left": 29.1, "width": 5.0, "height": 3.4},
-    {"id": "back_ankle", "value": "Ankle", "top": 95.0, "left": 70.7, "width": 5.0, "height": 3.4},
-    {"id": "front_foot", "value": "Foot", "top": 98.0, "left": 29.1, "width": 11.0, "height": 3.8},
-    {"id": "back_foot", "value": "Foot", "top": 98.0, "left": 70.7, "width": 11.0, "height": 3.8},
-]
 
 
 st.set_page_config(
@@ -676,108 +577,6 @@ st.markdown(
         height: 1.45rem;
       }
 
-      .mvv-injury-map-note {
-        margin: 0.15rem 0 0.7rem 0;
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: rgba(20, 7, 10, 0.72) !important;
-      }
-
-      .mvv-body-image-card {
-        margin: 0.2rem auto 0.85rem auto;
-        padding: 0.9rem 0.8rem 1rem 0.8rem;
-        border-radius: 26px;
-        border: 1px solid rgba(200, 16, 46, 0.12);
-        background: rgba(255, 255, 255, 0.72);
-        box-shadow: 0 12px 28px rgba(78, 8, 18, 0.06);
-      }
-
-      .mvv-body-image-stage {
-        position: relative;
-        width: min(100%, 22rem);
-        aspect-ratio: 1 / 1;
-        margin: 0 auto;
-        overflow: visible;
-      }
-
-      .mvv-body-image {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        display: block;
-        user-select: none;
-        pointer-events: none;
-      }
-
-      .mvv-body-marker {
-        position: absolute;
-        transform: translate(-50%, -50%);
-        border-radius: 999px;
-        border: 2px solid rgba(200, 16, 46, 0.16);
-        background: rgba(200, 16, 46, 0.025);
-        box-shadow: 0 4px 10px rgba(78, 8, 18, 0.04);
-        transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
-      }
-
-      .mvv-body-marker:hover {
-        transform: translate(-50%, -50%) scale(1.04);
-        border-color: rgba(200, 16, 46, 0.34);
-        background: rgba(200, 16, 46, 0.07);
-      }
-
-      .mvv-body-marker-active {
-        border-color: var(--mvv-red) !important;
-        background: rgba(200, 16, 46, 0.16) !important;
-        box-shadow:
-          0 0 0 5px rgba(200, 16, 46, 0.12),
-          0 10px 22px rgba(78, 8, 18, 0.12) !important;
-      }
-
-      .mvv-body-image-actions {
-        margin-top: 0.95rem;
-        display: flex;
-        justify-content: center;
-        gap: 0.8rem;
-        flex-wrap: wrap;
-      }
-
-      .mvv-body-image-action {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 9.75rem;
-        min-height: 3rem;
-        padding: 0.55rem 1rem;
-        border-radius: 18px;
-        border: 1px solid rgba(200, 16, 46, 0.18);
-        background: linear-gradient(145deg, #ffffff 0%, #fff4f1 100%);
-        box-shadow: 0 10px 22px rgba(78, 8, 18, 0.06);
-        color: var(--mvv-deep) !important;
-        font-size: 0.92rem;
-        font-weight: 800;
-        text-decoration: none !important;
-      }
-
-      .mvv-body-image-action:hover {
-        border-color: rgba(200, 16, 46, 0.42);
-      }
-
-      .mvv-body-image-action-active {
-        border-color: var(--mvv-red) !important;
-        background: rgba(255, 122, 128, 0.14) !important;
-        color: var(--mvv-red) !important;
-      }
-
-      .mvv-body-image-stage a,
-      .mvv-body-image-actions a {
-        text-decoration: none !important;
-      }
-
-      .mvv-body-image-shell {
-        width: min(100%, 24rem);
-        margin: 0 auto;
-      }
-
       .stApp [data-testid="stRadio"] {
         margin: 0.35rem 0 1rem;
       }
@@ -1115,16 +914,14 @@ st.markdown(
         color: #1f8a3b !important;
       }
 
-      [class*="st-key-tablet_pick_"],
-      [class*="st-key-tablet_injury_pick_"] {
+      [class*="st-key-tablet_pick_"] {
         margin-top: -124px;
         margin-bottom: 0.35rem;
         position: relative;
         z-index: 2;
       }
 
-      [class*="st-key-tablet_pick_"] button,
-      [class*="st-key-tablet_injury_pick_"] button {
+      [class*="st-key-tablet_pick_"] button {
         min-height: 124px !important;
         background: transparent !important;
         border: none !important;
@@ -1134,9 +931,7 @@ st.markdown(
       }
 
       [class*="st-key-tablet_pick_"] button:hover,
-      [class*="st-key-tablet_pick_"] button:active,
-      [class*="st-key-tablet_injury_pick_"] button:hover,
-      [class*="st-key-tablet_injury_pick_"] button:active {
+      [class*="st-key-tablet_pick_"] button:active {
         transform: none !important;
         background: transparent !important;
         border: none !important;
@@ -1145,17 +940,13 @@ st.markdown(
 
       [class*="st-key-tablet_pick_"] button p,
       [class*="st-key-tablet_pick_"] button span,
-      [class*="st-key-tablet_pick_"] button [data-testid="stMarkdownContainer"],
-      [class*="st-key-tablet_injury_pick_"] button p,
-      [class*="st-key-tablet_injury_pick_"] button span,
-      [class*="st-key-tablet_injury_pick_"] button [data-testid="stMarkdownContainer"] {
+      [class*="st-key-tablet_pick_"] button [data-testid="stMarkdownContainer"] {
         opacity: 0 !important;
         font-size: 0 !important;
         margin: 0 !important;
       }
 
-      [class*="st-key-tablet_bulk_back"] button,
-      [class*="st-key-tablet_injury_back"] button {
+      [class*="st-key-tablet_bulk_back"] button {
         min-height: 3.35rem !important;
         border-radius: 18px !important;
         font-size: 0.98rem !important;
@@ -1182,8 +973,7 @@ st.markdown(
         justify-content: center;
       }
 
-      [class*="st-key-tablet_open_bulk_rpe"] button,
-      [class*="st-key-tablet_open_injury"] button {
+      [class*="st-key-tablet_open_bulk_rpe"] button {
         min-height: 4.1rem !important;
         border-radius: 20px !important;
         font-size: 0.98rem !important;
@@ -1227,14 +1017,6 @@ def logo_html() -> str:
             encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
             return f'<img src="data:image/png;base64,{encoded}" alt="MVV Maastricht logo" />'
     return '<div class="mvv-logo-fallback">MVV</div>'
-
-
-def injury_body_image_src() -> str:
-    image_path = TABLET_ASSETS_DIR / "injury-body.png"
-    if not image_path.exists():
-        return ""
-    encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
-    return f"data:image/png;base64,{encoded}"
 
 
 def render_hero(title: str, subtitle: str, kicker: str = CLUB_NAME) -> None:
@@ -1309,45 +1091,6 @@ def render_player_pick_card(player_name: str, wellness_state: str, rpe_state: st
         unsafe_allow_html=True,
     )
 
-
-def render_injury_pick_card(player_name: str, selected: bool = False) -> None:
-    next_class = "mvv-player-next-ok" if selected else "mvv-player-next-open"
-    next_text = "Geselecteerd" if selected else "Open blessureformulier"
-    subtitle = "Blessuremelding"
-    st.markdown(
-        (
-            f'<div class="mvv-player-card">'
-            f'<div class="mvv-player-name">{html.escape(player_name)}</div>'
-            f'<div class="mvv-player-status">{html.escape(subtitle)}</div>'
-            f'<div class="mvv-player-next {next_class}">{html.escape(next_text)}</div>'
-            f'</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-
-def injury_location_label(value: str) -> str:
-    return INJURY_LOCATION_LABELS.get(str(value), str(value or "Geen"))
-
-
-def render_injury_body_selector(selected_location: str) -> str:
-    st.markdown('<div class="mvv-toggle-choice-title">Locatie kiezen</div>', unsafe_allow_html=True)
-    body_src = injury_body_image_src()
-    if not body_src:
-        st.warning("Lichaamsafbeelding ontbreekt.")
-        return str(selected_location or "None")
-
-    component_value = INJURY_BODY_SELECTOR_COMPONENT(
-        imageSrc=body_src,
-        markers=INJURY_BODY_IMAGE_MARKERS,
-        labels=INJURY_LOCATION_LABELS,
-        value=str(selected_location or "None"),
-        key="tablet_injury_body_selector",
-        default=str(selected_location or "None"),
-    )
-    if str(component_value or "").strip() in INJURY_LOCATION_OPTIONS:
-        return str(component_value)
-    return str(selected_location or "None")
 
 def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -> str:
     wellness_status = "ok" if has_wellness else "open"
@@ -1526,32 +1269,15 @@ def _upsert_rpe_header_tablet(
     player_id: str,
     entry_date,
     *,
-    injury: bool | None = None,
-    injury_type: str | None = None,
-    injury_pain: int | None = None,
-    notes: str | None = None,
     existing_rpe_entry_id: str | None = None,
 ) -> Dict[str, Any]:
     entry_date_iso = entry_date.isoformat() if hasattr(entry_date, "isoformat") else str(entry_date)
     now_iso = datetime.now(ZoneInfo("UTC")).isoformat()
     existing_header = _load_existing_rpe_header(sb, player_id, entry_date_iso, existing_rpe_entry_id)
 
-    resolved_injury = bool(existing_header.get("injury", False)) if injury is None else bool(injury)
-    resolved_injury_type = existing_header.get("injury_type") if injury_type is None else injury_type
-    resolved_injury_pain = existing_header.get("injury_pain") if injury_pain is None else injury_pain
-    resolved_notes = existing_header.get("notes") if notes is None else (str(notes or "").strip() or None)
-
-    if not resolved_injury:
-        resolved_injury_type = None
-        resolved_injury_pain = None
-
     header_payload = {
         "player_id": str(player_id),
         "entry_date": entry_date_iso,
-        "injury": resolved_injury,
-        "injury_type": resolved_injury_type,
-        "injury_pain": resolved_injury_pain,
-        "notes": resolved_notes,
         "created_by": get_tablet_created_by(str(player_id)),
         "updated_at": now_iso,
     }
@@ -1618,26 +1344,6 @@ def save_rpe_tablet(
     return str(rpe_entry_id)
 
 
-def save_injury_tablet(
-    sb,
-    player_id: str,
-    entry_date,
-    injury_type: str | None,
-    injury_pain: int | None,
-    notes: str,
-    existing_rpe_entry_id: str | None = None,
-) -> Dict[str, Any]:
-    return _upsert_rpe_header_tablet(
-        sb,
-        player_id=player_id,
-        entry_date=entry_date,
-        injury=True,
-        injury_type=injury_type,
-        injury_pain=injury_pain,
-        notes=notes,
-        existing_rpe_entry_id=existing_rpe_entry_id,
-    )
-
 def grant_tablet_access() -> None:
     cm = cookie_mgr()
     cm.set(ACCESS_COOKIE_NAME, "1", max_age=ACCESS_COOKIE_SECONDS, key="tablet_access_set")
@@ -1656,11 +1362,6 @@ def lock_tablet() -> None:
         "tablet_active_form",
         "tablet_flash",
         "tablet_bulk_rpe_mode",
-        "tablet_injury_mode",
-        "tablet_injury_player_id",
-        "tablet_injury_loc",
-        "tablet_injury_pain",
-        "tablet_injury_notes",
     ):
         st.session_state.pop(key, None)
     time.sleep(0.10)
@@ -1953,18 +1654,6 @@ def clear_selected_player_state(player_id: str | None = None) -> None:
     for key in keys_to_clear:
         st.session_state.pop(key, None)
 
-
-def clear_injury_report_state() -> None:
-    for key in (
-        "tablet_injury_mode",
-        "tablet_injury_player_id",
-        "tablet_injury_loc",
-        "tablet_injury_pain",
-        "tablet_injury_notes",
-    ):
-        st.session_state.pop(key, None)
-
-
 def show_flash() -> None:
     flash = st.session_state.pop("tablet_flash", None)
     if flash:
@@ -2024,7 +1713,7 @@ def render_player_picker(sb) -> None:
         st.session_state[second_rpe_key] = False
     if second_rpe_widget_key not in st.session_state:
         st.session_state[second_rpe_widget_key] = bool(st.session_state.get(second_rpe_key, False))
-    top_cols = st.columns([1.25, 1, 1], gap="small")
+    top_cols = st.columns([1.25, 1], gap="small")
     with top_cols[0]:
         st.markdown('<div class="mvv-toggle-choice-title">RPE modus</div>', unsafe_allow_html=True)
         second_rpe_enabled = st.radio(
@@ -2042,16 +1731,7 @@ def render_player_picker(sb) -> None:
         st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
         if st.button("Groeps-RPE invullen", use_container_width=True, key="tablet_open_bulk_rpe"):
             clear_selected_player_state()
-            clear_injury_report_state()
             st.session_state["tablet_bulk_rpe_mode"] = True
-            st.rerun()
-    with top_cols[2]:
-        st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
-        if st.button("Injury melden", use_container_width=True, key="tablet_open_injury"):
-            clear_selected_player_state()
-            clear_injury_report_state()
-            st.session_state["tablet_bulk_rpe_mode"] = False
-            st.session_state["tablet_injury_mode"] = True
             st.rerun()
 
     total_players = len(players)
@@ -2090,7 +1770,6 @@ def render_player_picker(sb) -> None:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
             if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_bulk_rpe_mode"] = False
-                st.session_state["tablet_injury_mode"] = False
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
                 st.session_state["tablet_player_has_wellness"] = wellness_done
@@ -2215,10 +1894,6 @@ def render_bulk_rpe_page(sb) -> None:
                             "id": saved_rpe_entry_id,
                             "player_id": player_id,
                             "entry_date": entry_date_iso,
-                            "injury": bool(existing_header.get("injury", False)),
-                            "injury_type": existing_header.get("injury_type"),
-                            "injury_pain": existing_header.get("injury_pain"),
-                            "notes": str(existing_header.get("notes") or ""),
                         },
                         sessions_payload,
                     )
@@ -2264,148 +1939,6 @@ def _existing_session_payload(rpe_sessions: List[Dict[str, Any]], idx: int) -> D
         "session_index": int(idx),
         "rpe": _session_value(rpe_sessions, idx, "rpe", 5),
     }
-
-
-def render_injury_report_page(sb) -> None:
-    entry_date = amsterdam_today()
-    entry_date_iso = entry_date.isoformat()
-    players = get_cached_active_players(sb)
-    if not players:
-        st.warning("Geen actieve spelers gevonden.")
-        return
-
-    render_top_actions(show_back=False)
-    show_flash()
-
-    player_lookup = {str(player["player_id"]): str(player["full_name"]) for player in players}
-    selected_player_id = str(st.session_state.get("tablet_injury_player_id") or "").strip()
-    if selected_player_id not in player_lookup:
-        selected_player_id = ""
-
-    if not selected_player_id:
-        render_hero(
-            "Injury melden",
-            f"Selecteer een speler en meld de blessure van vandaag ({entry_date.strftime('%d-%m-%Y')}).",
-            kicker=f"{CLUB_NAME} - blessuremelding",
-        )
-
-        if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
-            clear_injury_report_state()
-            st.rerun()
-
-        st.markdown('<div class="mvv-toggle-choice-title">Speler kiezen</div>', unsafe_allow_html=True)
-        cols = st.columns(3)
-        for idx, player in enumerate(players):
-            player_id = str(player["player_id"])
-            player_name = str(player["full_name"])
-            with cols[idx % 3]:
-                render_injury_pick_card(player_name, selected=False)
-                if st.button("select_injury_player", use_container_width=True, key=f"tablet_injury_pick_{player_id}"):
-                    st.session_state["tablet_injury_player_id"] = player_id
-                    st.session_state.pop("tablet_injury_loc", None)
-                    st.session_state.pop("tablet_injury_pain", None)
-                    st.session_state.pop("tablet_injury_notes", None)
-                    st.rerun()
-        return
-
-    player_name = player_lookup[selected_player_id]
-    render_hero(
-        player_name,
-        f"Blessuremelding voor vandaag ({entry_date.strftime('%d-%m-%Y')}).",
-        kicker=f"{CLUB_NAME} - blessuremelding",
-    )
-
-    nav_cols = st.columns(2)
-    with nav_cols[0]:
-        if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_injury_back"):
-            clear_injury_report_state()
-            st.rerun()
-    with nav_cols[1]:
-        if st.button("Andere speler kiezen", use_container_width=True, key="tablet_injury_reset_player"):
-            st.session_state.pop("tablet_injury_player_id", None)
-            st.session_state.pop("tablet_injury_loc", None)
-            st.session_state.pop("tablet_injury_pain", None)
-            st.session_state.pop("tablet_injury_notes", None)
-            st.rerun()
-
-    rpe_header, rpe_sessions = get_cached_rpe_detail(sb, selected_player_id, entry_date)
-    existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
-    if existing_loc not in INJURY_LOCATION_OPTIONS:
-        existing_loc = "Other"
-    existing_pain = int(rpe_header.get("injury_pain", 0) or 0)
-    existing_notes = str(rpe_header.get("notes") or "")
-    selected_injury_loc = str(st.session_state.get("tablet_injury_loc") or existing_loc or "None")
-    if selected_injury_loc not in INJURY_LOCATION_OPTIONS:
-        selected_injury_loc = "Other"
-
-    st.markdown(
-        f"""
-        <div class="mvv-section-card">
-          <div class="mvv-form-kicker">Blessure vandaag</div>
-          <div class="mvv-form-title">{html.escape(player_name)}</div>
-          <div class="mvv-form-subtitle">Vul locatie, pijn en een korte opmerking in.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    selected_injury_loc = render_injury_body_selector(selected_injury_loc)
-    st.session_state["tablet_injury_loc"] = selected_injury_loc
-    st.markdown(
-        f'<div class="mvv-load-pill">Gekozen locatie: <strong>{html.escape(injury_location_label(selected_injury_loc))}</strong></div>',
-        unsafe_allow_html=True,
-    )
-
-    with st.form("tablet_injury_form", clear_on_submit=False):
-        injury_pain = st.slider(
-            "Pijn (0-10)",
-            0,
-            10,
-            value=existing_pain,
-            key="tablet_injury_pain",
-        )
-        notes = st.text_area(
-            "Opmerking",
-            value=existing_notes,
-            key="tablet_injury_notes",
-            height=140,
-        )
-        injury_submit = st.form_submit_button("Injury opslaan", use_container_width=True)
-
-    if injury_submit:
-        if selected_injury_loc == "None":
-            st.error("Kies een blessurelocatie.")
-            return
-
-        try:
-            saved_header = save_injury_tablet(
-                sb,
-                player_id=selected_player_id,
-                entry_date=entry_date,
-                injury_type=selected_injury_loc,
-                injury_pain=int(injury_pain),
-                notes=notes,
-                existing_rpe_entry_id=str(rpe_header.get("id") or "").strip() or None,
-            )
-            set_cached_rpe_detail(
-                selected_player_id,
-                entry_date,
-                {
-                    "id": str(saved_header.get("id") or ""),
-                    "player_id": selected_player_id,
-                    "entry_date": entry_date_iso,
-                    "injury": True,
-                    "injury_type": selected_injury_loc,
-                    "injury_pain": int(injury_pain),
-                    "notes": str(notes or ""),
-                },
-                rpe_sessions,
-            )
-            st.session_state["tablet_flash"] = f"Injury opgeslagen voor {player_name}."
-            clear_injury_report_state()
-            st.rerun()
-        except Exception as exc:
-            st.error(f"Opslaan faalde: {exc}")
 
 
 def render_player_forms(sb, player_id: str, player_name: str) -> None:
@@ -2593,10 +2126,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                     "id": saved_rpe_entry_id,
                     "player_id": str(player_id),
                     "entry_date": entry_date_iso,
-                    "injury": bool(rpe_header.get("injury", False)),
-                    "injury_type": rpe_header.get("injury_type"),
-                    "injury_pain": rpe_header.get("injury_pain"),
-                    "notes": str(rpe_header.get("notes") or ""),
                 }
                 set_cached_rpe_detail(
                     player_id,
@@ -2634,12 +2163,9 @@ def main() -> None:
     selected_player_id = str(st.session_state.get("tablet_player_id") or "").strip()
     selected_player_name = str(st.session_state.get("tablet_player_name") or "").strip()
     bulk_rpe_mode = bool(st.session_state.get("tablet_bulk_rpe_mode", False))
-    injury_mode = bool(st.session_state.get("tablet_injury_mode", False))
 
     if selected_player_id and selected_player_name:
         render_player_forms(sb, selected_player_id, selected_player_name)
-    elif injury_mode:
-        render_injury_report_page(sb)
     elif bulk_rpe_mode:
         render_bulk_rpe_page(sb)
     else:

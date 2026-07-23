@@ -143,19 +143,11 @@ def save_rpe(
     sb,
     player_id: str,
     entry_date: date,
-    injury: bool,
-    injury_type: Optional[str],
-    injury_pain: Optional[int],
-    notes: str,
     sessions: List[Dict[str, int]],
 ):
     header_payload = {
         "player_id": player_id,
         "entry_date": entry_date.isoformat(),
-        "injury": bool(injury),
-        "injury_type": injury_type if injury else None,
-        "injury_pain": int(injury_pain) if (injury and injury_pain is not None) else None,
-        "notes": notes.strip() if notes else None,
     }
 
     sb.table("rpe_entries").upsert(header_payload, on_conflict="player_id,entry_date").execute()
@@ -235,30 +227,6 @@ def render_forms_tab(sb, target_player_id: str):
         st.subheader("Rate of Perceived Exertion (RPE)")
         st.success("✅ RPE is al ingevuld voor deze dag.") if has_rpe else st.info("ℹ️ RPE is nog niet ingevuld voor deze dag.")
 
-        INJURY_LOCATIONS_EN = [
-            "None",
-            "Foot",
-            "Ankle",
-            "Lower leg",
-            "Knee",
-            "Upper leg",
-            "Hip",
-            "Groin",
-            "Glute",
-            "Lower back",
-            "Abdomen",
-            "Chest",
-            "Shoulder",
-            "Upper arm",
-            "Elbow",
-            "Forearm",
-            "Wrist",
-            "Hand",
-            "Neck",
-            "Head",
-            "Other",
-        ]
-
         def _sess(idx: int, key: str, default: int) -> int:
             hit = next((s for s in rpe_sessions if int(s.get("session_index", 0) or 0) == idx), None)
             if not hit:
@@ -267,11 +235,6 @@ def render_forms_tab(sb, target_player_id: str):
             return int(v) if v is not None else default
 
         has_s2 = any(int(s.get("session_index", 0) or 0) == 2 for s in rpe_sessions)
-        injury_default = bool(rpe_header.get("injury", False))
-
-        existing_loc = str(rpe_header.get("injury_type") or "None").strip() or "None"
-        if existing_loc not in INJURY_LOCATIONS_EN:
-            existing_loc = "Other"
 
         with st.form("rpe_form", clear_on_submit=False):
             _legend_rpe()
@@ -286,23 +249,6 @@ def render_forms_tab(sb, target_player_id: str):
             st.markdown("### Session 2")
             s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
 
-            st.divider()
-            st.markdown("### Injury")
-
-            injury = st.toggle("Injury?", value=injury_default, key="rpe_injury")
-
-            loc_col, pain_col = st.columns([1.2, 2.0])
-            with loc_col:
-                injury_loc = st.selectbox(
-                    "Location",
-                    options=INJURY_LOCATIONS_EN,
-                    index=INJURY_LOCATIONS_EN.index(existing_loc),
-                    key="rpe_injury_loc",
-                )
-            with pain_col:
-                injury_pain = st.slider("Pain (0–10)", 0, 10, value=int(rpe_header.get("injury_pain", 0) or 0), key="rpe_pain")
-
-            notes = st.text_area("Notes (optional)", value=str(rpe_header.get("notes") or ""), key="rpe_notes")
             rpe_submit = st.form_submit_button("RPE opslaan", width='stretch')
 
         if rpe_submit:
@@ -313,20 +259,10 @@ def render_forms_tab(sb, target_player_id: str):
                 if bool(enable_s2):
                     sessions_payload.append({"session_index": 2, "rpe": int(s2_rpe)})
 
-                injury_type_to_save = None
-                injury_pain_to_save = None
-                if bool(injury):
-                    injury_type_to_save = None if injury_loc == "None" else injury_loc
-                    injury_pain_to_save = int(injury_pain)
-
                 save_rpe(
                     sb,
                     player_id=target_player_id,
                     entry_date=entry_date,
-                    injury=bool(injury),
-                    injury_type=injury_type_to_save,
-                    injury_pain=injury_pain_to_save,
-                    notes=notes,
                     sessions=sessions_payload,
                 )
                 st.success("RPE opgeslagen.")

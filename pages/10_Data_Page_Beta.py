@@ -338,7 +338,7 @@ def main() -> None:
             key="data_beta_wr",
             kicker="Monitoring",
             title="Wellness / RPE",
-            copy="Ga naar de dagelijkse wellness-, week-, injury- en checklistweergaven voor de selectie.",
+            copy="Ga naar de dagelijkse wellness-, week- en checklistweergaven voor de selectie.",
             meta="Route voor teammonitoring, checklists en dagelijkse check-ins",
             button_label="Open Wellness / RPE",
             target_page="pages/04_Wellness_&_RPE_Overview.py",

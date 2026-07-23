@@ -544,7 +544,7 @@ def render_quality_tab(access_token: str) -> None:
                 "Verplaatste samenvatting van de wellness-overview",
                 [
                     ("Selectiespelers", str(len(wellness_players)), "Actieve spelers in deze wellness-overview"),
-                    ("Views", "4", "Dag, Week, Injury en Checklist"),
+                    ("Views", "3", "Dag, Week en Checklist"),
                     ("Rol", "Staff", "Deze pagina is alleen beschikbaar voor de staf"),
                     ("Focus", "RPE + Wellness", "Dagelijkse monitoring en teamoverzicht"),
                 ]
