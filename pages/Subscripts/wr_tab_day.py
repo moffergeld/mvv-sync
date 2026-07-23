@@ -115,6 +115,8 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
                 title=param_label,
                 show_zones=(param_key == "avg_rpe"),
                 y_range=(0, 10) if param_key == "avg_rpe" else None,
+                range_min_col="min_rpe" if param_key == "avg_rpe" else None,
+                range_max_col="max_rpe" if param_key == "avg_rpe" else None,
             )
             st.plotly_chart(
                 fig,

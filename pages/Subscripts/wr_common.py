@@ -154,6 +154,8 @@ def create_mvv_bar_chart(
     title: str = "",
     show_zones: bool = False,
     y_range: Optional[Tuple[float, float]] = (0, 10),
+    range_min_col: Optional[str] = None,
+    range_max_col: Optional[str] = None,
 ) -> go.Figure:
     plot_df = df.copy()
 
@@ -179,6 +181,22 @@ def create_mvv_bar_chart(
     fig = go.Figure()
 
     has_std = "std" in plot_df.columns and not plot_df["std"].isna().all()
+    has_range_error = (
+        range_min_col is not None
+        and range_max_col is not None
+        and range_min_col in plot_df.columns
+        and range_max_col in plot_df.columns
+    )
+
+    if has_range_error:
+        plot_df[range_min_col] = pd.to_numeric(plot_df[range_min_col], errors="coerce")
+        plot_df[range_max_col] = pd.to_numeric(plot_df[range_max_col], errors="coerce")
+        plot_df["_error_minus"] = (plot_df[y_col] - plot_df[range_min_col]).clip(lower=0)
+        plot_df["_error_plus"] = (plot_df[range_max_col] - plot_df[y_col]).clip(lower=0)
+        has_range_error = not (
+            plot_df["_error_minus"].fillna(0).eq(0).all()
+            and plot_df["_error_plus"].fillna(0).eq(0).all()
+        )
 
     bar_kwargs = dict(
         x=plot_df[x_col],
@@ -199,7 +217,24 @@ def create_mvv_bar_chart(
         hovertemplate="<b>%{x}</b><br>Waarde: <b>%{y:.1f}</b><extra></extra>",
     )
 
-    if has_std:
+    if has_range_error:
+        bar_kwargs["customdata"] = plot_df[[range_min_col, range_max_col]].to_numpy()
+        bar_kwargs["hovertemplate"] = (
+            "<b>%{x}</b><br>"
+            "Gemiddelde: <b>%{y:.1f}</b><br>"
+            "Min: <b>%{customdata[0]:.1f}</b><br>"
+            "Max: <b>%{customdata[1]:.1f}</b><extra></extra>"
+        )
+        bar_kwargs["error_y"] = dict(
+            type="data",
+            symmetric=False,
+            array=plot_df["_error_plus"],
+            arrayminus=plot_df["_error_minus"],
+            color="rgba(255,255,255,0.52)",
+            thickness=1.8,
+            width=5,
+        )
+    elif has_std:
         bar_kwargs["error_y"] = dict(
             type="data",
             array=plot_df["std"],
@@ -255,7 +290,10 @@ def create_mvv_bar_chart(
     if y_range is not None:
         yaxis_cfg["range"] = list(y_range)
     else:
-        y_max = float(plot_df[y_col].max()) if not plot_df.empty else 10
+        if has_range_error and range_max_col is not None:
+            y_max = float(plot_df[range_max_col].max()) if not plot_df.empty else 10
+        else:
+            y_max = float(plot_df[y_col].max()) if not plot_df.empty else 10
         yaxis_cfg["range"] = [0, y_max * 1.22 if y_max > 0 else 10]
 
     fig.update_layout(
@@ -514,12 +552,12 @@ def fetch_rpe_sessions_for_ids_cached(
 # -----------------------------
 def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.DataFrame:
     if headers_df is None or headers_df.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "min_rpe", "max_rpe"])
 
     entry_ids = headers_df["id"].astype(str).tolist()
     sess = fetch_rpe_sessions_for_ids_cached(sb_url_key, sb, tuple(entry_ids))
     if sess.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "min_rpe", "max_rpe"])
 
     merged = sess.merge(
         headers_df[["id", "player_id", "entry_date"]],
@@ -530,13 +568,17 @@ def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.
 
     out = (
         merged.groupby(["entry_date", "player_id"], as_index=False)
-        .agg(avg_rpe=("rpe", "mean"))
+        .agg(
+            avg_rpe=("rpe", "mean"),
+            min_rpe=("rpe", "min"),
+            max_rpe=("rpe", "max"),
+        )
         .reset_index(drop=True)
     )
     out["entry_date"] = _coerce_date(out["entry_date"])
     out["player_id"] = out["player_id"].astype(str)
 
-    return out[["entry_date", "player_id", "avg_rpe"]]
+    return out[["entry_date", "player_id", "avg_rpe", "min_rpe", "max_rpe"]]
 
 
 def agg_week_player_mean_std(df_long: pd.DataFrame, value_col: str) -> pd.DataFrame:
