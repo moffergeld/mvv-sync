@@ -81,20 +81,25 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
         )
         st.plotly_chart(
             fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False, "responsive": True},
         )
 
         show = stats[["Player", "mean", "std", "n"]].copy()
         show = show.rename(columns={"mean": "Gemiddelde", "std": "SD", "n": "N"})
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        st.dataframe(show, width="stretch", hide_index=True)
 
     else:
         param_label = st.selectbox("Parameter", [x[0] for x in RPE_PARAMS], key="wr_week_rpe_param")
         param_key = dict(RPE_PARAMS)[param_label]
 
-        headers = fetch_rpe_headers_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
-        daily = build_rpe_player_daily(sb_url_key, sb, headers)
+        try:
+            headers = fetch_rpe_headers_range_cached(sb_url_key, sb, d0.isoformat(), d1.isoformat())
+            daily = build_rpe_player_daily(sb_url_key, sb, headers)
+        except Exception as exc:
+            st.error(f"RPE-data kon niet geladen worden: {exc}")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
 
         if daily.empty:
             st.info("Geen RPE entries in deze week.")
@@ -124,12 +129,12 @@ def render_wellness_rpe_tab_week(sb, sb_url_key: str, pid_to_name: Dict[str, str
         )
         st.plotly_chart(
             fig,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False, "responsive": True},
         )
 
         show = stats[["Player", "mean", "std", "n"]].copy()
         show = show.rename(columns={"mean": "Gemiddelde", "std": "SD", "n": "N"})
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        st.dataframe(show, width="stretch", hide_index=True)
 
     st.markdown("</div>", unsafe_allow_html=True)

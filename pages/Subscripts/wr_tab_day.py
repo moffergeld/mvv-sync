@@ -75,14 +75,19 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
             )
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False, "responsive": True},
             )
             st.markdown("---")
 
     else:
-        headers = fetch_rpe_headers_date_cached(sb_url_key, sb, d.isoformat())
-        daily = build_rpe_player_daily(sb_url_key, sb, headers)
+        try:
+            headers = fetch_rpe_headers_date_cached(sb_url_key, sb, d.isoformat())
+            daily = build_rpe_player_daily(sb_url_key, sb, headers)
+        except Exception as exc:
+            st.error(f"RPE-data kon niet geladen worden: {exc}")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
         if daily.empty:
             st.info("Geen RPE entries voor deze datum.")
             st.markdown("</div>", unsafe_allow_html=True)
@@ -113,7 +118,7 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
             )
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False, "responsive": True},
             )
             st.markdown("---")

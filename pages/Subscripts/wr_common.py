@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -456,18 +457,49 @@ def fetch_rpe_sessions_for_ids_cached(
     _sb,
     entry_ids_tuple: Tuple[str, ...],
 ) -> pd.DataFrame:
-    entry_ids = list(entry_ids_tuple)
+    entry_ids: List[str] = []
+    for raw_entry_id in entry_ids_tuple:
+        raw_text = str(raw_entry_id or "").strip()
+        if not raw_text:
+            continue
+        try:
+            entry_ids.append(str(UUID(raw_text)))
+        except (TypeError, ValueError, AttributeError):
+            continue
+
     if not entry_ids:
         return pd.DataFrame()
 
-    rows = (
-        _sb.table("rpe_sessions")
-        .select("rpe_entry_id,session_index,rpe")
-        .in_("rpe_entry_id", entry_ids)
-        .execute()
-        .data
-        or []
-    )
+    rows: List[Dict[str, Any]] = []
+
+    try:
+        chunk_size = 50
+        for idx in range(0, len(entry_ids), chunk_size):
+            chunk = entry_ids[idx : idx + chunk_size]
+            rows.extend(
+                _sb.table("rpe_sessions")
+                .select("rpe_entry_id,session_index,rpe")
+                .in_("rpe_entry_id", chunk)
+                .execute()
+                .data
+                or []
+            )
+    except Exception:
+        # Fallback for cases where the bulk IN-query fails through PostgREST.
+        rows = []
+        for entry_id in entry_ids:
+            try:
+                rows.extend(
+                    _sb.table("rpe_sessions")
+                    .select("rpe_entry_id,session_index,rpe")
+                    .eq("rpe_entry_id", entry_id)
+                    .execute()
+                    .data
+                    or []
+                )
+            except Exception:
+                continue
+
     df = _df(rows)
     if df.empty:
         return df
@@ -542,7 +574,7 @@ def plot_day_bars(df: pd.DataFrame, x_col: str, y_col: str, y_title: str, zone_0
         show_zones=zone_0_10,
         y_range=(0, 10) if zone_0_10 else None,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def plot_week_player_mean_std_bars(
@@ -571,4 +603,4 @@ def plot_week_player_mean_std_bars(
         show_zones=zone_0_10,
         y_range=(0, 10) if zone_0_10 else None,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
