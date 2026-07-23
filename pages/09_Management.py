@@ -611,8 +611,8 @@ def render_settings_tab() -> None:
     acwr_mode = get_acwr_mode()
     acwr_meta = get_acwr_mode_meta(acwr_mode)
     mode_labels = {
-        ACWR_MODE_STANDARD: "Standaard 4 weken gemiddelde",
         ACWR_MODE_LOG_6W: "Logaritmisch gewogen 6 weken",
+        ACWR_MODE_STANDARD: "Standaard 4 weken gemiddelde",
     }
     mode_by_label = {label: mode for mode, label in mode_labels.items()}
 
@@ -638,7 +638,7 @@ def render_settings_tab() -> None:
         st.info(
             f"Huidig model: {selected_meta['label']}. {selected_meta['description']}"
         )
-        st.caption("Deze instelling wordt in je browser opgeslagen en gebruikt op Home, Team Page Beta en GPS ACWR.")
+        st.caption("Logaritmisch 6 weken is nu de standaard. De 4 weken-variant blijft beschikbaar als extra optie via Settings.")
 
         save_clicked = st.form_submit_button("ACWR-instelling opslaan", use_container_width=True)
 

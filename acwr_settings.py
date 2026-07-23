@@ -11,24 +11,25 @@ from roles import cookie_mgr
 
 ACWR_MODE_STANDARD = "standard_4w_mean"
 ACWR_MODE_LOG_6W = "log_6w_weighted"
-DEFAULT_ACWR_MODE = ACWR_MODE_STANDARD
-ACWR_MODE_COOKIE = "mvv_acwr_mode"
+DEFAULT_ACWR_MODE = ACWR_MODE_LOG_6W
+ACWR_MODE_COOKIE = "mvv_acwr_mode_v2"
 ACWR_MODE_MAX_AGE = 60 * 60 * 24 * 180
+ACWR_MODE_SESSION_MARKER = "mvv_acwr_mode_cookie_key"
 
 ACWR_MODE_META: Dict[str, Dict[str, Any]] = {
-    ACWR_MODE_STANDARD: {
-        "label": "Standaard 4 weken",
-        "short_label": "4w gemiddeld",
-        "description": "Huidige week gedeeld door het gemiddelde van de vorige 4 weken.",
-        "window": 4,
-        "min_periods": 2,
-    },
     ACWR_MODE_LOG_6W: {
         "label": "Logaritmisch 6 weken",
         "short_label": "log 6w",
         "description": "Huidige week gedeeld door een logaritmisch gewogen gemiddelde van de vorige 6 weken, met meer gewicht voor recente weken.",
         "window": 6,
         "min_periods": 3,
+    },
+    ACWR_MODE_STANDARD: {
+        "label": "Standaard 4 weken",
+        "short_label": "4w gemiddeld",
+        "description": "Huidige week gedeeld door het gemiddelde van de vorige 4 weken.",
+        "window": 4,
+        "min_periods": 2,
     },
 }
 
@@ -39,7 +40,10 @@ def normalize_acwr_mode(value: Any) -> str:
 
 
 def get_acwr_mode() -> str:
-    if "acwr_mode" in st.session_state:
+    if (
+        "acwr_mode" in st.session_state
+        and st.session_state.get(ACWR_MODE_SESSION_MARKER) == ACWR_MODE_COOKIE
+    ):
         return normalize_acwr_mode(st.session_state.get("acwr_mode"))
 
     raw_value = None
@@ -50,12 +54,14 @@ def get_acwr_mode() -> str:
 
     mode = normalize_acwr_mode(raw_value)
     st.session_state["acwr_mode"] = mode
+    st.session_state[ACWR_MODE_SESSION_MARKER] = ACWR_MODE_COOKIE
     return mode
 
 
 def set_acwr_mode(mode: str) -> str:
     normalized = normalize_acwr_mode(mode)
     st.session_state["acwr_mode"] = normalized
+    st.session_state[ACWR_MODE_SESSION_MARKER] = ACWR_MODE_COOKIE
     try:
         cookie_mgr().set(
             ACWR_MODE_COOKIE,
