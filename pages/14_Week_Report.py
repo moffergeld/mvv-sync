@@ -882,8 +882,7 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
         ("Dist / Player", _format_distance(summary["dist_per_player"]), "Team totaal gedeeld door actieve spelers"),
         ("Top Speed", _format_speed(summary["top_speed"]), "Hoogste topsnelheid in de gekozen week"),
         *wellness_cards,
-        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen teamgemiddelde RPE in deze week"),
-        ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE binnen de week"),
+        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde team-RPE in deze week"),
     ]
     html_blocks = []
     for label, value, foot in cards:
@@ -1074,7 +1073,7 @@ def main() -> None:
         )
     if monitoring_summary["rpe_entries"]:
         notes.append(
-            f"RPE gemiddeld: {_format_decimal(monitoring_summary['avg_rpe'], 1)} met totale RPE load {_format_int(monitoring_summary['rpe_load'])} op basis van {_format_int(monitoring_summary['rpe_entries'])} entries."
+            f"RPE gemiddeld: {_format_decimal(monitoring_summary['avg_rpe'], 1)} op basis van {_format_int(monitoring_summary['rpe_entries'])} entries."
         )
 
     badges = [
@@ -1193,8 +1192,7 @@ def main() -> None:
                 ("sleep_quality", "Sleep Quality", "Gemiddelde sleep quality per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
                 ("stress", "Stress", "Gemiddelde stress per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
                 ("mood", "Mood", "Gemiddelde mood per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
-                ("avg_rpe", "Weighted RPE", "Gewogen team-RPE per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
-                ("rpe_load", "RPE Load", "Totale duration x RPE per dag met spreiding per speler", MVV_RED_DEEP, _format_int, ":,.0f", None),
+                ("avg_rpe", "Avg RPE", "Gemiddelde team-RPE per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
             ]
             for idx in range(0, len(monitoring_specs), 2):
                 cols = st.columns(2, gap="large")
@@ -1231,7 +1229,6 @@ def main() -> None:
                         ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
-                        ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
                 "Dagoverzicht van alle wellness-parameters, readiness en RPE",
@@ -1252,7 +1249,6 @@ def main() -> None:
                         ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
-                        ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
                 "Top 12 spelers op basis van monitoringvolume in deze week",

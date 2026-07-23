@@ -866,8 +866,7 @@ def build_cards_html(kpis: dict[str, object], monitoring_summary: dict[str, obje
         ("Peak Week", _format_distance(kpis["peak_week"]), "Hoogste teamweek op total distance"),
         ("Top Speed", _format_speed(kpis["top_speed"]), "Hoogste geregistreerde topsnelheid"),
         *wellness_cards,
-        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen teamgemiddelde RPE over de selectie"),
-        ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE over de selectie"),
+        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde team-RPE over de selectie"),
     ]
     return '<div class="year-report-card-grid">' + "".join(
         '<div class="year-report-card">'
@@ -1048,7 +1047,7 @@ def main() -> None:
         )
     if monitoring_summary["rpe_entries"]:
         notes.append(
-            f"RPE gemiddeld over het seizoen: {_format_decimal(monitoring_summary['avg_rpe'], 1)} met totale RPE load {_format_int(monitoring_summary['rpe_load'])}."
+            f"RPE gemiddeld over het seizoen: {_format_decimal(monitoring_summary['avg_rpe'], 1)}."
         )
 
     badges = [
@@ -1195,8 +1194,7 @@ def main() -> None:
                 ("sleep_quality", "Sleep Quality", "Wekelijks gemiddelde sleep quality", MVV_RED_DEEP, (0, 10)),
                 ("stress", "Stress", "Wekelijks gemiddelde stress", MVV_RED_BRIGHT, (0, 10)),
                 ("mood", "Mood", "Wekelijks gemiddelde mood", MVV_RED_DEEP, (0, 10)),
-                ("avg_rpe", "Weighted RPE", "Gewogen team-RPE per week", MVV_RED_BRIGHT, (0, 10)),
-                ("rpe_load", "RPE Load", "Totale duration x RPE per week met spreiding per speler", MVV_RED_DEEP, None),
+                ("avg_rpe", "Avg RPE", "Gemiddelde team-RPE per week", MVV_RED_BRIGHT, (0, 10)),
             ]
             for idx in range(0, len(monitoring_specs), 2):
                 cols = st.columns(2, gap="large")
@@ -1232,7 +1230,6 @@ def main() -> None:
                         ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
-                        ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
                 "Weekoverzicht van alle wellness-parameters, readiness en RPE",
@@ -1253,7 +1250,6 @@ def main() -> None:
                         ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
-                        ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
                 "Top 16 spelers op basis van monitoringvolume in dit seizoen",

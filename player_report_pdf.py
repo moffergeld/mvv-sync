@@ -369,8 +369,7 @@ def build_player_report_pdf_bytes(
         build_metric_card("Trainingen", _fmt_int(summary.get("training_sessions")), "Aantal trainingssessies", "#F8FAFC", "#D7DEE8"),
         build_metric_card("Wedstrijden", _fmt_int(summary.get("match_sessions")), "Aantal matchsituaties", "#F8FAFC", "#D7DEE8"),
         build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gewogen gemiddelde RPE", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("RPE Load", _fmt_int(monitoring_summary.get("rpe_load")), "Totale duration x RPE", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gemiddelde RPE", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#FFF7F8", "#E8C5CB"),
     ]
     story.append(
@@ -501,8 +500,8 @@ def build_player_report_pdf_bytes(
         ["Muscle Soreness", _fmt_dec(monitoring_summary.get("muscle_soreness"), 1), "Fatigue", _fmt_dec(monitoring_summary.get("fatigue"), 1)],
         ["Sleep Quality", _fmt_dec(monitoring_summary.get("sleep_quality"), 1), "Stress", _fmt_dec(monitoring_summary.get("stress"), 1)],
         ["Mood", _fmt_dec(monitoring_summary.get("mood"), 1), "Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1)],
-        ["Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "RPE Load", _fmt_int(monitoring_summary.get("rpe_load"))],
-        ["Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "RPE entries", _fmt_int(monitoring_summary.get("rpe_entries"))],
+        ["Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "RPE entries", _fmt_int(monitoring_summary.get("rpe_entries"))],
+        ["Wellness entries", _fmt_int(monitoring_summary.get("wellness_entries")), "", ""],
     ]
     monitoring_table = Table(monitoring_rows, colWidths=[42 * mm, 34 * mm, 42 * mm, 34 * mm])
     monitoring_table.setStyle(
@@ -580,7 +579,7 @@ def build_player_report_pdf_bytes(
 
     monitoring_preview = monitoring_group_df.head(12).copy() if isinstance(monitoring_group_df, pd.DataFrame) else pd.DataFrame()
     if not monitoring_preview.empty:
-        grouped_rows = [["Periode", "Muscle", "Fatigue", "Sleep", "Stress", "Mood", "Avg RPE", "RPE Load"]]
+        grouped_rows = [["Periode", "Muscle", "Fatigue", "Sleep", "Stress", "Mood", "Avg RPE"]]
         for _, row in monitoring_preview.iterrows():
             grouped_rows.append(
                 [
@@ -591,12 +590,11 @@ def build_player_report_pdf_bytes(
                     _fmt_dec(row.get("stress"), 1),
                     _fmt_dec(row.get("mood"), 1),
                     _fmt_dec(row.get("avg_rpe"), 1),
-                    _fmt_int(row.get("rpe_load")),
                 ]
             )
         grouped_table = Table(
             grouped_rows,
-            colWidths=[26 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 22 * mm],
+            colWidths=[34 * mm, 20 * mm, 20 * mm, 20 * mm, 20 * mm, 20 * mm, 22 * mm],
             repeatRows=1,
         )
         grouped_table.setStyle(

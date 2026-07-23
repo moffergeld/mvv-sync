@@ -653,7 +653,7 @@ def fetch_rpe_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
         try:
             rows = (
                 _sb.table("rpe_sessions")
-                .select("rpe_entry_id,rpe,duration_min")
+                .select("rpe_entry_id,rpe")
                 .in_("rpe_entry_id", chunk)
                 .execute()
                 .data

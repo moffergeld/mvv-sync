@@ -21,9 +21,7 @@ ASRM_PARAMS = [
 ]
 
 RPE_PARAMS = [
-    ("RPE (weighted avg)", "avg_rpe"),
-    ("RPE Load (sum dur*rpe)", "rpe_load"),
-    ("Total duration (min)", "duration_min"),
+    ("RPE (avg)", "avg_rpe"),
 ]
 
 ZONE_GREEN_MAX = 4.5
@@ -464,7 +462,7 @@ def fetch_rpe_sessions_for_ids_cached(
 
     rows = (
         _sb.table("rpe_sessions")
-        .select("rpe_entry_id,session_index,duration_min,rpe")
+        .select("rpe_entry_id,session_index,rpe")
         .in_("rpe_entry_id", entry_ids)
         .execute()
         .data
@@ -475,9 +473,7 @@ def fetch_rpe_sessions_for_ids_cached(
         return df
 
     df["rpe_entry_id"] = df["rpe_entry_id"].astype(str)
-    df["duration_min"] = pd.to_numeric(df["duration_min"], errors="coerce").fillna(0.0)
     df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0.0)
-    df["load"] = df["duration_min"] * df["rpe"]
     return df
 
 
@@ -515,12 +511,12 @@ def fetch_rpe_injuries_range_cached(sb_url_key: str, _sb, d0_iso: str, d1_iso: s
 # -----------------------------
 def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.DataFrame:
     if headers_df is None or headers_df.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
 
     entry_ids = headers_df["id"].astype(str).tolist()
     sess = fetch_rpe_sessions_for_ids_cached(sb_url_key, sb, tuple(entry_ids))
     if sess.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
 
     merged = sess.merge(
         headers_df[["id", "player_id", "entry_date"]],
@@ -531,23 +527,13 @@ def build_rpe_player_daily(sb_url_key: str, sb, headers_df: pd.DataFrame) -> pd.
 
     out = (
         merged.groupby(["entry_date", "player_id"], as_index=False)
-        .agg(
-            rpe_load=("load", "sum"),
-            duration_min=("duration_min", "sum"),
-            mean_rpe=("rpe", "mean"),
-        )
+        .agg(avg_rpe=("rpe", "mean"))
         .reset_index(drop=True)
     )
-
-    out["avg_rpe"] = out["mean_rpe"]
-    dur_mask = out["duration_min"] > 0
-    out.loc[dur_mask, "avg_rpe"] = out.loc[dur_mask, "rpe_load"] / out.loc[dur_mask, "duration_min"]
-
-    out = out.drop(columns=["mean_rpe"])
     out["entry_date"] = _coerce_date(out["entry_date"])
     out["player_id"] = out["player_id"].astype(str)
 
-    return out[["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"]]
+    return out[["entry_date", "player_id", "avg_rpe"]]
 
 
 def agg_week_player_mean_std(df_long: pd.DataFrame, value_col: str) -> pd.DataFrame:

@@ -25,8 +25,6 @@ MONITORING_NUMERIC_COLUMNS = [
     "wellness_avg",
     "readiness_score",
     "avg_rpe",
-    "rpe_load",
-    "duration_min",
 ]
 
 MONITORING_COLUMNS = [
@@ -61,9 +59,6 @@ def _empty_grouped_summary() -> pd.DataFrame:
         "readiness_score",
         "avg_rpe",
         "avg_rpe_std",
-        "rpe_load",
-        "rpe_load_std",
-        "duration_min",
     ]
     return pd.DataFrame(columns=base_columns)
 
@@ -79,8 +74,6 @@ def _empty_player_summary() -> pd.DataFrame:
             "wellness_avg",
             "readiness_score",
             "avg_rpe",
-            "rpe_load",
-            "duration_min",
         ]
     )
 
@@ -136,7 +129,7 @@ def fetch_report_rpe_sessions_for_ids_cached(
 
     rows = (
         _sb.table("rpe_sessions")
-        .select("rpe_entry_id,session_index,duration_min,rpe")
+        .select("rpe_entry_id,session_index,rpe")
         .in_("rpe_entry_id", entry_ids)
         .execute()
         .data
@@ -147,21 +140,19 @@ def fetch_report_rpe_sessions_for_ids_cached(
         return df
 
     df["rpe_entry_id"] = df["rpe_entry_id"].astype(str)
-    df["duration_min"] = pd.to_numeric(df["duration_min"], errors="coerce").fillna(0.0)
     df["rpe"] = pd.to_numeric(df["rpe"], errors="coerce").fillna(0.0)
-    df["load"] = df["duration_min"] * df["rpe"]
     return df
 
 
 def fetch_report_rpe_daily_cached(sb_url_key: str, sb, d0_iso: str, d1_iso: str) -> pd.DataFrame:
     headers_df = fetch_report_rpe_headers_range_cached(sb_url_key, sb, d0_iso, d1_iso)
     if headers_df.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
 
     entry_ids = headers_df["id"].astype(str).tolist()
     sess = fetch_report_rpe_sessions_for_ids_cached(sb_url_key, sb, tuple(entry_ids))
     if sess.empty:
-        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"])
+        return pd.DataFrame(columns=["entry_date", "player_id", "avg_rpe"])
 
     merged = sess.merge(
         headers_df[["id", "player_id", "entry_date"]],
@@ -172,21 +163,12 @@ def fetch_report_rpe_daily_cached(sb_url_key: str, sb, d0_iso: str, d1_iso: str)
 
     out = (
         merged.groupby(["entry_date", "player_id"], as_index=False)
-        .agg(
-            rpe_load=("load", "sum"),
-            duration_min=("duration_min", "sum"),
-            mean_rpe=("rpe", "mean"),
-        )
+        .agg(avg_rpe=("rpe", "mean"))
         .reset_index(drop=True)
     )
-
-    out["avg_rpe"] = out["mean_rpe"]
-    dur_mask = out["duration_min"] > 0
-    out.loc[dur_mask, "avg_rpe"] = out.loc[dur_mask, "rpe_load"] / out.loc[dur_mask, "duration_min"]
-    out = out.drop(columns=["mean_rpe"])
     out["entry_date"] = _coerce_date(out["entry_date"])
     out["player_id"] = out["player_id"].astype(str)
-    return out[["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"]]
+    return out[["entry_date", "player_id", "avg_rpe"]]
 
 
 def build_monitoring_dataset(
@@ -217,7 +199,7 @@ def build_monitoring_dataset(
         "wellness_avg",
         "readiness_score",
     ]
-    rpe_cols = ["entry_date", "player_id", "avg_rpe", "rpe_load", "duration_min"]
+    rpe_cols = ["entry_date", "player_id", "avg_rpe"]
 
     if wellness_df.empty and rpe_df.empty:
         return _empty_monitoring_df()
@@ -255,8 +237,6 @@ def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
         "wellness_avg": float("nan"),
         "readiness_avg": float("nan"),
         "avg_rpe": float("nan"),
-        "rpe_load": float("nan"),
-        "duration_min": float("nan"),
     }
     for column in WELLNESS_PARAMETER_COLUMNS:
         empty_summary[column] = float("nan")
@@ -266,13 +246,7 @@ def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
 
     wellness_mask = df["wellness_avg"].notna()
     rpe_mask = df["avg_rpe"].notna()
-    total_duration = float(pd.to_numeric(df["duration_min"], errors="coerce").fillna(0.0).sum())
-    total_load = float(pd.to_numeric(df["rpe_load"], errors="coerce").fillna(0.0).sum())
-    avg_rpe = float("nan")
-    if total_duration > 0:
-        avg_rpe = total_load / total_duration
-    elif rpe_mask.any():
-        avg_rpe = float(pd.to_numeric(df.loc[rpe_mask, "avg_rpe"], errors="coerce").mean())
+    avg_rpe = float(pd.to_numeric(df.loc[rpe_mask, "avg_rpe"], errors="coerce").mean()) if rpe_mask.any() else float("nan")
 
     summary = {
         "wellness_players": int(df.loc[wellness_mask, "player_id"].nunique()),
@@ -284,8 +258,6 @@ def summarize_monitoring_dataset(df: pd.DataFrame) -> dict[str, object]:
         "wellness_avg": float(pd.to_numeric(df["wellness_avg"], errors="coerce").mean()) if df["wellness_avg"].notna().any() else float("nan"),
         "readiness_avg": float(pd.to_numeric(df["readiness_score"], errors="coerce").mean()) if df["readiness_score"].notna().any() else float("nan"),
         "avg_rpe": avg_rpe,
-        "rpe_load": total_load if total_load > 0 else float("nan"),
-        "duration_min": total_duration if total_duration > 0 else float("nan"),
     }
     for column in WELLNESS_PARAMETER_COLUMNS:
         summary[column] = float(pd.to_numeric(df[column], errors="coerce").mean()) if df[column].notna().any() else float("nan")
@@ -317,11 +289,8 @@ def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> p
     aggregation: dict[str, tuple[str, str]] = {
         "wellness_avg": ("wellness_avg", "mean"),
         "readiness_score": ("readiness_score", "mean"),
-        "avg_rpe_mean": ("avg_rpe", "mean"),
+        "avg_rpe": ("avg_rpe", "mean"),
         "avg_rpe_std": ("avg_rpe", "std"),
-        "rpe_load": ("rpe_load", "sum"),
-        "rpe_load_std": ("rpe_load", "std"),
-        "duration_min": ("duration_min", "sum"),
     }
     for column in WELLNESS_PARAMETER_COLUMNS:
         aggregation[column] = (column, "mean")
@@ -352,11 +321,6 @@ def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> p
     grouped = grouped.merge(wellness_players, on="bucket", how="left").merge(rpe_players, on="bucket", how="left")
     grouped["wellness_players"] = grouped["wellness_players"].fillna(0).astype(int)
     grouped["rpe_players"] = grouped["rpe_players"].fillna(0).astype(int)
-
-    grouped["avg_rpe"] = grouped["avg_rpe_mean"]
-    dur_mask = pd.to_numeric(grouped["duration_min"], errors="coerce").fillna(0) > 0
-    grouped.loc[dur_mask, "avg_rpe"] = grouped.loc[dur_mask, "rpe_load"] / grouped.loc[dur_mask, "duration_min"]
-    grouped = grouped.drop(columns=["avg_rpe_mean"])
     return grouped
 
 
@@ -373,9 +337,7 @@ def build_monitoring_player_summary(df: pd.DataFrame) -> pd.DataFrame:
         "rpe_days": ("rpe_present", "sum"),
         "wellness_avg": ("wellness_avg", "mean"),
         "readiness_score": ("readiness_score", "mean"),
-        "avg_rpe_mean": ("avg_rpe", "mean"),
-        "rpe_load": ("rpe_load", "sum"),
-        "duration_min": ("duration_min", "sum"),
+        "avg_rpe": ("avg_rpe", "mean"),
     }
     for column in WELLNESS_PARAMETER_COLUMNS:
         aggregation[column] = (column, "mean")
@@ -385,10 +347,5 @@ def build_monitoring_player_summary(df: pd.DataFrame) -> pd.DataFrame:
         .agg(**aggregation)
         .reset_index(drop=True)
     )
-
-    grouped["avg_rpe"] = grouped["avg_rpe_mean"]
-    dur_mask = pd.to_numeric(grouped["duration_min"], errors="coerce").fillna(0) > 0
-    grouped.loc[dur_mask, "avg_rpe"] = grouped.loc[dur_mask, "rpe_load"] / grouped.loc[dur_mask, "duration_min"]
-    grouped = grouped.drop(columns=["avg_rpe_mean"])
-    grouped = grouped.sort_values(["rpe_load", "wellness_days", "player_name"], ascending=[False, False, True]).reset_index(drop=True)
+    grouped = grouped.sort_values(["rpe_days", "wellness_days", "avg_rpe", "player_name"], ascending=[False, False, False, True]).reset_index(drop=True)
     return grouped

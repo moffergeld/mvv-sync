@@ -165,17 +165,22 @@ def save_rpe(
         raise RuntimeError("Kon rpe_entry_id niet ophalen na opslaan.")
 
     payload: List[Dict[str, Any]] = []
+    keep_session_indexes: set[int] = set()
     for s in sessions:
+        session_index = int(s["session_index"])
+        keep_session_indexes.add(session_index)
         payload.append(
             {
                 "rpe_entry_id": rpe_entry_id,
-                "session_index": int(s["session_index"]),
-                "duration_min": int(s["duration_min"]),
+                "session_index": session_index,
                 "rpe": int(s["rpe"]),
             }
         )
     if payload:
         sb.table("rpe_sessions").upsert(payload, on_conflict="rpe_entry_id,session_index").execute()
+    for session_index in (1, 2):
+        if session_index not in keep_session_indexes:
+            sb.table("rpe_sessions").delete().eq("rpe_entry_id", rpe_entry_id).eq("session_index", session_index).execute()
 
 
 # -----------------------------
@@ -272,7 +277,6 @@ def render_forms_tab(sb, target_player_id: str):
             _legend_rpe()
 
             st.markdown("### Session 1")
-            s1_dur = st.number_input("[1] Duration (min)", 0, 600, value=_sess(1, "duration_min", 0), key="rpe_s1_dur")
             s1_rpe = st.slider("[1] RPE (1–10)", 1, 10, value=_sess(1, "rpe", 5), key="rpe_s1_rpe")
 
             st.divider()
@@ -280,7 +284,6 @@ def render_forms_tab(sb, target_player_id: str):
             enable_s2 = st.toggle("Add 2nd session?", value=has_s2, key="rpe_enable_s2")
 
             st.markdown("### Session 2")
-            s2_dur = st.number_input("[2] Duration (min)", 0, 600, value=_sess(2, "duration_min", 0), key="rpe_s2_dur")
             s2_rpe = st.slider("[2] RPE (1–10)", 1, 10, value=_sess(2, "rpe", 5), key="rpe_s2_rpe")
 
             st.divider()
@@ -305,11 +308,10 @@ def render_forms_tab(sb, target_player_id: str):
         if rpe_submit:
             try:
                 sessions_payload: List[Dict[str, int]] = []
-                if int(s1_dur) > 0:
-                    sessions_payload.append({"session_index": 1, "duration_min": int(s1_dur), "rpe": int(s1_rpe)})
+                sessions_payload.append({"session_index": 1, "rpe": int(s1_rpe)})
 
-                if bool(enable_s2) and int(s2_dur) > 0:
-                    sessions_payload.append({"session_index": 2, "duration_min": int(s2_dur), "rpe": int(s2_rpe)})
+                if bool(enable_s2):
+                    sessions_payload.append({"session_index": 2, "rpe": int(s2_rpe)})
 
                 injury_type_to_save = None
                 injury_pain_to_save = None

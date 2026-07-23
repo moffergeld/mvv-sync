@@ -1596,14 +1596,12 @@ def save_rpe_tablet(
     session_payloads: List[Dict[str, Any]] = []
     keep_session_indexes: set[int] = set()
     for session in sessions:
-        duration_min = int(session.get("duration_min", 0) or 0)
         rpe_value = int(session.get("rpe", 0) or 0)
         session_index = int(session.get("session_index", 1) or 1)
         keep_session_indexes.add(session_index)
         session_payload = {
             "rpe_entry_id": rpe_entry_id,
             "session_index": session_index,
-            "duration_min": duration_min,
             "rpe": rpe_value,
         }
         session_payloads.append(session_payload)
@@ -2150,19 +2148,7 @@ def render_bulk_rpe_page(sb) -> None:
         st.info("Geen spelers om RPE in te vullen.")
         return
 
-    shared_duration_key = "tablet_bulk_rpe_dur_shared"
     with st.form("tablet_bulk_rpe_form", clear_on_submit=False):
-        st.markdown('<div class="mvv-bulk-shared-title">Minuten voor alle spelers</div>', unsafe_allow_html=True)
-        shared_duration = st.radio(
-            "Minuten voor alle spelers",
-            options=RPE_DURATION_OPTIONS,
-            index=RPE_DURATION_OPTIONS.index(RPE_BULK_DURATION_DEFAULT),
-            format_func=lambda value: str(value),
-            horizontal=True,
-            label_visibility="collapsed",
-            key=shared_duration_key,
-        )
-
         for player in ready_players:
             player_id = str(player["player_id"])
             player_name = str(player["full_name"])
@@ -2190,7 +2176,6 @@ def render_bulk_rpe_page(sb) -> None:
         try:
             saved_count = 0
             failed_players: List[str] = []
-            shared_duration_value = int(shared_duration)
             for player in ready_players:
                 player_id = str(player["player_id"])
                 player_name = str(player["full_name"])
@@ -2201,7 +2186,6 @@ def render_bulk_rpe_page(sb) -> None:
                     sessions_payload: List[Dict[str, int]] = []
                     current_session_payload = {
                         "session_index": pending_stage,
-                        "duration_min": shared_duration_value,
                         "rpe": rpe_value,
                     }
                     if pending_stage == 1:
@@ -2273,26 +2257,13 @@ def _session_value(rpe_sessions: List[Dict[str, Any]], idx: int, key: str, defau
 
 
 def _existing_session_payload(rpe_sessions: List[Dict[str, Any]], idx: int) -> Dict[str, int] | None:
-    duration_min = _session_value(rpe_sessions, idx, "duration_min", 0)
-    if int(duration_min) <= 0:
+    hit = next((row for row in rpe_sessions if int(row.get("session_index", 0) or 0) == idx), None)
+    if not hit:
         return None
     return {
         "session_index": int(idx),
-        "duration_min": int(duration_min),
         "rpe": _session_value(rpe_sessions, idx, "rpe", 5),
     }
-
-
-def _normalize_duration_choice(value: int) -> int:
-    try:
-        duration = int(value)
-    except (TypeError, ValueError):
-        duration = 0
-    if duration in RPE_DURATION_OPTIONS:
-        return duration
-    if duration <= 0:
-        return RPE_DURATION_OPTIONS[0]
-    return min(RPE_DURATION_OPTIONS, key=lambda option: abs(option - duration))
 
 
 def render_injury_report_page(sb) -> None:
@@ -2548,9 +2519,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         has_rpe2 = any(int(row.get("session_index", 0) or 0) == 2 for row in rpe_sessions)
         st.session_state["tablet_player_has_rpe"] = has_rpe2 if second_rpe_enabled else has_rpe1
 
-        s1_default_dur = _session_value(rpe_sessions, 1, "duration_min", 0)
         s1_default_rpe = _session_value(rpe_sessions, 1, "rpe", 5)
-        s2_default_dur = _session_value(rpe_sessions, 2, "duration_min", 0)
         s2_default_rpe = _session_value(rpe_sessions, 2, "rpe", 5)
         stage_key = f"tablet_rpe_stage_{player_id}"
 
@@ -2568,10 +2537,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
             current_rpe_stage = 1
             st.session_state[stage_key] = 1
 
-        current_duration_default = s2_default_dur if current_rpe_stage == 2 else s1_default_dur
         current_rpe_default = s2_default_rpe if current_rpe_stage == 2 else s1_default_rpe
-        current_duration_choice = _normalize_duration_choice(current_duration_default)
-        duration_key = f"tablet_rpe_s{current_rpe_stage}_dur_choice_{player_id}"
         rpe_key = f"tablet_rpe_s{current_rpe_stage}_rpe_{player_id}"
         session_title = f"RPE {current_rpe_stage}"
 
@@ -2583,16 +2549,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 <div class="mvv-session-title">{html.escape(session_title)}</div>
                 """,
                 unsafe_allow_html=True,
-            )
-            st.markdown('<div class="mvv-duration-title">Duration (min)</div>', unsafe_allow_html=True)
-            current_dur = st.radio(
-                "Duration (min)",
-                options=RPE_DURATION_OPTIONS,
-                index=RPE_DURATION_OPTIONS.index(current_duration_choice),
-                format_func=lambda value: str(value),
-                horizontal=True,
-                label_visibility="collapsed",
-                key=duration_key,
             )
             current_rpe_value = st.slider(
                 "RPE (1-10)",
@@ -2609,7 +2565,6 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 sessions_payload: List[Dict[str, int]] = []
                 current_session_payload = {
                     "session_index": int(current_rpe_stage),
-                    "duration_min": int(current_dur),
                     "rpe": int(current_rpe_value),
                 }
 
@@ -2620,8 +2575,9 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                         sessions_payload.append(existing_session_2)
                 else:
                     existing_session_1 = _existing_session_payload(rpe_sessions, 1)
-                    if existing_session_1:
-                        sessions_payload.append(existing_session_1)
+                    if existing_session_1 is None:
+                        raise RuntimeError("RPE 1 ontbreekt nog voor deze speler.")
+                    sessions_payload.append(existing_session_1)
                     sessions_payload.append(current_session_payload)
 
                 sessions_payload = sorted(sessions_payload, key=lambda row: int(row["session_index"]))

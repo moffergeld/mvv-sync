@@ -808,7 +808,6 @@ def render_monitoring_summary_row(summary: dict[str, Any]) -> None:
     cards.extend(
         [
             ("Avg RPE", _fmt_dec1(summary.get("avg_rpe")), f"{int(summary.get('rpe_players', 0) or 0)} spelers met RPE"),
-            ("RPE Load", _fmt_int0(summary.get("rpe_load")), "Totale duration x RPE op matchdag"),
         ]
     )
     html_cards = "".join(
@@ -835,7 +834,6 @@ def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
     show_df["Mood"] = show_df["mood"].map(_fmt_dec1)
     show_df["Readiness"] = show_df["readiness_score"].map(_fmt_dec1)
     show_df["Avg RPE"] = show_df["avg_rpe"].map(_fmt_dec1)
-    show_df["RPE Load"] = show_df["rpe_load"].map(_fmt_int0)
     show_df["Wellness Days"] = show_df["wellness_days"].map(_fmt_int0)
     show_df["RPE Days"] = show_df["rpe_days"].map(_fmt_int0)
     st.dataframe(
@@ -851,7 +849,6 @@ def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
                 "Mood",
                 "Readiness",
                 "Avg RPE",
-                "RPE Load",
             ]
         ].rename(columns={"player_name": "Speler"}),
         use_container_width=True,

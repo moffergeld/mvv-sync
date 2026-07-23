@@ -710,7 +710,7 @@ def build_player_notes(
 
     if monitoring_summary["rpe_entries"]:
         notes.append(
-            f"Interne load: gemiddelde RPE {_format_decimal(monitoring_summary['avg_rpe'], 1)} en totale RPE load {_format_int(monitoring_summary['rpe_load'])}."
+            f"Interne load: gemiddelde RPE {_format_decimal(monitoring_summary['avg_rpe'], 1)}."
         )
     else:
         notes.append("Geen RPE-invoer gevonden binnen deze selectie.")
@@ -877,8 +877,7 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
         ("Avg Intensity", _format_decimal(summary["distance_per_min"], 1), "Gemiddelde meters per minuut"),
         ("Top Speed", _format_speed(summary["top_speed"]), "Hoogste geregistreerde topsnelheid"),
         *wellness_cards,
-        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gewogen gemiddelde RPE"),
-        ("RPE Load", _format_int(monitoring_summary["rpe_load"]), "Opgetelde duration x RPE"),
+        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde RPE"),
     ]
     return '<div class="player-report-card-grid">' + "".join(
         '<div class="player-report-card">'
@@ -1261,8 +1260,7 @@ def main() -> None:
                 ("sleep_quality", "Sleep Quality", "Gemiddelde sleep quality", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
                 ("stress", "Stress", "Gemiddelde stress", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
                 ("mood", "Mood", "Gemiddelde mood", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
-                ("avg_rpe", "Weighted RPE", "Gewogen gemiddelde RPE", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
-                ("rpe_load", "RPE Load", "Totale duration x RPE", MVV_RED_DEEP, _format_int, ":,.0f", None),
+                ("avg_rpe", "Avg RPE", "Gemiddelde RPE", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
             ]
             prefix = "Weekly" if scope_mode == "Year" else "Daily"
             for idx in range(0, len(monitoring_specs), 2):
@@ -1299,7 +1297,6 @@ def main() -> None:
                         ("mood", "Mood", _format_decimal),
                         ("readiness_score", "Readiness", _format_decimal),
                         ("avg_rpe", "Avg RPE", _format_decimal),
-                        ("rpe_load", "RPE Load", _format_int),
                     ],
                 ),
                 "Alle wellness-parameters, readiness en RPE door de tijd",
