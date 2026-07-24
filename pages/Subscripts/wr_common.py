@@ -160,6 +160,7 @@ def create_mvv_bar_chart(
     x_tick_angle: int = -35,
 ) -> go.Figure:
     plot_df = df.copy()
+    has_title = bool(str(title).strip())
 
     if plot_df.empty:
         return go.Figure()
@@ -300,15 +301,19 @@ def create_mvv_bar_chart(
         yaxis_cfg["range"] = [0, y_max * 1.22 if y_max > 0 else 10]
 
     fig.update_layout(
-        title=dict(
-            text=title,
-            font=dict(
-                family="DM Sans",
-                size=20,
-                color=MVV_COLORS["text_primary"],
-            ),
-            x=0.02,
-            xanchor="left",
+        title=(
+            dict(
+                text=title,
+                font=dict(
+                    family="DM Sans",
+                    size=20,
+                    color=MVV_COLORS["text_primary"],
+                ),
+                x=0.02,
+                xanchor="left",
+            )
+            if has_title
+            else None
         ),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.015)",
@@ -326,7 +331,7 @@ def create_mvv_bar_chart(
         ),
         yaxis=yaxis_cfg,
         bargap=0.22,
-        margin=dict(l=40, r=20, t=80, b=130),
+        margin=dict(l=40, r=20, t=80 if has_title else 28, b=130),
         showlegend=False,
         height=chart_height,
         hovermode="closest",
