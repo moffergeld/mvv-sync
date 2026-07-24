@@ -25,7 +25,10 @@
 
 from __future__ import annotations
 
+import html
+import inspect
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
@@ -68,6 +71,8 @@ SIDEBAR_BETA_PAGE_LINKS = [
     ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
 ]
 LOGIN_PAGE_PATH = "app.py"
+APP_ROOT_PATH = Path(__file__).resolve().parent
+ROLES_FILE_PATH = Path(__file__).resolve()
 
 
 def normalize_role(v: Any) -> str:
@@ -85,6 +90,28 @@ def normalize_role(v: Any) -> str:
 def _format_role_label(v: Any) -> str:
     role = normalize_role(v)
     return role.replace("_", " ").title()
+
+
+def _normalize_page_path(page_path: str) -> str:
+    return str(page_path or "").replace("\\", "/").strip()
+
+
+def _detect_current_page_path() -> Optional[str]:
+    try:
+        for frame_info in inspect.stack():
+            frame_path = Path(frame_info.filename).resolve()
+            if frame_path == ROLES_FILE_PATH:
+                continue
+            try:
+                rel_path = frame_path.relative_to(APP_ROOT_PATH)
+            except ValueError:
+                continue
+            normalized = _normalize_page_path(str(rel_path))
+            if normalized == "app.py" or normalized.startswith("pages/"):
+                return normalized
+    except Exception:
+        return None
+    return None
 
 
 # ============================================================
@@ -213,6 +240,20 @@ def _render_sidebar_css() -> None:
           border-radius: 8px !important;
         }
 
+        [data-testid="stSidebar"] .mvv-sidebar-current-link {
+          display: block;
+          width: 100%;
+          padding: 0.45rem 0.75rem;
+          margin-bottom: 0.15rem;
+          border-radius: 8px;
+          background: rgba(53, 72, 116, 0.58);
+          color: rgba(255,255,255,0.96);
+          font-size: 0.98rem;
+          font-weight: 600;
+          line-height: 1.35;
+          box-sizing: border-box;
+        }
+
         [data-testid="stSidebar"] .mvv-sidebar-account-copy {
           color: rgba(255,255,255,0.76);
           font-size: 0.84rem;
@@ -231,16 +272,29 @@ def _render_sidebar_css() -> None:
     )
 
 
+def _render_sidebar_page_item(page_path: str, label: str, current_page_path: Optional[str]) -> None:
+    normalized_page_path = _normalize_page_path(page_path)
+    if current_page_path == normalized_page_path:
+        st.markdown(
+            f'<div class="mvv-sidebar-current-link">{html.escape(label)}</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    st.page_link(normalized_page_path, label=label)
+
+
 def render_sidebar_navigation(profile: Optional[Dict[str, Any]] = None) -> None:
     _render_sidebar_css()
+    current_page_path = _detect_current_page_path()
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-nav-label">Navigatie</div>', unsafe_allow_html=True)
         for page_path, label in SIDEBAR_PAGE_LINKS:
-            st.page_link(page_path, label=label)
+            _render_sidebar_page_item(page_path, label, current_page_path)
 
 
 def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: bool = False) -> None:
     resolved_profile = profile or {}
+    current_page_path = _detect_current_page_path()
     email = str(
         st.session_state.get("user_email")
         or resolved_profile.get("email")
@@ -253,7 +307,7 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
         if SIDEBAR_BETA_PAGE_LINKS:
             with st.expander("Beta pagina's", expanded=False):
                 for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
-                    st.page_link(page_path, label=label)
+                    _render_sidebar_page_item(page_path, label, current_page_path)
 
         st.markdown('<div class="mvv-sidebar-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="mvv-sidebar-nav-label">Account</div>', unsafe_allow_html=True)
