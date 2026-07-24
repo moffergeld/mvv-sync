@@ -158,6 +158,7 @@ def create_mvv_bar_chart(
     range_max_col: Optional[str] = None,
     height_override: Optional[int] = None,
     x_tick_angle: int = -35,
+    show_all_x_labels: bool = False,
 ) -> go.Figure:
     plot_df = df.copy()
     has_title = bool(str(title).strip())
@@ -324,6 +325,15 @@ def create_mvv_bar_chart(
         uniformtext_minsize=10,
         uniformtext_mode="hide",
     )
+
+    if show_all_x_labels:
+        layout_kwargs["xaxis"].update(
+            dict(
+                tickmode="array",
+                tickvals=plot_df[x_col].tolist(),
+                ticktext=plot_df[x_col].tolist(),
+            )
+        )
 
     if has_title:
         layout_kwargs["title"] = dict(
