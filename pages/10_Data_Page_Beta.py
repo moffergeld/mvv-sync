@@ -282,11 +282,12 @@ def main() -> None:
           </div>
           <div class="data-beta-copy">
             Centrale data-ingang voor de performance-omgeving. Kies hier direct tussen Session Load,
-            ACWR, Fitness-Fatigue-Performance en Wellness/RPE zonder extra losse hoofdpagina's.
+            ACWR, Fitness-Fatigue-Performance, Wellness/RPE en de positionele benchmarks.
           </div>
           <div class="data-beta-pill-row">
             <span class="data-beta-pill">Session Load, ACWR en FFP openen als eigen routes</span>
             <span class="data-beta-pill">Wellness / RPE blijft direct beschikbaar</span>
+            <span class="data-beta-pill">Benchmarks per positie direct beschikbaar</span>
           </div>
         </div>
         <div class="data-beta-section-head">
@@ -294,7 +295,7 @@ def main() -> None:
             <div class="data-beta-section-kicker">Modules</div>
             <div class="data-beta-section-title">Kies welke data-omgeving je wilt openen</div>
           </div>
-          <div class="data-beta-section-note">4 modules direct beschikbaar</div>
+          <div class="data-beta-section-note">5 modules direct beschikbaar</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -332,7 +333,7 @@ def main() -> None:
             target_page="pages/13_FFP_Page_Beta.py",
         )
 
-    row_two = st.columns([1.2, 0.8], gap="large")
+    row_two = st.columns(2, gap="large")
     with row_two[0]:
         render_tile(
             key="data_beta_wr",
@@ -344,7 +345,15 @@ def main() -> None:
             target_page="pages/04_Wellness_&_RPE_Overview.py",
         )
     with row_two[1]:
-        st.empty()
+        render_tile(
+            key="data_beta_benchmarks",
+            kicker="Reference",
+            title="Benchmarks",
+            copy="Open de positionele benchmarkkaarten voor KKD, Eredivisie en het verschil tussen beide lagen.",
+            meta="Route voor vaste referentiewaardes per positie en per 90 minuten",
+            button_label="Open Benchmarks",
+            target_page="pages/18_Benchmarks_Page.py",
+        )
 
     render_sidebar_footer(profile)
 
