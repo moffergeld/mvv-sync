@@ -17,6 +17,8 @@ from pages.Subscripts.wr_common import (
     fetch_rpe_headers_date_cached,
 )
 
+DAY_CHART_HEIGHT = 520
+
 
 def _notice_asrm(df: pd.DataFrame, param_label: str, param_key: str) -> None:
     red = df.loc[df[param_key] >= ASRM_RED_THRESHOLD, ["Player", param_key]].dropna()
@@ -57,6 +59,7 @@ def _render_asrm_metric_chart(asrm: pd.DataFrame, param_label: str, param_key: s
         title=f"{param_label} (0-10)",
         show_zones=True,
         y_range=(0, 10),
+        height_override=DAY_CHART_HEIGHT,
     )
     st.plotly_chart(
         fig,
@@ -132,6 +135,7 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
                 y_range=(0, 10) if param_key == "avg_rpe" else None,
                 range_min_col="min_rpe" if param_key == "avg_rpe" else None,
                 range_max_col="max_rpe" if param_key == "avg_rpe" else None,
+                height_override=DAY_CHART_HEIGHT,
             )
             st.plotly_chart(
                 fig,

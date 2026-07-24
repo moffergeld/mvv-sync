@@ -156,6 +156,7 @@ def create_mvv_bar_chart(
     y_range: Optional[Tuple[float, float]] = (0, 10),
     range_min_col: Optional[str] = None,
     range_max_col: Optional[str] = None,
+    height_override: Optional[int] = None,
 ) -> go.Figure:
     plot_df = df.copy()
 
@@ -170,6 +171,7 @@ def create_mvv_bar_chart(
 
     n_bars = len(plot_df)
     dynamic_height = max(460, min(760, 360 + (n_bars * 22)))
+    chart_height = int(height_override) if height_override is not None else dynamic_height
 
     if show_zones:
         bar_colors = _zone_bar_colors(plot_df[y_col])
@@ -325,7 +327,7 @@ def create_mvv_bar_chart(
         bargap=0.22,
         margin=dict(l=40, r=20, t=80, b=130),
         showlegend=False,
-        height=dynamic_height,
+        height=chart_height,
         hovermode="closest",
         uniformtext_minsize=10,
         uniformtext_mode="hide",
