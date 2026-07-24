@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
@@ -22,29 +23,77 @@ apply_streamlit_chrome()
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BENCHMARKS_DIR = ROOT_DIR / "Assets" / "Benchmarks"
 BENCHMARKS_PDF = BENCHMARKS_DIR / "Positional_Benchmarks_MVV.pdf"
-BENCHMARK_IMAGES = [
-    (
-        "KKD",
-        "Keuken Kampioen Divisie 2024/2025",
-        "10 posities, per 90 minuten",
-        BENCHMARKS_DIR / "benchmarks_kkd.png",
-    ),
-    (
-        "Eredivisie",
-        "Dutch Eredivisie 2025/2026",
-        "13 posities, per 90 minuten",
-        BENCHMARKS_DIR / "benchmarks_eredivisie.png",
-    ),
-    (
-        "Vergelijking",
-        "Eredivisie minus KKD",
-        "Alleen overlappende posities",
-        BENCHMARKS_DIR / "benchmarks_vergelijking.png",
-    ),
-]
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
+
+TABLE_COLUMNS = [
+    "Positie",
+    "Totale afstand (m)",
+    "HI afstand >20.0 (m)",
+    "Sprintafstand >25.0 (m)",
+    "Runs count >15.0 (#)",
+    "Sprint count >25.0 (#)",
+    "Tot. dist. (m/min)",
+    "Intensiteit (%)",
+]
+
+KKD_BENCHMARKS = pd.DataFrame(
+    [
+        ["AM", "12.561", "1.058", "218", "46,4", "10,6", "132", "8,4%"],
+        ["CB", "10.913", "651", "149", "29,6", "7,3", "115", "6,0%"],
+        ["CF", "11.720", "1.087", "278", "44,6", "13,2", "123", "9,3%"],
+        ["CM", "12.478", "948", "179", "43,2", "9,0", "131", "7,6%"],
+        ["DM", "12.282", "845", "158", "39,1", "7,9", "129", "6,9%"],
+        ["GK", "5.973", "39", "6", "2,9", "0,3", "63", "0,7%"],
+        ["LB", "11.309", "973", "273", "37,7", "12,2", "119", "8,6%"],
+        ["LW", "11.602", "1.126", "318", "43,1", "14,1", "122", "9,7%"],
+        ["RB", "11.488", "1.000", "283", "38,6", "12,4", "121", "8,7%"],
+        ["RW", "11.659", "1.171", "345", "44,3", "15,1", "123", "10,0%"],
+    ],
+    columns=TABLE_COLUMNS,
+)
+
+EREDIVISIE_BENCHMARKS = pd.DataFrame(
+    [
+        ["AM", "12.139", "1.019", "202", "38,1", "9,0", "128", "8,4%"],
+        ["CB", "10.579", "615", "138", "22,6", "5,9", "111", "5,8%"],
+        ["CF", "11.193", "992", "235", "35,1", "10,0", "118", "8,9%"],
+        ["CM", "11.700", "970", "215", "34,2", "9,1", "123", "8,3%"],
+        ["DEF", "9.931", "635", "183", "19,3", "6,3", "105", "6,4%"],
+        ["DM", "11.912", "882", "171", "33,7", "7,6", "125", "7,4%"],
+        ["FOR", "10.931", "1.225", "352", "37,0", "14,8", "115", "11,2%"],
+        ["GK", "5.436", "25", "3", "1,2", "0,1", "57", "0,5%"],
+        ["LB", "11.029", "990", "277", "30,9", "10,9", "116", "9,0%"],
+        ["LW", "11.415", "1.120", "308", "36,0", "11,9", "120", "9,8%"],
+        ["MID", "11.201", "1.032", "263", "33,6", "9,2", "118", "9,2%"],
+        ["RB", "11.203", "981", "274", "30,5", "10,7", "118", "8,8%"],
+        ["RW", "11.463", "1.143", "309", "36,7", "12,2", "121", "10,0%"],
+    ],
+    columns=TABLE_COLUMNS,
+)
+
+COMPARISON_BENCHMARKS = pd.DataFrame(
+    [
+        ["AM", "-422", "-39", "-16", "-8,3", "-1,6", "-4", "0,0%"],
+        ["CB", "-334", "-36", "-11", "-7,0", "-1,4", "-4", "-0,2%"],
+        ["CF", "-527", "-95", "-43", "-9,5", "-3,2", "-5", "-0,4%"],
+        ["CM", "-778", "+22", "+36", "-9,0", "+0,1", "-8", "+0,7%"],
+        ["DM", "-370", "+37", "+13", "-5,4", "-0,3", "-4", "+0,5%"],
+        ["GK", "-537", "-14", "-3", "-1,7", "-0,2", "-6", "-0,2%"],
+        ["LB", "-280", "+17", "+4", "-6,8", "-1,3", "-3", "+0,4%"],
+        ["LW", "-187", "-6", "-10", "-7,1", "-2,2", "-2", "+0,1%"],
+        ["RB", "-285", "-19", "-9", "-8,1", "-1,7", "-3", "+0,1%"],
+        ["RW", "-196", "-28", "-36", "-7,6", "-2,9", "-2", "0,0%"],
+    ],
+    columns=TABLE_COLUMNS,
+)
+
+BENCHMARK_TABLES = [
+    ("KKD", "Keuken Kampioen Divisie 2024/2025", "10 posities, per 90 minuten", KKD_BENCHMARKS),
+    ("Eredivisie", "Dutch Eredivisie 2025/2026", "13 posities, per 90 minuten", EREDIVISIE_BENCHMARKS),
+    ("Vergelijking", "Eredivisie minus KKD", "Alleen overlappende posities", COMPARISON_BENCHMARKS),
+]
 
 
 @st.cache_data(show_spinner=False)
@@ -181,6 +230,12 @@ def render_css() -> None:
           margin-bottom: 0.8rem;
         }
 
+        .bench-table-note {
+          color: rgba(255,255,255,0.66);
+          font-size: 0.8rem;
+          margin: 0.75rem 0 0 0;
+        }
+
         .bench-download-card {
           border-radius: 12px;
           border: 1px solid rgba(234, 51, 81, 0.16);
@@ -301,8 +356,8 @@ def main() -> None:
 
     info_col, download_col = st.columns([0.72, 0.28], gap="large")
     with info_col:
-        tabs = st.tabs([item[0] for item in BENCHMARK_IMAGES])
-        for tab, (_, title, note, image_path) in zip(tabs, BENCHMARK_IMAGES):
+        tabs = st.tabs([item[0] for item in BENCHMARK_TABLES])
+        for tab, (_, title, note, table_df) in zip(tabs, BENCHMARK_TABLES):
             with tab:
                 st.markdown(
                     f"""
@@ -314,10 +369,11 @@ def main() -> None:
                     """,
                     unsafe_allow_html=True,
                 )
-                if image_path.exists():
-                    st.image(str(image_path), use_container_width=True)
-                else:
-                    st.warning(f"Afbeelding ontbreekt: {image_path.name}")
+                st.dataframe(table_df, use_container_width=True, hide_index=True)
+                st.markdown(
+                    '<div class="bench-table-note">Waardes per 90 minuten. Afstanden in meters, totale afstand in m/min en intensiteit in %.</div>',
+                    unsafe_allow_html=True,
+                )
     with download_col:
         st.markdown(
             """
