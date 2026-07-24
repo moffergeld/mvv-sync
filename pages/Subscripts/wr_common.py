@@ -157,6 +157,7 @@ def create_mvv_bar_chart(
     range_min_col: Optional[str] = None,
     range_max_col: Optional[str] = None,
     height_override: Optional[int] = None,
+    x_tick_angle: int = -35,
 ) -> go.Figure:
     plot_df = df.copy()
 
@@ -318,7 +319,7 @@ def create_mvv_bar_chart(
         ),
         xaxis=dict(
             showgrid=False,
-            tickangle=-35,
+            tickangle=x_tick_angle,
             tickfont=dict(color=MVV_COLORS["text_primary"], size=11),
             automargin=True,
             fixedrange=True,
