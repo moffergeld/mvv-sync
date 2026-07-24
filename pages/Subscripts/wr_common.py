@@ -300,21 +300,7 @@ def create_mvv_bar_chart(
             y_max = float(plot_df[y_col].max()) if not plot_df.empty else 10
         yaxis_cfg["range"] = [0, y_max * 1.22 if y_max > 0 else 10]
 
-    fig.update_layout(
-        title=(
-            dict(
-                text=title,
-                font=dict(
-                    family="DM Sans",
-                    size=20,
-                    color=MVV_COLORS["text_primary"],
-                ),
-                x=0.02,
-                xanchor="left",
-            )
-            if has_title
-            else None
-        ),
+    layout_kwargs = dict(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.015)",
         font=dict(
@@ -338,6 +324,20 @@ def create_mvv_bar_chart(
         uniformtext_minsize=10,
         uniformtext_mode="hide",
     )
+
+    if has_title:
+        layout_kwargs["title"] = dict(
+            text=title,
+            font=dict(
+                family="DM Sans",
+                size=20,
+                color=MVV_COLORS["text_primary"],
+            ),
+            x=0.02,
+            xanchor="left",
+        )
+
+    fig.update_layout(**layout_kwargs)
 
     return fig
 
