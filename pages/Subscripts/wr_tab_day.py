@@ -95,7 +95,7 @@ def render_wellness_rpe_tab_day(sb, sb_url_key: str, pid_to_name: Dict[str, str]
                 _render_asrm_metric_chart(asrm, param_label, param_key)
 
         st.markdown('<div class="mvv-section-label">Mental</div>', unsafe_allow_html=True)
-        mental_cols = st.columns(3, gap="large")
+        mental_cols = st.columns(3, gap="small")
         for col, (param_label, param_key) in zip(mental_cols, mental_params):
             with col:
                 _render_asrm_metric_chart(asrm, param_label, param_key)
