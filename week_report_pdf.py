@@ -753,59 +753,74 @@ def build_week_report_pdf_bytes(
 
     if isinstance(monitoring_day_table, pd.DataFrame) and not monitoring_day_table.empty:
         monitoring_labels = [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()]
-        monitoring_drawings = [
-            build_grouped_vertical_error_chart_drawing(
-                "Physical Wellness +/- SD",
-                monitoring_labels,
-                [
-                    _series_to_floats(monitoring_day_table["muscle_soreness"]),
-                    _series_to_floats(monitoring_day_table["fatigue"]),
-                ],
-                [
-                    _series_to_floats(monitoring_day_table.get("muscle_soreness_std")),
-                    _series_to_floats(monitoring_day_table.get("fatigue_std")),
-                ],
-                ["#6E1222", "#EA3351"],
-                ["Muscle Soreness", "Fatigue"],
-                width=doc.width,
-                height=232,
-                y_max=10,
-            ),
-            build_grouped_vertical_error_chart_drawing(
-                "Mental Wellness +/- SD",
-                monitoring_labels,
-                [
-                    _series_to_floats(monitoring_day_table["sleep_quality"]),
-                    _series_to_floats(monitoring_day_table["stress"]),
-                    _series_to_floats(monitoring_day_table["mood"]),
-                ],
-                [
-                    _series_to_floats(monitoring_day_table.get("sleep_quality_std")),
-                    _series_to_floats(monitoring_day_table.get("stress_std")),
-                    _series_to_floats(monitoring_day_table.get("mood_std")),
-                ],
-                ["#6E1222", "#EA3351", "#F59E0B"],
-                ["Sleep Quality", "Stress", "Mood"],
-                width=doc.width,
-                height=238,
-                y_max=10,
-            ),
-            build_vertical_error_chart_drawing(
-                "Daily Avg RPE +/- SD",
-                monitoring_labels,
-                _series_to_floats(monitoring_day_table["avg_rpe"]),
-                _series_to_floats(monitoring_day_table.get("avg_rpe_std")),
-                "#EA3351",
-                "Avg RPE",
-                width=doc.width,
-                height=220,
-                y_max=10,
-            ),
-        ]
+        physical_draw = build_grouped_vertical_error_chart_drawing(
+            "Physical Wellness +/- SD",
+            monitoring_labels,
+            [
+                _series_to_floats(monitoring_day_table["muscle_soreness"]),
+                _series_to_floats(monitoring_day_table["fatigue"]),
+            ],
+            [
+                _series_to_floats(monitoring_day_table.get("muscle_soreness_std")),
+                _series_to_floats(monitoring_day_table.get("fatigue_std")),
+            ],
+            ["#6E1222", "#EA3351"],
+            ["Muscle Soreness", "Fatigue"],
+            width=352,
+            height=220,
+            y_max=10,
+        )
+        mental_draw = build_grouped_vertical_error_chart_drawing(
+            "Mental Wellness +/- SD",
+            monitoring_labels,
+            [
+                _series_to_floats(monitoring_day_table["sleep_quality"]),
+                _series_to_floats(monitoring_day_table["stress"]),
+                _series_to_floats(monitoring_day_table["mood"]),
+            ],
+            [
+                _series_to_floats(monitoring_day_table.get("sleep_quality_std")),
+                _series_to_floats(monitoring_day_table.get("stress_std")),
+                _series_to_floats(monitoring_day_table.get("mood_std")),
+            ],
+            ["#6E1222", "#EA3351", "#F59E0B"],
+            ["Sleep Quality", "Stress", "Mood"],
+            width=352,
+            height=220,
+            y_max=10,
+        )
+        rpe_draw = build_vertical_error_chart_drawing(
+            "Daily Avg RPE +/- SD",
+            monitoring_labels,
+            _series_to_floats(monitoring_day_table["avg_rpe"]),
+            _series_to_floats(monitoring_day_table.get("avg_rpe_std")),
+            "#EA3351",
+            "Avg RPE",
+            width=doc.width,
+            height=220,
+            y_max=10,
+        )
         story.append(Paragraph("Monitoring Charts", section_style))
-        for drawing in monitoring_drawings:
-            story.append(drawing)
-            story.append(Spacer(1, 8))
+        monitoring_row = Table(
+            [[physical_draw, mental_draw]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
+        )
+        monitoring_row.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(monitoring_row)
+        story.append(Spacer(1, 8))
+        story.append(rpe_draw)
+        story.append(Spacer(1, 8))
 
     if isinstance(player_table, pd.DataFrame) and not player_table.empty:
         top_distance = player_table.nlargest(10, "total_distance").sort_values("total_distance", ascending=True)
