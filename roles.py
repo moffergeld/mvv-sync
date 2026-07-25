@@ -321,7 +321,7 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
                 unsafe_allow_html=True,
             )
 
-        if st.button("Logout", use_container_width=True, key="sidebar_logout_btn"):
+        if st.button("Logout", width="stretch", key="sidebar_logout_btn"):
             _sidebar_logout_action()
 
         if show_debug:

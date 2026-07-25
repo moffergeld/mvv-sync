@@ -851,7 +851,7 @@ def render_monitoring_player_table(monitoring_players: pd.DataFrame) -> None:
                 "Avg RPE",
             ]
         ].rename(columns={"player_name": "Speler"}),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -897,7 +897,7 @@ def plot_td_bar(df: pd.DataFrame, title: str) -> None:
 
     _base_plot_layout(fig, title)
     fig.update_yaxes(title_text="Meters")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
@@ -957,7 +957,7 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
     _base_plot_layout(fig, title)
     fig.update_layout(barmode="group")
     fig.update_yaxes(title_text="Meters")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 # -----------------------------
@@ -1083,35 +1083,35 @@ def render_tables_row(df_phase: pd.DataFrame) -> None:
     with tab_td:
         st.dataframe(
             _style_table(t1, abs_col=abs1, per_min_col=per1),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=_calc_height(len(t1)),
         )
     with tab_run:
         st.dataframe(
             _style_table(t2, abs_col=abs2, per_min_col=per2),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=_calc_height(len(t2)),
         )
     with tab_spr:
         st.dataframe(
             _style_table(t3, abs_col=abs3, per_min_col=per3),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=_calc_height(len(t3)),
         )
     with tab_hspr:
         st.dataframe(
             _style_table(t4, abs_col=abs4, per_min_col=per4),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=_calc_height(len(t4)),
         )
     with tab_max:
         st.dataframe(
             _style_table(t5, abs_col=abs5, per_min_col=per5),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=_calc_height(len(t5)),
         )
@@ -1225,7 +1225,7 @@ def main() -> None:
         render_reports_intro()
         back_col, _ = st.columns([0.42, 1.58], gap="large")
         with back_col:
-            if st.button("Open Reports", key="mr_back_to_reports", use_container_width=True):
+            if st.button("Open Reports", key="mr_back_to_reports", width="stretch"):
                 st.switch_page("pages/03_Reports_Page.py")
         hero_meta_l, hero_meta_r = st.columns([1.6, 1], gap="large")
         with hero_meta_l:

@@ -94,7 +94,7 @@ def tab_import_excel_main(access_token: str, name_to_id: dict) -> None:
             toast_ok(f"Preview bevestigd: parsed bestanden = {len(all_parsed)}")
             for fn, kind, dfp in all_parsed:
                 st.markdown(f"**{fn}** — {kind} — rijen: {len(dfp)}")
-                st.dataframe(dfp.head(120), use_container_width=True)
+                st.dataframe(dfp.head(120), width="stretch")
 
     all_parsed = st.session_state.get("gps_parsed_multi", [])
     if not all_parsed:

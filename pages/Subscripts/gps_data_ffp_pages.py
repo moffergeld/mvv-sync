@@ -286,7 +286,7 @@ def _plot_ffp_week(weekly_df: pd.DataFrame, metric: str, player: str):
         bargap=0.15,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
@@ -344,7 +344,7 @@ def _plot_ffp_day(daily_df: pd.DataFrame, metric: str, player: str):
         bargap=0.15,
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ------------------------------------------------------------
@@ -461,7 +461,7 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         _plot_ffp_week(time_df, metric, player)
 
         with st.expander("Data – wekelijkse waarden", expanded=False):
-            st.dataframe(time_df, use_container_width=True)
+            st.dataframe(time_df, width="stretch")
 
     else:
         time_df = _daily_load_for_player(df_summary, player, metric)
@@ -485,4 +485,4 @@ def ffp_pages_main(df_gps: pd.DataFrame):
         _plot_ffp_day(time_df, metric, player)
 
         with st.expander("Data – dagelijkse waarden", expanded=False):
-            st.dataframe(time_df, use_container_width=True)
+            st.dataframe(time_df, width="stretch")

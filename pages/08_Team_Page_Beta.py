@@ -1271,7 +1271,7 @@ def render_player_thumbnail(player: Dict[str, Any], initials_class: str = "team-
     if is_valid_image_path(photo_path):
         player_image = build_uniform_player_image(str(photo_path))
         if player_image is not None:
-            st.image(player_image, use_container_width=True)
+            st.image(player_image, width="stretch")
             return
 
     st.markdown(

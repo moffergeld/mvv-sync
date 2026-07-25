@@ -926,7 +926,7 @@ def render_panel_header(title: str, subtitle: str | None = None) -> None:
 def render_plot_panel(title: str, fig: go.Figure, subtitle: str | None = None) -> None:
     with st.container():
         render_panel_header(title, subtitle)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_html_panel(title: str, html_content: str, subtitle: str | None = None) -> None:
@@ -1157,7 +1157,7 @@ def main() -> None:
 
     action_cols = st.columns([0.42, 0.42, 1.16], gap="large")
     with action_cols[0]:
-        if st.button("Open Reports", key="player_report_back", use_container_width=True):
+        if st.button("Open Reports", key="player_report_back", width="stretch"):
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
         if pdf_bytes:
@@ -1167,7 +1167,7 @@ def main() -> None:
                 data=pdf_bytes,
                 file_name=file_name,
                 mime="application/pdf",
-                use_container_width=True,
+                width="stretch",
                 key="player_report_pdf_download",
             )
     with action_cols[2]:

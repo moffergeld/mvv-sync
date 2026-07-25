@@ -342,7 +342,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
                 _add_median_line(fig, med, f"{gname}: {med:,.0f} m".replace(",", " "))
 
     _style_fig(fig, title="Total Distance", y_title="Meters")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
@@ -386,7 +386,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
 
     fig.update_xaxes(tickvals=x, ticktext=players)
     _style_fig(fig, title="Sprint & High Sprint", y_title="Meters")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def _plot_acc_dec(df_agg: pd.DataFrame):
@@ -413,7 +413,7 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
     fig.update_xaxes(tickvals=x, ticktext=players)
     _style_fig(fig, title="Accelerations / Decelerations", y_title="Aantal (N)")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def _plot_hr_trimp(df_agg: pd.DataFrame):
@@ -466,7 +466,7 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
 
     fig.update_xaxes(tickvals=base_x, ticktext=players)
     _style_fig(fig, title="Time in HR Zone", y_title="Time in zone (min)", secondary_y_title="HR Trimp")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
 def session_load_pages_main(

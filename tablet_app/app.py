@@ -1100,13 +1100,13 @@ def render_form_nav_cards(has_wellness: bool, has_rpe: bool, active_form: str) -
     with cols[0]:
         state = "active" if active_form == "Wellness" else "inactive"
         key = f"tablet_nav_wellness_{wellness_status}_{state}"
-        if st.button("wellness", key=key, use_container_width=True):
+        if st.button("wellness", key=key, width="stretch"):
             st.session_state["tablet_active_form"] = "Wellness"
             st.rerun()
     with cols[1]:
         state = "active" if active_form == "RPE" else "inactive"
         key = f"tablet_nav_rpe_{rpe_status}_{state}"
-        if st.button("rpe", key=key, use_container_width=True):
+        if st.button("rpe", key=key, width="stretch"):
             st.session_state["tablet_active_form"] = "RPE"
             st.rerun()
 
@@ -1393,7 +1393,7 @@ def ensure_tablet_access() -> None:
 
     with st.form("tablet_unlock_form", clear_on_submit=False):
         code_value = st.text_input("Tabletcode", type="password")
-        submitted = st.form_submit_button("Open tablet", use_container_width=True)
+        submitted = st.form_submit_button("Open tablet", width="stretch")
 
     if submitted:
         if code_value.strip() == shared_code:
@@ -1729,7 +1729,7 @@ def render_player_picker(sb) -> None:
 
     with top_cols[1]:
         st.markdown('<div class="mvv-inline-control-spacer"></div>', unsafe_allow_html=True)
-        if st.button("Groeps-RPE invullen", use_container_width=True, key="tablet_open_bulk_rpe"):
+        if st.button("Groeps-RPE invullen", width="stretch", key="tablet_open_bulk_rpe"):
             clear_selected_player_state()
             st.session_state["tablet_bulk_rpe_mode"] = True
             st.rerun()
@@ -1768,7 +1768,7 @@ def render_player_picker(sb) -> None:
         next_step = _player_next_step_label(wellness_done, second_rpe_enabled, rpe1_done, rpe2_done)
         with cols[idx % 3]:
             render_player_pick_card(player_name, wellness_state, rpe_state, next_step)
-            if st.button("select_player", use_container_width=True, key=f"tablet_pick_{player_id}"):
+            if st.button("select_player", width="stretch", key=f"tablet_pick_{player_id}"):
                 st.session_state["tablet_bulk_rpe_mode"] = False
                 st.session_state["tablet_player_id"] = player_id
                 st.session_state["tablet_player_name"] = player_name
@@ -1819,7 +1819,7 @@ def render_bulk_rpe_page(sb) -> None:
         kicker=f"{CLUB_NAME} · snelle RPE",
     )
 
-    if st.button("Terug naar spelersoverzicht", use_container_width=True, key="tablet_bulk_back"):
+    if st.button("Terug naar spelersoverzicht", width="stretch", key="tablet_bulk_back"):
         st.session_state["tablet_bulk_rpe_mode"] = False
         st.rerun()
 
@@ -1849,7 +1849,7 @@ def render_bulk_rpe_page(sb) -> None:
                 )
             st.divider()
 
-        bulk_submit = st.form_submit_button("RPE voor alle zichtbare spelers opslaan", use_container_width=True)
+        bulk_submit = st.form_submit_button("RPE voor alle zichtbare spelers opslaan", width="stretch")
 
     if bulk_submit:
         try:
@@ -1968,7 +1968,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
         kicker=f"{CLUB_NAME} · speler check-in",
     )
 
-    if st.button("Terug naar overzicht", use_container_width=True, key=f"tablet_back_overview_{player_id}"):
+    if st.button("Terug naar overzicht", width="stretch", key=f"tablet_back_overview_{player_id}"):
         clear_selected_player_state(player_id)
         st.rerun()
 
@@ -2020,7 +2020,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 key=f"tablet_asrm_mood_{player_id}",
             )
 
-            asrm_submit = st.form_submit_button("Wellness opslaan", use_container_width=True)
+            asrm_submit = st.form_submit_button("Wellness opslaan", width="stretch")
 
         if asrm_submit:
             try:
@@ -2091,7 +2091,7 @@ def render_player_forms(sb, player_id: str, player_name: str) -> None:
                 key=rpe_key,
             )
 
-            rpe_submit = st.form_submit_button(f"{session_title} opslaan", use_container_width=True)
+            rpe_submit = st.form_submit_button(f"{session_title} opslaan", width="stretch")
 
         if rpe_submit:
             try:

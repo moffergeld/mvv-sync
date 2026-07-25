@@ -60,7 +60,7 @@ def tab_matches_main(access_token: str) -> None:
                 dfm = parse_matches_csv(b)
                 st.session_state["matches_preview"] = dfm
                 toast_ok(f"Preview bevestigd: {len(dfm)} rijen.")
-                st.dataframe(dfm, use_container_width=True)
+                st.dataframe(dfm, width="stretch")
             except Exception as e:
                 toast_err(str(e))
 

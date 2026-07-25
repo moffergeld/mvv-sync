@@ -490,7 +490,7 @@ def login_ui() -> None:
     with st.form("login_form", clear_on_submit=False):
         email = st.text_input("Email", key="login_email")
         password = st.text_input("Password", type="password", key="login_pw")
-        submitted = st.form_submit_button("Sign in", use_container_width=True)
+        submitted = st.form_submit_button("Sign in", width="stretch")
 
     if not submitted:
         return

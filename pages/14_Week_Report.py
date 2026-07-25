@@ -6,6 +6,7 @@ from typing import Callable
 
 import pandas as pd
 import plotly.graph_objects as go
+import report_monitoring as report_monitoring_module
 import requests
 import streamlit as st
 
@@ -16,7 +17,6 @@ from report_monitoring import (
     build_monitoring_dataset,
     build_monitoring_grouped_summary,
     build_monitoring_player_summary,
-    build_rpe_session_day_summary,
     summarize_monitoring_dataset,
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
@@ -40,6 +40,7 @@ MVV_TEXT = "#F8FAFC"
 MVV_TEXT_SOFT = "rgba(248,250,252,0.76)"
 MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
+BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 
 
 def _build_week_report_pdf_compatible(**kwargs) -> bytes:
@@ -950,7 +951,7 @@ def render_panel_header(title: str, subtitle: str | None = None) -> None:
 def render_plot_panel(title: str, fig: go.Figure, subtitle: str | None = None) -> None:
     with st.container():
         render_panel_header(title, subtitle)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_html_panel(title: str, html_content: str, subtitle: str | None = None) -> None:
@@ -1020,7 +1021,7 @@ def main() -> None:
 
         back_col, meta_col = st.columns([0.34, 1.66], gap="large")
         with back_col:
-            if st.button("Open Reports", key="week_report_back", use_container_width=True):
+            if st.button("Open Reports", key="week_report_back", width="stretch"):
                 st.switch_page("pages/03_Reports_Page.py")
         with meta_col:
             st.markdown(
@@ -1070,13 +1071,16 @@ def main() -> None:
     monitoring_summary = summarize_monitoring_dataset(monitoring_df)
     monitoring_day_table = build_monitoring_grouped_summary(monitoring_df, "day")
     monitoring_player_table = build_monitoring_player_summary(monitoring_df)
-    rpe_session_day_table = build_rpe_session_day_summary(
-        SUPABASE_URL or "default",
-        sb,
-        selected_week.date(),
-        week_end.date(),
-        player_ids=week_df["player_id"].astype(str).tolist(),
-    )
+    if callable(BUILD_RPE_SESSION_DAY_SUMMARY):
+        rpe_session_day_table = BUILD_RPE_SESSION_DAY_SUMMARY(
+            SUPABASE_URL or "default",
+            sb,
+            selected_week.date(),
+            week_end.date(),
+            player_ids=week_df["player_id"].astype(str).tolist(),
+        )
+    else:
+        rpe_session_day_table = pd.DataFrame()
 
     day_table = build_week_day_table(week_df)
     day_stats = build_week_day_stats(week_df)
@@ -1138,7 +1142,7 @@ def main() -> None:
 
     action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
     with action_cols[0]:
-        if st.button("Open Reports", key="week_report_back_bottom", use_container_width=True):
+        if st.button("Open Reports", key="week_report_back_bottom", width="stretch"):
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
         if pdf_bytes:
@@ -1147,7 +1151,7 @@ def main() -> None:
                 data=pdf_bytes,
                 file_name=_week_pdf_filename(selected_week),
                 mime="application/pdf",
-                use_container_width=True,
+                width="stretch",
                 key="week_report_pdf_download",
             )
     with action_cols[2]:

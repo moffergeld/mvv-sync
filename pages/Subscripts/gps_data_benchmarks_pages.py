@@ -419,10 +419,10 @@ def benchmarks_pages_main(
         st.metric("Top-K matches", int(top_k))
 
     st.markdown("#### Gref")
-    st.dataframe(df_gref, use_container_width=True, height=420)
+    st.dataframe(df_gref, width="stretch", height=420)
 
     st.markdown("#### Gref per minuut")
-    st.dataframe(df_gref_min, use_container_width=True, height=420)
+    st.dataframe(df_gref_min, width="stretch", height=420)
 
     st.markdown(f"#### Omgerekend naar {int(calc_minutes) if float(calc_minutes).is_integer() else calc_minutes} minuten")
-    st.dataframe(df_gref_calc, use_container_width=True, height=420)
+    st.dataframe(df_gref_calc, width="stretch", height=420)

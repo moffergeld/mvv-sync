@@ -474,7 +474,7 @@ def render_quality_tab(access_token: str) -> None:
 
         col_left, col_right = st.columns(2, gap="large")
         with col_left:
-            st.dataframe(type_summary, use_container_width=True, hide_index=True)
+            st.dataframe(type_summary, width="stretch", hide_index=True)
         with col_right:
             if multi_day_df.empty:
                 st.info("Geen dagen met meerdere Summary-sessies gevonden.")
@@ -484,13 +484,13 @@ def render_quality_tab(access_token: str) -> None:
                 )
                 st.dataframe(
                     multi_day_df.rename(columns={"aantal_sessies": "Sessies", "types": "Typen"}),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
         st.dataframe(
             recent_sessions.head(30),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=460,
         )
@@ -640,7 +640,7 @@ def render_settings_tab() -> None:
         )
         st.caption("Logaritmisch 6 weken is nu de standaard. De 4 weken-variant blijft beschikbaar als extra optie via Settings.")
 
-        save_clicked = st.form_submit_button("ACWR-instelling opslaan", use_container_width=True)
+        save_clicked = st.form_submit_button("ACWR-instelling opslaan", width="stretch")
 
     if save_clicked:
         set_acwr_mode(selected_mode)

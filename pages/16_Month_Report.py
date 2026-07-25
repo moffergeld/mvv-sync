@@ -984,7 +984,7 @@ def render_panel_header(title: str, subtitle: str | None = None) -> None:
 def render_plot_panel(title: str, fig: go.Figure, subtitle: str | None = None) -> None:
     with st.container():
         render_panel_header(title, subtitle)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_html_panel(title: str, html_content: str, subtitle: str | None = None) -> None:
@@ -1053,7 +1053,7 @@ def main() -> None:
 
         back_col, meta_col = st.columns([0.34, 1.66], gap="large")
         with back_col:
-            if st.button("Open Reports", key="month_report_back", use_container_width=True):
+            if st.button("Open Reports", key="month_report_back", width="stretch"):
                 st.switch_page("pages/03_Reports_Page.py")
         with meta_col:
             st.markdown(

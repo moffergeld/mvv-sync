@@ -369,7 +369,7 @@ def main() -> None:
                     """,
                     unsafe_allow_html=True,
                 )
-                st.dataframe(table_df, use_container_width=True, hide_index=True)
+                st.dataframe(table_df, width="stretch", hide_index=True)
                 st.markdown(
                     '<div class="bench-table-note">Waardes per 90 minuten. Afstanden in meters, totale afstand in m/min en intensiteit in %.</div>',
                     unsafe_allow_html=True,
@@ -392,7 +392,7 @@ def main() -> None:
             data=load_pdf_bytes(str(BENCHMARKS_PDF)),
             file_name="Positional_Benchmarks_MVV.pdf",
             mime="application/pdf",
-            use_container_width=True,
+            width="stretch",
             key="benchmarks_download_pdf",
         )
         st.page_link("pages/10_Data_Page_Beta.py", label="Terug naar Data")

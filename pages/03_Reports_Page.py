@@ -244,7 +244,7 @@ def render_tile(
         unsafe_allow_html=True,
     )
     st.markdown('<div class="reports-button-row">', unsafe_allow_html=True)
-    if st.button(button_label, use_container_width=True, key=key):
+    if st.button(button_label, width="stretch", key=key):
         _launch(target_page)
     st.markdown("</div></div>", unsafe_allow_html=True)
 

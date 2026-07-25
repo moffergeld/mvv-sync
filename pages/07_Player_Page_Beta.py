@@ -326,7 +326,7 @@ def render_hero(
 
     with hero_left:
         if player_image:
-            st.image(player_image, use_container_width=True)
+            st.image(player_image, width="stretch")
         elif TEAM_LOGO.exists():
             st.image(str(TEAM_LOGO), width=220)
 
@@ -405,7 +405,7 @@ def render_overview(sb, player_id: str) -> None:
                     }
                 )
         if recent_rows:
-            st.dataframe(pd.DataFrame(recent_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(recent_rows), width="stretch", hide_index=True)
         else:
             st.info("Nog geen wellnesshistorie beschikbaar.")
 
@@ -438,7 +438,7 @@ def render_overview(sb, player_id: str) -> None:
             latest_rpe["rpe"] = latest_rpe["rpe"].round(1)
             st.dataframe(
                 latest_rpe.rename(columns={"entry_date": "Date", "rpe": "RPE avg"}),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 

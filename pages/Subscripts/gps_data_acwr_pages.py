@@ -480,7 +480,7 @@ def line_chart_acwr(
         margin=dict(l=10, r=10, t=40, b=10),
         showlegend=False,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 # ------------------------------------------------------------
@@ -895,9 +895,9 @@ def acwr_pages_main(df_gps: pd.DataFrame):
 
                     b1, b2 = st.columns(2)
                     with b1:
-                        thr_calc_clicked = st.form_submit_button("Calculate", use_container_width=True)
+                        thr_calc_clicked = st.form_submit_button("Calculate", width="stretch")
                     with b2:
-                        thr_save_clicked = st.form_submit_button("Opslaan", use_container_width=True)
+                        thr_save_clicked = st.form_submit_button("Opslaan", width="stretch")
 
                 if thr_calc_clicked or thr_save_clicked:
                     if thr_low <= 0 or thr_high <= 0:
@@ -970,7 +970,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                                 "Target high": "{:.2f}",
                             }
                         ),
-                        use_container_width=True,
+                        width="stretch",
                         height=520,
                     )
 
@@ -1077,7 +1077,7 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                                         title_prefix=f"Week target (ratio {rlow:.2f}–{rhigh:.2f})",
                                         min_line=min_line,
                                     )
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, width="stretch")
 
                         st.subheader("Absolute waardes t.o.v. targets")
 
@@ -1101,4 +1101,4 @@ def acwr_pages_main(df_gps: pd.DataFrame):
                                 )
                                 .apply(highlight_remaining_to_min, subset=["Remaining to min"])
                             )
-                            st.dataframe(styled, use_container_width=True)
+                            st.dataframe(styled, width="stretch")
