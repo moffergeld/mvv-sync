@@ -504,26 +504,58 @@ def build_week_report_pdf_bytes(
         title: str,
         labels: list[str],
         values: list[float],
-        width: float = 352,
-        height: float = 220,
+        width: float = 724,
+        height: float = 240,
     ) -> Drawing:
         drawing = Drawing(width, height)
         drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
         drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+        clean_values = [max(float(value or 0), 0.0) for value in values]
+        total_value = sum(clean_values)
+        if total_value <= 0:
+            drawing.add(String(16, height - 46, "Geen zoneverdeling beschikbaar", fontName="Helvetica", fontSize=9, fillColor=colors.HexColor("#5B6576")))
+            return drawing
+
         pie = Pie()
-        pie.x = 22
+        pie.x = 24
         pie.y = 26
-        pie.width = 132
-        pie.height = 132
-        pie.data = [max(float(value or 0), 0.0) for value in values]
-        pie.labels = [str(value) for value in labels]
-        pie.sideLabels = True
+        pie.width = 180
+        pie.height = 180
+        pie.data = clean_values
+        pie.labels = [""] * len(labels)
+        pie.sideLabels = False
         pie.strokeColor = colors.HexColor("#FFFFFF")
-        palette = ["#F5D2D8", "#F1A4B5", "#E97A93", "#D92B4D", "#6E1222"]
+        palette = ["#F5D2D8", "#F1A4B5", "#E97A93", "#D92B4D", "#A4102B", "#6E1222"]
         for index, fill_hex in enumerate(palette[: len(pie.data)]):
             pie.slices[index].fillColor = colors.HexColor(fill_hex)
             pie.slices[index].strokeColor = colors.white
         drawing.add(pie)
+
+        legend_x = 246
+        legend_top = height - 42
+        drawing.add(String(legend_x, legend_top, "Zone", fontName="Helvetica-Bold", fontSize=8, fillColor=colors.HexColor("#4C5668")))
+        drawing.add(String(legend_x + 180, legend_top, "Distance", fontName="Helvetica-Bold", fontSize=8, fillColor=colors.HexColor("#4C5668")))
+        drawing.add(String(width - 58, legend_top, "Share", fontName="Helvetica-Bold", fontSize=8, fillColor=colors.HexColor("#4C5668"), textAnchor="end"))
+
+        row_y = legend_top - 18
+        for index, (label, value) in enumerate(zip(labels, clean_values, strict=False)):
+            fill_hex = palette[index % len(palette)]
+            share_pct = (value / total_value) * 100 if total_value > 0 else 0.0
+            drawing.add(Rect(legend_x, row_y - 5, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 14, row_y, str(label), fontName="Helvetica", fontSize=8.2, fillColor=colors.HexColor("#182134")))
+            drawing.add(String(legend_x + 180, row_y, _fmt_distance(value), fontName="Helvetica", fontSize=8.2, fillColor=colors.HexColor("#182134")))
+            drawing.add(
+                String(
+                    width - 58,
+                    row_y,
+                    f"{_fmt_dec(share_pct, 1)}%",
+                    fontName="Helvetica-Bold",
+                    fontSize=8.2,
+                    fillColor=colors.HexColor("#182134"),
+                    textAnchor="end",
+                )
+            )
+            row_y -= 18
         return drawing
 
     def build_horizontal_bar_chart_drawing(
@@ -624,51 +656,15 @@ def build_week_report_pdf_bytes(
         )
     )
 
-    if isinstance(day_table, pd.DataFrame) and not day_table.empty:
-        labels = [str(value) for value in day_table["label"].fillna("--").tolist()]
-        overview_row = Table(
-            [[
-                build_bar_chart_drawing(
-                    "Daily Team Distance",
-                    labels,
-                    [_series_to_floats(day_table["total_distance"])],
-                    ["#6E1222"],
-                    ["Total Distance"],
-                ),
-                build_bar_chart_drawing(
-                    "Daily Team HSR / HSD",
-                    labels,
-                    [_series_to_floats(day_table["hsr_hsd"])],
-                    ["#EA3351"],
-                    ["HSR / HSD"],
-                ),
-            ]],
-            colWidths=[doc.width / 2.0, doc.width / 2.0],
-            hAlign="LEFT",
-        )
-        overview_row.setStyle(
-            TableStyle(
-                [
-                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 0),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
-        story.append(Paragraph("Overview Charts", section_style))
-        story.append(overview_row)
-        story.append(Spacer(1, 8))
-
     if isinstance(zone_df, pd.DataFrame) and not zone_df.empty:
+        story.append(Paragraph("Distance Zone Profile", section_style))
         story.append(
             build_pie_chart_drawing(
                 "Distance Zone Share",
                 [str(value) for value in zone_df["zone"].fillna("--").tolist()],
                 _series_to_floats(zone_df["value"]),
-                width=352,
-                height=220,
+                width=doc.width,
+                height=238,
             )
         )
         story.append(Spacer(1, 8))
