@@ -19,6 +19,7 @@ from report_monitoring import (
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
+from week_report_pdf import build_week_report_pdf_bytes
 
 
 st.set_page_config(page_title="Week Report", layout="wide", initial_sidebar_state="expanded")
@@ -211,7 +212,8 @@ def render_css() -> None:
           color: rgba(255,255,255,0.92);
         }
 
-        [class*="st-key-week_report_back"] button {
+        [class*="st-key-week_report_back"] button,
+        [class*="st-key-week_report_pdf_download"] button {
           min-height: 2.65rem !important;
           border-radius: 10px !important;
           border: 1px solid rgba(234, 51, 81, 0.22) !important;
@@ -221,7 +223,8 @@ def render_css() -> None:
           box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18) !important;
         }
 
-        [class*="st-key-week_report_back"] button:hover {
+        [class*="st-key-week_report_back"] button:hover,
+        [class*="st-key-week_report_pdf_download"] button:hover {
           border-color: rgba(234, 51, 81, 0.36) !important;
           color: #ffffff !important;
         }
@@ -460,6 +463,11 @@ def _format_signed_pct(value: object) -> str:
         return "--"
     prefix = "+" if float(value) >= 0 else ""
     return f"{prefix}{_format_decimal(value, 1)}%"
+
+
+def _week_pdf_filename(week_start: pd.Timestamp) -> str:
+    iso = week_start.isocalendar()
+    return f"week_report_{iso.year}_W{int(iso.week):02d}.pdf"
 
 
 @st.cache_data(show_spinner=False, ttl=180)
@@ -1091,6 +1099,42 @@ def main() -> None:
         "</div>",
         unsafe_allow_html=True,
     )
+
+    pdf_error = None
+    pdf_bytes: bytes | None = None
+    try:
+        selected_iso = selected_week.isocalendar()
+        pdf_bytes = build_week_report_pdf_bytes(
+            week_label=_week_label(selected_week),
+            iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
+            summary=summary,
+            monitoring_summary=monitoring_summary,
+            day_table=day_table,
+            type_table=type_table,
+            player_table=player_table,
+            monitoring_day_table=monitoring_day_table,
+            notes=notes,
+        )
+    except Exception as exc:
+        pdf_error = str(exc)
+
+    action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
+    with action_cols[0]:
+        if st.button("Open Reports", key="week_report_back_bottom", use_container_width=True):
+            st.switch_page("pages/03_Reports_Page.py")
+    with action_cols[1]:
+        if pdf_bytes:
+            st.download_button(
+                "Download PDF",
+                data=pdf_bytes,
+                file_name=_week_pdf_filename(selected_week),
+                mime="application/pdf",
+                use_container_width=True,
+                key="week_report_pdf_download",
+            )
+    with action_cols[2]:
+        if pdf_error:
+            st.warning(f"PDF-export is nog niet beschikbaar: {pdf_error}")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 

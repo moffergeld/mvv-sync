@@ -1,0 +1,584 @@
+from __future__ import annotations
+
+from io import BytesIO
+from typing import Iterable
+
+import pandas as pd
+
+
+def _fmt_int(value: object) -> str:
+    if pd.isna(value):
+        return "--"
+    return f"{int(round(float(value))):,}".replace(",", ".")
+
+
+def _fmt_dec(value: object, decimals: int = 1) -> str:
+    if pd.isna(value):
+        return "--"
+    formatted = f"{float(value):,.{decimals}f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _fmt_distance(value: object) -> str:
+    base = _fmt_int(value)
+    return "--" if base == "--" else f"{base} m"
+
+
+def _fmt_speed(value: object) -> str:
+    base = _fmt_dec(value, 1)
+    return "--" if base == "--" else f"{base} km/h"
+
+
+def build_week_report_pdf_bytes(
+    *,
+    week_label: str,
+    iso_label: str,
+    summary: dict[str, object],
+    monitoring_summary: dict[str, object],
+    day_table: pd.DataFrame,
+    type_table: pd.DataFrame,
+    player_table: pd.DataFrame,
+    monitoring_day_table: pd.DataFrame,
+    notes: Iterable[str],
+) -> bytes:
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.linecharts import HorizontalLineChart
+    from reportlab.graphics.shapes import Drawing, Rect, String
+    from reportlab.graphics.widgets.markers import makeMarker
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "week_title",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=24,
+        textColor=colors.HexColor("#0B1020"),
+        spaceAfter=2,
+    )
+    kicker_style = ParagraphStyle(
+        "week_kicker",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        textColor=colors.HexColor("#C8102E"),
+        leading=11,
+        spaceAfter=3,
+    )
+    hero_body_style = ParagraphStyle(
+        "week_hero_body",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9.2,
+        leading=12,
+        textColor=colors.HexColor("#4C5668"),
+        alignment=TA_LEFT,
+    )
+    section_style = ParagraphStyle(
+        "week_section",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        textColor=colors.HexColor("#0B1020"),
+        spaceAfter=6,
+        spaceBefore=8,
+    )
+    body_style = ParagraphStyle(
+        "week_body",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#182134"),
+    )
+    card_label_style = ParagraphStyle(
+        "week_card_label",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=7.2,
+        leading=9,
+        textColor=colors.HexColor("#6A768B"),
+        alignment=TA_LEFT,
+    )
+    card_value_style = ParagraphStyle(
+        "week_card_value",
+        parent=styles["BodyText"],
+        fontName="Helvetica-Bold",
+        fontSize=15.4,
+        leading=17,
+        textColor=colors.HexColor("#0B1020"),
+        alignment=TA_LEFT,
+    )
+    card_foot_style = ParagraphStyle(
+        "week_card_foot",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=7.1,
+        leading=9,
+        textColor=colors.HexColor("#7A8598"),
+        alignment=TA_LEFT,
+    )
+    note_style = ParagraphStyle(
+        "week_note",
+        parent=styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#182134"),
+        leftIndent=4,
+    )
+
+    card_width = doc.width / 4.0
+
+    def build_metric_card(label: str, value: str, foot: str, background_hex: str, border_hex: str) -> Table:
+        card = Table(
+            [
+                [Paragraph(label.upper(), card_label_style)],
+                [Paragraph(value, card_value_style)],
+                [Paragraph(foot, card_foot_style)],
+            ],
+            colWidths=[card_width - 10],
+        )
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(background_hex)),
+                    ("BOX", (0, 0), (-1, -1), 0.9, colors.HexColor(border_hex)),
+                    ("LINEABOVE", (0, 0), (-1, 0), 1.3, colors.HexColor(border_hex)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return card
+
+    def build_card_grid(cards: list[Table], columns: int = 4) -> Table:
+        rows: list[list[object]] = []
+        for index in range(0, len(cards), columns):
+            row: list[object] = list(cards[index : index + columns])
+            while len(row) < columns:
+                row.append("")
+            rows.append(row)
+        grid = Table(rows, colWidths=[doc.width / columns] * columns, hAlign="LEFT")
+        grid.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        return grid
+
+    def build_bar_chart_drawing(
+        title: str,
+        labels: list[str],
+        data_series: list[list[float]],
+        series_colors: list[str],
+        legend_labels: list[str],
+        width: float = 352,
+        height: float = 220,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+
+        chart = VerticalBarChart()
+        chart.x = 32
+        chart.y = 44
+        chart.height = height - 82
+        chart.width = width - 56
+        chart.data = data_series
+        chart.strokeColor = colors.HexColor("#94A3B8")
+        chart.valueAxis.valueMin = 0
+        peak = max((max(series) if series else 0) for series in data_series)
+        chart.valueAxis.valueMax = max(1, peak * 1.18)
+        chart.valueAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#E5EAF1")
+        chart.valueAxis.gridStrokeDashArray = [2, 2]
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.categoryNames = labels
+        chart.categoryAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.categoryAxis.labels.boxAnchor = "ne"
+        chart.categoryAxis.labels.angle = 30
+        chart.categoryAxis.labels.dx = -4
+        chart.categoryAxis.labels.dy = -2
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 7
+        chart.barSpacing = 3
+        chart.groupSpacing = 9
+        chart.barWidth = 8 if len(data_series) > 1 else 14
+
+        for index, fill_hex in enumerate(series_colors):
+            chart.bars[index].fillColor = colors.HexColor(fill_hex)
+            chart.bars[index].strokeColor = colors.HexColor(fill_hex)
+
+        drawing.add(chart)
+
+        legend_y = 16
+        legend_x = 16
+        for fill_hex, legend_label in zip(series_colors, legend_labels):
+            drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
+            legend_x += 96
+        return drawing
+
+    def build_line_chart_drawing(
+        title: str,
+        labels: list[str],
+        data_series: list[list[float]],
+        series_colors: list[str],
+        legend_labels: list[str],
+        width: float = 724,
+        height: float = 230,
+        y_max: float = 10,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+
+        chart = HorizontalLineChart()
+        chart.x = 32
+        chart.y = 42
+        chart.height = height - 80
+        chart.width = width - 56
+        chart.data = data_series
+        chart.joinedLines = 1
+        chart.valueAxis.valueMin = 0
+        chart.valueAxis.valueMax = y_max
+        chart.valueAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#E5EAF1")
+        chart.valueAxis.gridStrokeDashArray = [2, 2]
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.categoryNames = labels
+        chart.categoryAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 7
+        chart.categoryAxis.labels.angle = 25
+        chart.categoryAxis.labels.boxAnchor = "ne"
+        chart.categoryAxis.labels.dx = -2
+
+        for index, fill_hex in enumerate(series_colors):
+            chart.lines[index].strokeColor = colors.HexColor(fill_hex)
+            chart.lines[index].strokeWidth = 2
+            chart.lines[index].symbol = makeMarker("FilledCircle")
+
+        drawing.add(chart)
+
+        legend_y = 16
+        legend_x = 16
+        for fill_hex, legend_label in zip(series_colors, legend_labels):
+            drawing.add(Rect(legend_x, legend_y, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 12, legend_y + 1, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
+            legend_x += 96
+        return drawing
+
+    def build_standard_table(rows: list[list[object]], col_widths: list[float], header_hex: str, body_hex: str, alt_hex: str) -> Table:
+        table = Table(rows, colWidths=col_widths, repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_hex)),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor(body_hex)),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor(body_hex), colors.HexColor(alt_hex)]),
+                    ("TEXTCOLOR", (0, 1), (-1, -1), colors.HexColor("#182134")),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D7DEE8")),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.6),
+                    ("LEADING", (0, 0), (-1, -1), 9.2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4.2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4.2),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        return table
+
+    story: list[object] = []
+
+    hero_table = Table(
+        [
+            [Paragraph("Week Report", title_style)],
+            [Paragraph(f"MVV Maastricht | {week_label} | {iso_label}", kicker_style)],
+            [
+                Paragraph(
+                    "Compacte weekrapportage met teamload, squad spread, wellness, RPE en staffnotities voor dezelfde selectie als in het dashboard.",
+                    hero_body_style,
+                )
+            ],
+        ],
+        colWidths=[doc.width],
+    )
+    hero_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FBFCFE")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#D7DEE8")),
+                ("LINEABOVE", (0, 0), (-1, 0), 2, colors.HexColor("#C8102E")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    story.append(hero_table)
+    story.append(Spacer(1, 10))
+
+    cards = [
+        build_metric_card("Active Players", _fmt_int(summary.get("active_players")), "Unieke GPS-spelers in deze week", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Player Sessions", _fmt_int(summary.get("player_sessions")), "Totaal aantal Summary-sessies", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totale sprintacties in deze week", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Speed Exposures", _fmt_int(summary.get("speed_exposures")), "Sessies >= 90% van seizoenstop", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Dist / Player", _fmt_distance(summary.get("dist_per_player")), "Teamload gedeeld door actieve spelers", "#F8FAFC", "#D7DEE8"),
+        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#F8FAFC", "#D7DEE8"),
+        build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gemiddelde RPE in deze week", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Wellness Entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("RPE Entries", _fmt_int(monitoring_summary.get("rpe_entries")), "Aantal RPE-registraties", "#FFF7F8", "#E8C5CB"),
+    ]
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("Visual Snapshot", section_style),
+                build_card_grid(cards),
+                Spacer(1, 8),
+            ]
+        )
+    )
+
+    if isinstance(day_table, pd.DataFrame) and not day_table.empty:
+        labels = [str(value) for value in day_table["label"].fillna("--").tolist()]
+        team_distance_chart = build_bar_chart_drawing(
+            "Daily Team Distance",
+            labels,
+            [pd.to_numeric(day_table["total_distance"], errors="coerce").fillna(0).tolist()],
+            ["#6E1222"],
+            ["Total Distance"],
+        )
+        team_hsr_chart = build_bar_chart_drawing(
+            "Daily Team HSR / HSD",
+            labels,
+            [pd.to_numeric(day_table["hsr_hsd"], errors="coerce").fillna(0).tolist()],
+            ["#EA3351"],
+            ["HSR / HSD"],
+        )
+        chart_grid = Table(
+            [[team_distance_chart, team_hsr_chart]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
+        )
+        chart_grid.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Team Load Charts", section_style),
+                    chart_grid,
+                    Spacer(1, 8),
+                ]
+            )
+        )
+
+    if isinstance(monitoring_day_table, pd.DataFrame) and not monitoring_day_table.empty:
+        monitoring_labels = [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()]
+        monitoring_chart = build_line_chart_drawing(
+            "Readiness and RPE Trend",
+            monitoring_labels,
+            [
+                pd.to_numeric(monitoring_day_table["readiness_score"], errors="coerce").fillna(0).tolist(),
+                pd.to_numeric(monitoring_day_table["avg_rpe"], errors="coerce").fillna(0).tolist(),
+            ],
+            ["#EA3351", "#F5D2D8"],
+            ["Readiness", "Avg RPE"],
+        )
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Monitoring Chart", section_style),
+                    monitoring_chart,
+                    Spacer(1, 8),
+                ]
+            )
+        )
+
+    summary_rows = [
+        ["Dag", "Players", "Sessions", "Distance", "HSR/HSD", "Sprints", "Dist / Player"],
+    ]
+    if isinstance(day_table, pd.DataFrame) and not day_table.empty:
+        for _, row in day_table.iterrows():
+            summary_rows.append(
+                [
+                    str(row.get("label") or "--"),
+                    _fmt_int(row.get("active_players")),
+                    _fmt_int(row.get("player_sessions")),
+                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("hsr_hsd")),
+                    _fmt_int(row.get("sprints")),
+                    _fmt_distance(row.get("distance_per_player")),
+                ]
+            )
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Weekdays", section_style),
+                    build_standard_table(
+                        summary_rows,
+                        [28 * mm, 22 * mm, 22 * mm, 30 * mm, 28 * mm, 18 * mm, 30 * mm],
+                        "#0B1020",
+                        "#F8FAFC",
+                        "#EEF2F7",
+                    ),
+                    Spacer(1, 8),
+                ]
+            )
+        )
+
+    type_rows = [["Type", "Players", "Sessions", "Distance", "HSR/HSD", "Sprints", "Top Speed"]]
+    if isinstance(type_table, pd.DataFrame) and not type_table.empty:
+        for _, row in type_table.iterrows():
+            type_rows.append(
+                [
+                    str(row.get("session_category") or "--"),
+                    _fmt_int(row.get("active_players")),
+                    _fmt_int(row.get("player_sessions")),
+                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("hsr_hsd")),
+                    _fmt_int(row.get("sprints")),
+                    _fmt_speed(row.get("max_speed")),
+                ]
+            )
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph("Training vs Match", section_style),
+                    build_standard_table(
+                        type_rows,
+                        [34 * mm, 22 * mm, 24 * mm, 32 * mm, 28 * mm, 20 * mm, 24 * mm],
+                        "#C8102E",
+                        "#FFF7F8",
+                        "#FCEBED",
+                    ),
+                    Spacer(1, 8),
+                ]
+            )
+        )
+
+    player_rows = [["Speler", "Sessies", "Distance", "HSR/HSD", "Sprints", "Accel", "Decel", "Top Speed"]]
+    player_preview = player_table.head(12).copy() if isinstance(player_table, pd.DataFrame) else pd.DataFrame()
+    if not player_preview.empty:
+        for _, row in player_preview.iterrows():
+            player_rows.append(
+                [
+                    str(row.get("player_name") or "--"),
+                    _fmt_int(row.get("sessions")),
+                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("hsr_hsd")),
+                    _fmt_int(row.get("sprints")),
+                    _fmt_int(row.get("total_accelerations")),
+                    _fmt_int(row.get("total_decelerations")),
+                    _fmt_speed(row.get("max_speed")),
+                ]
+            )
+        story.extend(
+            [
+                Paragraph("Player Summary", section_style),
+                build_standard_table(
+                    player_rows,
+                    [48 * mm, 18 * mm, 28 * mm, 26 * mm, 16 * mm, 18 * mm, 18 * mm, 22 * mm],
+                    "#0B1020",
+                    "#FFFFFF",
+                    "#F5F7FB",
+                ),
+                Spacer(1, 8),
+            ]
+        )
+
+    monitoring_rows = [["Dag", "Muscle", "Fatigue", "Sleep", "Stress", "Mood", "Readiness", "Avg RPE"]]
+    monitoring_preview = monitoring_day_table.copy() if isinstance(monitoring_day_table, pd.DataFrame) else pd.DataFrame()
+    if not monitoring_preview.empty:
+        for _, row in monitoring_preview.iterrows():
+            monitoring_rows.append(
+                [
+                    str(row.get("label") or "--"),
+                    _fmt_dec(row.get("muscle_soreness"), 1),
+                    _fmt_dec(row.get("fatigue"), 1),
+                    _fmt_dec(row.get("sleep_quality"), 1),
+                    _fmt_dec(row.get("stress"), 1),
+                    _fmt_dec(row.get("mood"), 1),
+                    _fmt_dec(row.get("readiness_score"), 1),
+                    _fmt_dec(row.get("avg_rpe"), 1),
+                ]
+            )
+        story.extend(
+            [
+                Paragraph("Wellness and RPE by Day", section_style),
+                build_standard_table(
+                    monitoring_rows,
+                    [24 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 22 * mm, 20 * mm],
+                    "#C8102E",
+                    "#FFF7F8",
+                    "#FCEBED",
+                ),
+                Spacer(1, 8),
+            ]
+        )
+
+    note_items = list(notes)
+    if note_items:
+        story.append(Paragraph("Week Notes", section_style))
+        for note in note_items:
+            story.append(Paragraph(f"- {note}", note_style))
+        story.append(Spacer(1, 8))
+
+    story.append(
+        Paragraph(
+            "PDF-export gebruikt dezelfde weekselectie en monitoringrange als de dashboardweergave.",
+            body_style,
+        )
+    )
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
