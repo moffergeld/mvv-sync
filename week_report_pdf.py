@@ -36,12 +36,12 @@ def build_week_report_pdf_bytes(
     summary: dict[str, object],
     monitoring_summary: dict[str, object],
     day_table: pd.DataFrame,
-    day_stats: pd.DataFrame,
     type_table: pd.DataFrame,
     player_table: pd.DataFrame,
-    zone_df: pd.DataFrame,
     monitoring_day_table: pd.DataFrame,
     notes: Iterable[str],
+    day_stats: pd.DataFrame | None = None,
+    zone_df: pd.DataFrame | None = None,
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT

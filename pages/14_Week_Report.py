@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from html import escape
 from typing import Callable
 
@@ -38,6 +39,12 @@ MVV_TEXT = "#F8FAFC"
 MVV_TEXT_SOFT = "rgba(248,250,252,0.76)"
 MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
+
+
+def _build_week_report_pdf_compatible(**kwargs) -> bytes:
+    signature = inspect.signature(build_week_report_pdf_bytes)
+    compatible_kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
+    return build_week_report_pdf_bytes(**compatible_kwargs)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
 
 GPS_SELECT_COLS = [
@@ -1104,7 +1111,7 @@ def main() -> None:
     pdf_bytes: bytes | None = None
     try:
         selected_iso = selected_week.isocalendar()
-        pdf_bytes = build_week_report_pdf_bytes(
+        pdf_bytes = _build_week_report_pdf_compatible(
             week_label=_week_label(selected_week),
             iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
             summary=summary,
