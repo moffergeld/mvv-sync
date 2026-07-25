@@ -36,8 +36,10 @@ def build_week_report_pdf_bytes(
     summary: dict[str, object],
     monitoring_summary: dict[str, object],
     day_table: pd.DataFrame,
+    day_stats: pd.DataFrame,
     type_table: pd.DataFrame,
     player_table: pd.DataFrame,
+    zone_df: pd.DataFrame,
     monitoring_day_table: pd.DataFrame,
     notes: Iterable[str],
 ) -> bytes:
@@ -46,9 +48,10 @@ def build_week_report_pdf_bytes(
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.charts.barcharts import HorizontalBarChart, VerticalBarChart
     from reportlab.graphics.charts.linecharts import HorizontalLineChart
-    from reportlab.graphics.shapes import Drawing, Rect, String
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing, Line, Rect, String
     from reportlab.graphics.widgets.markers import makeMarker
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -324,6 +327,248 @@ def build_week_report_pdf_bytes(
         )
         return table
 
+    def _series_to_floats(values: object) -> list[float]:
+        if values is None:
+            return []
+        if isinstance(values, pd.Series):
+            return pd.to_numeric(values, errors="coerce").fillna(0).astype(float).tolist()
+        return pd.to_numeric(pd.Series(values), errors="coerce").fillna(0).astype(float).tolist()
+
+    def build_vertical_error_chart_drawing(
+        title: str,
+        labels: list[str],
+        values: list[float],
+        errors: list[float] | None,
+        bar_color: str,
+        legend_label: str,
+        width: float = 352,
+        height: float = 220,
+        y_max: float | None = None,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+
+        labels = [str(value) for value in labels]
+        values = [max(float(value or 0), 0.0) for value in values]
+        errors = [max(float(value or 0), 0.0) for value in (errors or [0.0] * len(values))]
+
+        plot_x = 40
+        plot_y = 44
+        plot_w = width - 58
+        plot_h = height - 84
+        max_value = max((value + err for value, err in zip(values, errors, strict=False)), default=0.0)
+        chart_max = float(y_max) if y_max is not None else max(1.0, max_value * 1.18)
+
+        for step in range(6):
+            ratio = step / 5.0
+            y = plot_y + (plot_h * ratio)
+            tick_value = chart_max * ratio
+            drawing.add(Line(plot_x, y, plot_x + plot_w, y, strokeColor=colors.HexColor("#E5EAF1"), strokeWidth=0.8))
+            tick_label = _fmt_int(tick_value) if chart_max > 20 else _fmt_dec(tick_value, 1).rstrip("0").rstrip(",")
+            drawing.add(String(6, y - 3, tick_label, fontName="Helvetica", fontSize=6.5, fillColor=colors.HexColor("#5B6576")))
+
+        drawing.add(Line(plot_x, plot_y, plot_x, plot_y + plot_h, strokeColor=colors.HexColor("#B8C4D3"), strokeWidth=1))
+        drawing.add(Line(plot_x, plot_y, plot_x + plot_w, plot_y, strokeColor=colors.HexColor("#B8C4D3"), strokeWidth=1))
+
+        slot_count = max(len(labels), 1)
+        slot_w = plot_w / slot_count
+        bar_w = min(24.0, slot_w * 0.58)
+        for index, (label, value, error) in enumerate(zip(labels, values, errors, strict=False)):
+            bar_x = plot_x + (slot_w * index) + ((slot_w - bar_w) / 2)
+            bar_h = 0 if chart_max <= 0 else (value / chart_max) * plot_h
+            bar_top = plot_y + bar_h
+            drawing.add(
+                Rect(
+                    bar_x,
+                    plot_y,
+                    bar_w,
+                    bar_h,
+                    fillColor=colors.HexColor(bar_color),
+                    strokeColor=colors.HexColor(bar_color),
+                    strokeWidth=0.8,
+                )
+            )
+            if error > 0:
+                err_top = plot_y + (((value + error) / chart_max) * plot_h)
+                center_x = bar_x + (bar_w / 2)
+                drawing.add(Line(center_x, bar_top, center_x, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
+                drawing.add(Line(center_x - 4, err_top, center_x + 4, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
+            value_text = _fmt_int(value) if chart_max > 20 else _fmt_dec(value, 1).rstrip("0").rstrip(",")
+            drawing.add(String(bar_x + (bar_w / 2), bar_top + 5, value_text, fontName="Helvetica-Bold", fontSize=6.5, fillColor=colors.HexColor("#182134"), textAnchor="middle"))
+            drawing.add(
+                String(
+                    bar_x + (bar_w / 2),
+                    plot_y - 10,
+                    label,
+                    fontName="Helvetica",
+                    fontSize=6.2,
+                    fillColor=colors.HexColor("#5B6576"),
+                    textAnchor="middle",
+                )
+            )
+
+        drawing.add(Rect(16, 16, 8, 8, fillColor=colors.HexColor(bar_color), strokeColor=colors.HexColor(bar_color)))
+        drawing.add(String(28, 17, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
+        return drawing
+
+    def build_grouped_vertical_error_chart_drawing(
+        title: str,
+        labels: list[str],
+        series_values: list[list[float]],
+        series_errors: list[list[float]],
+        series_colors: list[str],
+        legend_labels: list[str],
+        width: float = 352,
+        height: float = 220,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+
+        labels = [str(value) for value in labels]
+        prepared_values = [[max(float(value or 0), 0.0) for value in values] for values in series_values]
+        prepared_errors = [[max(float(value or 0), 0.0) for value in values] for values in series_errors]
+
+        plot_x = 40
+        plot_y = 44
+        plot_w = width - 58
+        plot_h = height - 84
+        max_value = 0.0
+        for values, errors in zip(prepared_values, prepared_errors, strict=False):
+            for value, error in zip(values, errors, strict=False):
+                max_value = max(max_value, value + error)
+        chart_max = max(1.0, max_value * 1.18)
+
+        for step in range(6):
+            ratio = step / 5.0
+            y = plot_y + (plot_h * ratio)
+            tick_value = chart_max * ratio
+            drawing.add(Line(plot_x, y, plot_x + plot_w, y, strokeColor=colors.HexColor("#E5EAF1"), strokeWidth=0.8))
+            tick_label = _fmt_int(tick_value) if chart_max > 20 else _fmt_dec(tick_value, 1).rstrip("0").rstrip(",")
+            drawing.add(String(6, y - 3, tick_label, fontName="Helvetica", fontSize=6.5, fillColor=colors.HexColor("#5B6576")))
+
+        drawing.add(Line(plot_x, plot_y, plot_x, plot_y + plot_h, strokeColor=colors.HexColor("#B8C4D3"), strokeWidth=1))
+        drawing.add(Line(plot_x, plot_y, plot_x + plot_w, plot_y, strokeColor=colors.HexColor("#B8C4D3"), strokeWidth=1))
+
+        slot_count = max(len(labels), 1)
+        series_count = max(len(prepared_values), 1)
+        slot_w = plot_w / slot_count
+        grouped_w = slot_w * 0.72
+        bar_w = min(12.0, grouped_w / max(series_count, 1))
+        group_offset = (slot_w - (bar_w * series_count)) / 2
+
+        for index, label in enumerate(labels):
+            for series_index, (values, errors, fill_hex) in enumerate(zip(prepared_values, prepared_errors, series_colors, strict=False)):
+                value = values[index] if index < len(values) else 0.0
+                error = errors[index] if index < len(errors) else 0.0
+                bar_x = plot_x + (slot_w * index) + group_offset + (series_index * bar_w)
+                bar_h = 0 if chart_max <= 0 else (value / chart_max) * plot_h
+                bar_top = plot_y + bar_h
+                drawing.add(
+                    Rect(
+                        bar_x,
+                        plot_y,
+                        bar_w - 1,
+                        bar_h,
+                        fillColor=colors.HexColor(fill_hex),
+                        strokeColor=colors.HexColor(fill_hex),
+                        strokeWidth=0.8,
+                    )
+                )
+                if error > 0:
+                    err_top = plot_y + (((value + error) / chart_max) * plot_h)
+                    center_x = bar_x + ((bar_w - 1) / 2)
+                    drawing.add(Line(center_x, bar_top, center_x, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
+                    drawing.add(Line(center_x - 3, err_top, center_x + 3, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
+            drawing.add(
+                String(
+                    plot_x + (slot_w * index) + (slot_w / 2),
+                    plot_y - 10,
+                    label,
+                    fontName="Helvetica",
+                    fontSize=6.2,
+                    fillColor=colors.HexColor("#5B6576"),
+                    textAnchor="middle",
+                )
+            )
+
+        legend_x = 16
+        for fill_hex, legend_label in zip(series_colors, legend_labels, strict=False):
+            drawing.add(Rect(legend_x, 16, 8, 8, fillColor=colors.HexColor(fill_hex), strokeColor=colors.HexColor(fill_hex)))
+            drawing.add(String(legend_x + 12, 17, legend_label, fontName="Helvetica", fontSize=7.5, fillColor=colors.HexColor("#4C5668")))
+            legend_x += 94
+        return drawing
+
+    def build_pie_chart_drawing(
+        title: str,
+        labels: list[str],
+        values: list[float],
+        width: float = 352,
+        height: float = 220,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+        pie = Pie()
+        pie.x = 22
+        pie.y = 26
+        pie.width = 132
+        pie.height = 132
+        pie.data = [max(float(value or 0), 0.0) for value in values]
+        pie.labels = [str(value) for value in labels]
+        pie.sideLabels = True
+        pie.strokeColor = colors.HexColor("#FFFFFF")
+        palette = ["#F5D2D8", "#F1A4B5", "#E97A93", "#D92B4D", "#6E1222"]
+        for index, fill_hex in enumerate(palette[: len(pie.data)]):
+            pie.slices[index].fillColor = colors.HexColor(fill_hex)
+            pie.slices[index].strokeColor = colors.white
+        drawing.add(pie)
+        return drawing
+
+    def build_horizontal_bar_chart_drawing(
+        title: str,
+        labels: list[str],
+        values: list[float],
+        bar_color: str,
+        width: float = 352,
+        height: float = 240,
+    ) -> Drawing:
+        drawing = Drawing(width, height)
+        drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
+        drawing.add(String(16, height - 20, title, fontName="Helvetica-Bold", fontSize=11, fillColor=colors.HexColor("#0B1020")))
+
+        chart = HorizontalBarChart()
+        chart.x = 88
+        chart.y = 30
+        chart.height = height - 64
+        chart.width = width - 116
+        chart.data = [_series_to_floats(values)]
+        chart.strokeColor = colors.HexColor("#94A3B8")
+        chart.valueAxis.valueMin = 0
+        peak = max(_series_to_floats(values), default=0.0)
+        chart.valueAxis.valueMax = max(1.0, peak * 1.18)
+        chart.valueAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.valueAxis.gridStrokeColor = colors.HexColor("#E5EAF1")
+        chart.valueAxis.gridStrokeDashArray = [2, 2]
+        chart.valueAxis.visibleGrid = True
+        chart.valueAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.valueAxis.labels.fontName = "Helvetica"
+        chart.valueAxis.labels.fontSize = 7
+        chart.categoryAxis.categoryNames = [str(value) for value in labels]
+        chart.categoryAxis.strokeColor = colors.HexColor("#B8C4D3")
+        chart.categoryAxis.labels.fillColor = colors.HexColor("#5B6576")
+        chart.categoryAxis.labels.fontName = "Helvetica"
+        chart.categoryAxis.labels.fontSize = 6.5
+        chart.categoryAxis.labels.boxAnchor = "e"
+        chart.bars[0].fillColor = colors.HexColor(bar_color)
+        chart.bars[0].strokeColor = colors.HexColor(bar_color)
+        chart.barSpacing = 3
+        drawing.add(chart)
+
+        drawing.add(Rect(16, 12, 8, 8, fillColor=colors.HexColor(bar_color), strokeColor=colors.HexColor(bar_color)))
+        return drawing
+
     story: list[object] = []
 
     hero_table = Table(
@@ -381,26 +626,27 @@ def build_week_report_pdf_bytes(
 
     if isinstance(day_table, pd.DataFrame) and not day_table.empty:
         labels = [str(value) for value in day_table["label"].fillna("--").tolist()]
-        team_distance_chart = build_bar_chart_drawing(
-            "Daily Team Distance",
-            labels,
-            [pd.to_numeric(day_table["total_distance"], errors="coerce").fillna(0).tolist()],
-            ["#6E1222"],
-            ["Total Distance"],
-        )
-        team_hsr_chart = build_bar_chart_drawing(
-            "Daily Team HSR / HSD",
-            labels,
-            [pd.to_numeric(day_table["hsr_hsd"], errors="coerce").fillna(0).tolist()],
-            ["#EA3351"],
-            ["HSR / HSD"],
-        )
-        chart_grid = Table(
-            [[team_distance_chart, team_hsr_chart]],
+        overview_row = Table(
+            [[
+                build_bar_chart_drawing(
+                    "Daily Team Distance",
+                    labels,
+                    [_series_to_floats(day_table["total_distance"])],
+                    ["#6E1222"],
+                    ["Total Distance"],
+                ),
+                build_bar_chart_drawing(
+                    "Daily Team HSR / HSD",
+                    labels,
+                    [_series_to_floats(day_table["hsr_hsd"])],
+                    ["#EA3351"],
+                    ["HSR / HSD"],
+                ),
+            ]],
             colWidths=[doc.width / 2.0, doc.width / 2.0],
             hAlign="LEFT",
         )
-        chart_grid.setStyle(
+        overview_row.setStyle(
             TableStyle(
                 [
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -411,37 +657,179 @@ def build_week_report_pdf_bytes(
                 ]
             )
         )
+        story.append(Paragraph("Overview Charts", section_style))
+        story.append(overview_row)
+        story.append(Spacer(1, 8))
+
+    if isinstance(zone_df, pd.DataFrame) and not zone_df.empty:
         story.append(
-            KeepTogether(
-                [
-                    Paragraph("Team Load Charts", section_style),
-                    chart_grid,
-                    Spacer(1, 8),
-                ]
+            build_pie_chart_drawing(
+                "Distance Zone Share",
+                [str(value) for value in zone_df["zone"].fillna("--").tolist()],
+                _series_to_floats(zone_df["value"]),
+                width=352,
+                height=220,
             )
         )
+        story.append(Spacer(1, 8))
+
+    if isinstance(day_stats, pd.DataFrame) and not day_stats.empty:
+        spread_row_one = Table(
+            [[
+                build_vertical_error_chart_drawing(
+                    "Player Avg Distance +/- SD",
+                    [str(value) for value in day_stats["label"].fillna("--").tolist()],
+                    _series_to_floats(day_stats["total_distance_mean"]),
+                    _series_to_floats(day_stats["total_distance_std"]),
+                    "#6E1222",
+                    "Total Distance",
+                ),
+                build_vertical_error_chart_drawing(
+                    "Player Avg HSR / HSD +/- SD",
+                    [str(value) for value in day_stats["label"].fillna("--").tolist()],
+                    _series_to_floats(day_stats["hsr_hsd_mean"]),
+                    _series_to_floats(day_stats["hsr_hsd_std"]),
+                    "#EA3351",
+                    "HSR / HSD",
+                ),
+            ]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
+        )
+        spread_row_two = Table(
+            [[
+                build_grouped_vertical_error_chart_drawing(
+                    "Player Avg Accel / Decel +/- SD",
+                    [str(value) for value in day_stats["label"].fillna("--").tolist()],
+                    [
+                        _series_to_floats(day_stats["total_accelerations_mean"]),
+                        _series_to_floats(day_stats["total_decelerations_mean"]),
+                    ],
+                    [
+                        _series_to_floats(day_stats["total_accelerations_std"]),
+                        _series_to_floats(day_stats["total_decelerations_std"]),
+                    ],
+                    ["#EA3351", "#6E1222"],
+                    ["Accelerations", "Decelerations"],
+                ),
+                build_vertical_error_chart_drawing(
+                    "Player Avg Sprints +/- SD",
+                    [str(value) for value in day_stats["label"].fillna("--").tolist()],
+                    _series_to_floats(day_stats["sprints_mean"]),
+                    _series_to_floats(day_stats["sprints_std"]),
+                    "#6E1222",
+                    "Sprints",
+                ),
+            ]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
+        )
+        for grid in (spread_row_one, spread_row_two):
+            grid.setStyle(
+                TableStyle(
+                    [
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ]
+                )
+            )
+        story.append(Paragraph("Squad Spread Charts", section_style))
+        story.append(spread_row_one)
+        story.append(Spacer(1, 8))
+        story.append(spread_row_two)
+        story.append(Spacer(1, 8))
 
     if isinstance(monitoring_day_table, pd.DataFrame) and not monitoring_day_table.empty:
-        monitoring_labels = [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()]
-        monitoring_chart = build_line_chart_drawing(
-            "Readiness and RPE Trend",
-            monitoring_labels,
-            [
-                pd.to_numeric(monitoring_day_table["readiness_score"], errors="coerce").fillna(0).tolist(),
-                pd.to_numeric(monitoring_day_table["avg_rpe"], errors="coerce").fillna(0).tolist(),
-            ],
-            ["#EA3351", "#F5D2D8"],
-            ["Readiness", "Avg RPE"],
+        monitoring_specs = [
+            ("muscle_soreness", "Daily Muscle Soreness +/- SD", "#6E1222"),
+            ("fatigue", "Daily Fatigue +/- SD", "#EA3351"),
+            ("sleep_quality", "Daily Sleep Quality +/- SD", "#6E1222"),
+            ("stress", "Daily Stress +/- SD", "#EA3351"),
+            ("mood", "Daily Mood +/- SD", "#6E1222"),
+            ("avg_rpe", "Daily Avg RPE +/- SD", "#EA3351"),
+        ]
+        monitoring_drawings = [
+            build_vertical_error_chart_drawing(
+                title,
+                [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()],
+                _series_to_floats(monitoring_day_table[column]),
+                _series_to_floats(monitoring_day_table.get(f"{column}_std")),
+                color,
+                title.replace("Daily ", "").replace(" +/- SD", ""),
+                y_max=10,
+            )
+            for column, title, color in monitoring_specs
+        ]
+        story.append(Paragraph("Monitoring Charts", section_style))
+        for index in range(0, len(monitoring_drawings), 2):
+            row = list(monitoring_drawings[index : index + 2])
+            while len(row) < 2:
+                row.append("")
+            grid = Table([row], colWidths=[doc.width / 2.0, doc.width / 2.0], hAlign="LEFT")
+            grid.setStyle(
+                TableStyle(
+                    [
+                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ("TOPPADDING", (0, 0), (-1, -1), 0),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ]
+                )
+            )
+            story.append(grid)
+            story.append(Spacer(1, 8))
+
+    if isinstance(player_table, pd.DataFrame) and not player_table.empty:
+        top_distance = player_table.nlargest(10, "total_distance").sort_values("total_distance", ascending=True)
+        top_hsr = player_table.nlargest(10, "hsr_hsd").sort_values("hsr_hsd", ascending=True)
+        top_sprints = player_table.nlargest(10, "sprints").sort_values("sprints", ascending=True)
+        leader_row = Table(
+            [[
+                build_horizontal_bar_chart_drawing(
+                    "Top 10 Total Distance",
+                    [str(value) for value in top_distance["player_name"].fillna("--").tolist()],
+                    _series_to_floats(top_distance["total_distance"]),
+                    "#6E1222",
+                ),
+                build_horizontal_bar_chart_drawing(
+                    "Top 10 HSR / HSD",
+                    [str(value) for value in top_hsr["player_name"].fillna("--").tolist()],
+                    _series_to_floats(top_hsr["hsr_hsd"]),
+                    "#EA3351",
+                ),
+            ]],
+            colWidths=[doc.width / 2.0, doc.width / 2.0],
+            hAlign="LEFT",
         )
-        story.append(
-            KeepTogether(
+        leader_row.setStyle(
+            TableStyle(
                 [
-                    Paragraph("Monitoring Chart", section_style),
-                    monitoring_chart,
-                    Spacer(1, 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ]
             )
         )
+        story.append(Paragraph("Leaderboards", section_style))
+        story.append(leader_row)
+        story.append(Spacer(1, 8))
+        story.append(
+            build_horizontal_bar_chart_drawing(
+                "Top 10 Sprints",
+                [str(value) for value in top_sprints["player_name"].fillna("--").tolist()],
+                _series_to_floats(top_sprints["sprints"]),
+                "#6E1222",
+                width=352,
+                height=240,
+            )
+        )
+        story.append(Spacer(1, 8))
 
     summary_rows = [
         ["Dag", "Players", "Sessions", "Distance", "HSR/HSD", "Sprints", "Dist / Player"],

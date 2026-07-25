@@ -1110,8 +1110,10 @@ def main() -> None:
             summary=summary,
             monitoring_summary=monitoring_summary,
             day_table=day_table,
+            day_stats=day_stats,
             type_table=type_table,
             player_table=player_table,
+            zone_df=zone_df,
             monitoring_day_table=monitoring_day_table,
             notes=notes,
         )
