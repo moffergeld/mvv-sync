@@ -421,6 +421,7 @@ def build_week_report_pdf_bytes(
         legend_labels: list[str],
         width: float = 352,
         height: float = 220,
+        y_max: float | None = None,
     ) -> Drawing:
         drawing = Drawing(width, height)
         drawing.add(Rect(0, 0, width, height, fillColor=colors.HexColor("#FBFCFE"), strokeColor=colors.HexColor("#D7DEE8"), strokeWidth=1))
@@ -438,7 +439,7 @@ def build_week_report_pdf_bytes(
         for values, errors in zip(prepared_values, prepared_errors, strict=False):
             for value, error in zip(values, errors, strict=False):
                 max_value = max(max_value, value + error)
-        chart_max = max(1.0, max_value * 1.18)
+        chart_max = max(1.0, y_max if y_max is not None else (max_value * 1.18))
 
         for step in range(6):
             ratio = step / 5.0
@@ -481,6 +482,18 @@ def build_week_report_pdf_bytes(
                     center_x = bar_x + ((bar_w - 1) / 2)
                     drawing.add(Line(center_x, bar_top, center_x, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
                     drawing.add(Line(center_x - 3, err_top, center_x + 3, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
+                value_text = _fmt_int(value) if chart_max > 20 else _fmt_dec(value, 1).rstrip("0").rstrip(",")
+                drawing.add(
+                    String(
+                        bar_x + ((bar_w - 1) / 2),
+                        bar_top + 5,
+                        value_text,
+                        fontName="Helvetica-Bold",
+                        fontSize=6.2,
+                        fillColor=colors.HexColor("#182134"),
+                        textAnchor="middle",
+                    )
+                )
             drawing.add(
                 String(
                     plot_x + (slot_w * index) + (slot_w / 2),
@@ -739,44 +752,59 @@ def build_week_report_pdf_bytes(
         story.append(Spacer(1, 8))
 
     if isinstance(monitoring_day_table, pd.DataFrame) and not monitoring_day_table.empty:
-        monitoring_specs = [
-            ("muscle_soreness", "Daily Muscle Soreness +/- SD", "#6E1222"),
-            ("fatigue", "Daily Fatigue +/- SD", "#EA3351"),
-            ("sleep_quality", "Daily Sleep Quality +/- SD", "#6E1222"),
-            ("stress", "Daily Stress +/- SD", "#EA3351"),
-            ("mood", "Daily Mood +/- SD", "#6E1222"),
-            ("avg_rpe", "Daily Avg RPE +/- SD", "#EA3351"),
-        ]
+        monitoring_labels = [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()]
         monitoring_drawings = [
-            build_vertical_error_chart_drawing(
-                title,
-                [str(value) for value in monitoring_day_table["label"].fillna("--").tolist()],
-                _series_to_floats(monitoring_day_table[column]),
-                _series_to_floats(monitoring_day_table.get(f"{column}_std")),
-                color,
-                title.replace("Daily ", "").replace(" +/- SD", ""),
+            build_grouped_vertical_error_chart_drawing(
+                "Physical Wellness +/- SD",
+                monitoring_labels,
+                [
+                    _series_to_floats(monitoring_day_table["muscle_soreness"]),
+                    _series_to_floats(monitoring_day_table["fatigue"]),
+                ],
+                [
+                    _series_to_floats(monitoring_day_table.get("muscle_soreness_std")),
+                    _series_to_floats(monitoring_day_table.get("fatigue_std")),
+                ],
+                ["#6E1222", "#EA3351"],
+                ["Muscle Soreness", "Fatigue"],
+                width=doc.width,
+                height=232,
                 y_max=10,
-            )
-            for column, title, color in monitoring_specs
+            ),
+            build_grouped_vertical_error_chart_drawing(
+                "Mental Wellness +/- SD",
+                monitoring_labels,
+                [
+                    _series_to_floats(monitoring_day_table["sleep_quality"]),
+                    _series_to_floats(monitoring_day_table["stress"]),
+                    _series_to_floats(monitoring_day_table["mood"]),
+                ],
+                [
+                    _series_to_floats(monitoring_day_table.get("sleep_quality_std")),
+                    _series_to_floats(monitoring_day_table.get("stress_std")),
+                    _series_to_floats(monitoring_day_table.get("mood_std")),
+                ],
+                ["#6E1222", "#EA3351", "#F59E0B"],
+                ["Sleep Quality", "Stress", "Mood"],
+                width=doc.width,
+                height=238,
+                y_max=10,
+            ),
+            build_vertical_error_chart_drawing(
+                "Daily Avg RPE +/- SD",
+                monitoring_labels,
+                _series_to_floats(monitoring_day_table["avg_rpe"]),
+                _series_to_floats(monitoring_day_table.get("avg_rpe_std")),
+                "#EA3351",
+                "Avg RPE",
+                width=doc.width,
+                height=220,
+                y_max=10,
+            ),
         ]
         story.append(Paragraph("Monitoring Charts", section_style))
-        for index in range(0, len(monitoring_drawings), 2):
-            row = list(monitoring_drawings[index : index + 2])
-            while len(row) < 2:
-                row.append("")
-            grid = Table([row], colWidths=[doc.width / 2.0, doc.width / 2.0], hAlign="LEFT")
-            grid.setStyle(
-                TableStyle(
-                    [
-                        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                        ("TOPPADDING", (0, 0), (-1, -1), 0),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ]
-                )
-            )
-            story.append(grid)
+        for drawing in monitoring_drawings:
+            story.append(drawing)
             story.append(Spacer(1, 8))
 
     if isinstance(player_table, pd.DataFrame) and not player_table.empty:
