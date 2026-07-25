@@ -16,6 +16,7 @@ from report_monitoring import (
     build_monitoring_dataset,
     build_monitoring_grouped_summary,
     build_monitoring_player_summary,
+    build_rpe_session_day_summary,
     summarize_monitoring_dataset,
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
@@ -1069,6 +1070,13 @@ def main() -> None:
     monitoring_summary = summarize_monitoring_dataset(monitoring_df)
     monitoring_day_table = build_monitoring_grouped_summary(monitoring_df, "day")
     monitoring_player_table = build_monitoring_player_summary(monitoring_df)
+    rpe_session_day_table = build_rpe_session_day_summary(
+        SUPABASE_URL or "default",
+        sb,
+        selected_week.date(),
+        week_end.date(),
+        player_ids=week_df["player_id"].astype(str).tolist(),
+    )
 
     day_table = build_week_day_table(week_df)
     day_stats = build_week_day_stats(week_df)
@@ -1122,6 +1130,7 @@ def main() -> None:
             player_table=player_table,
             zone_df=zone_df,
             monitoring_day_table=monitoring_day_table,
+            rpe_session_day_table=rpe_session_day_table,
             notes=notes,
         )
     except Exception as exc:

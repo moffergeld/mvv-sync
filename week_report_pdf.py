@@ -42,6 +42,7 @@ def build_week_report_pdf_bytes(
     notes: Iterable[str],
     day_stats: pd.DataFrame | None = None,
     zone_df: pd.DataFrame | None = None,
+    rpe_session_day_table: pd.DataFrame | None = None,
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT
@@ -482,18 +483,19 @@ def build_week_report_pdf_bytes(
                     center_x = bar_x + ((bar_w - 1) / 2)
                     drawing.add(Line(center_x, bar_top, center_x, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
                     drawing.add(Line(center_x - 3, err_top, center_x + 3, err_top, strokeColor=colors.HexColor("#8793A8"), strokeWidth=1))
-                value_text = _fmt_int(value) if chart_max > 20 else _fmt_dec(value, 1).rstrip("0").rstrip(",")
-                drawing.add(
-                    String(
-                        bar_x + ((bar_w - 1) / 2),
-                        bar_top + 5,
-                        value_text,
-                        fontName="Helvetica-Bold",
-                        fontSize=6.2,
-                        fillColor=colors.HexColor("#182134"),
-                        textAnchor="middle",
+                if value > 0:
+                    value_text = _fmt_int(value) if chart_max > 20 else _fmt_dec(value, 1).rstrip("0").rstrip(",")
+                    drawing.add(
+                        String(
+                            bar_x + ((bar_w - 1) / 2),
+                            bar_top + 5,
+                            value_text,
+                            fontName="Helvetica-Bold",
+                            fontSize=6.2,
+                            fillColor=colors.HexColor("#182134"),
+                            textAnchor="middle",
+                        )
                     )
-                )
             drawing.add(
                 String(
                     plot_x + (slot_w * index) + (slot_w / 2),
@@ -789,17 +791,75 @@ def build_week_report_pdf_bytes(
             height=220,
             y_max=10,
         )
-        rpe_draw = build_vertical_error_chart_drawing(
-            "Daily Avg RPE +/- SD",
-            monitoring_labels,
-            _series_to_floats(monitoring_day_table["avg_rpe"]),
-            _series_to_floats(monitoring_day_table.get("avg_rpe_std")),
-            "#EA3351",
-            "Avg RPE",
-            width=doc.width,
-            height=220,
-            y_max=10,
-        )
+        rpe_draw: Drawing
+        if isinstance(rpe_session_day_table, pd.DataFrame) and not rpe_session_day_table.empty:
+            rpe_tmp = rpe_session_day_table.copy()
+            rpe_tmp["entry_date"] = pd.to_datetime(rpe_tmp["entry_date"], errors="coerce")
+            rpe_tmp["session_index"] = pd.to_numeric(rpe_tmp["session_index"], errors="coerce").fillna(1).astype(int)
+            rpe_tmp = rpe_tmp.dropna(subset=["entry_date"]).sort_values(["entry_date", "session_index"]).reset_index(drop=True)
+
+            rpe_day_labels = (
+                rpe_tmp.drop_duplicates(subset=["entry_date"])
+                .sort_values("entry_date")["label"]
+                .fillna("--")
+                .astype(str)
+                .tolist()
+            )
+            rpe_days = (
+                rpe_tmp.drop_duplicates(subset=["entry_date"])
+                .sort_values("entry_date")["entry_date"]
+                .tolist()
+            )
+            session_indexes = sorted(rpe_tmp["session_index"].dropna().astype(int).unique().tolist())
+            series_values: list[list[float]] = []
+            series_errors: list[list[float]] = []
+            series_colors: list[str] = []
+            legend_labels: list[str] = []
+            palette = ["#EA3351", "#6E1222", "#F59E0B", "#F5D2D8"]
+
+            for palette_index, session_index in enumerate(session_indexes):
+                session_values: list[float] = []
+                session_errors: list[float] = []
+                for day_value in rpe_days:
+                    row = rpe_tmp[
+                        (rpe_tmp["entry_date"] == day_value) & (rpe_tmp["session_index"] == session_index)
+                    ]
+                    if row.empty:
+                        session_values.append(0.0)
+                        session_errors.append(0.0)
+                    else:
+                        avg_value = pd.to_numeric(row.iloc[0].get("avg_rpe"), errors="coerce")
+                        std_value = pd.to_numeric(row.iloc[0].get("avg_rpe_std"), errors="coerce")
+                        session_values.append(float(avg_value) if pd.notna(avg_value) else 0.0)
+                        session_errors.append(float(std_value) if pd.notna(std_value) else 0.0)
+                series_values.append(session_values)
+                series_errors.append(session_errors)
+                series_colors.append(palette[palette_index % len(palette)])
+                legend_labels.append(f"Sessie {session_index}")
+
+            rpe_draw = build_grouped_vertical_error_chart_drawing(
+                "Daily Avg RPE per Session +/- SD",
+                rpe_day_labels,
+                series_values,
+                series_errors,
+                series_colors,
+                legend_labels,
+                width=doc.width,
+                height=220,
+                y_max=10,
+            )
+        else:
+            rpe_draw = build_vertical_error_chart_drawing(
+                "Daily Avg RPE +/- SD",
+                monitoring_labels,
+                _series_to_floats(monitoring_day_table["avg_rpe"]),
+                _series_to_floats(monitoring_day_table.get("avg_rpe_std")),
+                "#EA3351",
+                "Avg RPE",
+                width=doc.width,
+                height=220,
+                y_max=10,
+            )
         story.append(Paragraph("Monitoring Charts", section_style))
         monitoring_row = Table(
             [[physical_draw, mental_draw]],
