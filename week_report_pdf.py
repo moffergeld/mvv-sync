@@ -147,9 +147,17 @@ def build_week_report_pdf_bytes(
         leftIndent=4,
     )
 
-    card_width = doc.width / 4.0
+    default_card_width = doc.width / 4.0
 
-    def build_metric_card(label: str, value: str, foot: str, background_hex: str, border_hex: str) -> Table:
+    def build_metric_card(
+        label: str,
+        value: str,
+        foot: str,
+        background_hex: str,
+        border_hex: str,
+        width: float | None = None,
+    ) -> Table:
+        card_width = width or default_card_width
         card = Table(
             [
                 [Paragraph(label.upper(), card_label_style)],
@@ -648,28 +656,35 @@ def build_week_report_pdf_bytes(
     story.append(Spacer(1, 10))
 
     cards = [
-        build_metric_card("Active Players", _fmt_int(summary.get("active_players")), "Unieke GPS-spelers in deze week", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("Player Sessions", _fmt_int(summary.get("player_sessions")), "Totaal aantal Summary-sessies", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totale sprintacties in deze week", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("Speed Exposures", _fmt_int(summary.get("speed_exposures")), "Sessies >= 90% van seizoenstop", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("Dist / Player", _fmt_distance(summary.get("dist_per_player")), "Teamload gedeeld door actieve spelers", "#F8FAFC", "#D7DEE8"),
-        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#F8FAFC", "#D7DEE8"),
-        build_metric_card("Readiness", _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "Gemiddelde readiness-score", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("Avg RPE", _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "Gemiddelde RPE in deze week", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("Wellness Entries", _fmt_int(monitoring_summary.get("wellness_entries")), "Aantal wellnessregistraties", "#FFF7F8", "#E8C5CB"),
-        build_metric_card("RPE Entries", _fmt_int(monitoring_summary.get("rpe_entries")), "Aantal RPE-registraties", "#FFF7F8", "#E8C5CB"),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("Dist / Player", _fmt_distance(summary.get("dist_per_player")), "Teamload gedeeld door actieve spelers", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totale sprintacties in deze week", "#FFF7F8", "#E8C5CB", width=doc.width / 5.0),
+        build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
     ]
     story.append(
         KeepTogether(
             [
                 Paragraph("Visual Snapshot", section_style),
-                build_card_grid(cards),
+                build_card_grid(cards, columns=5),
                 Spacer(1, 8),
             ]
         )
     )
+
+    if isinstance(day_table, pd.DataFrame) and not day_table.empty and "speed_exposures" in day_table.columns:
+        story.append(
+            build_bar_chart_drawing(
+                "Daily Speed Exposures",
+                [str(value) for value in day_table["label"].fillna("--").tolist()],
+                [_series_to_floats(day_table["speed_exposures"])],
+                ["#C8102E"],
+                ["Speed Exposures"],
+                width=doc.width,
+                height=228,
+            )
+        )
+        story.append(Spacer(1, 8))
 
     if isinstance(zone_df, pd.DataFrame) and not zone_df.empty:
         story.append(Paragraph("Distance Zone Profile", section_style))

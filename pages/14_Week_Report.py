@@ -572,6 +572,7 @@ def build_week_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
             total_distance=("total_distance", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             sprints=("number_of_sprints", "sum"),
+            speed_exposures=("speed_exposure_flag", "sum"),
             total_accelerations=("total_accelerations", "sum"),
             total_decelerations=("total_decelerations", "sum"),
             max_speed=("max_speed", "max"),
