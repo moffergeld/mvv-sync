@@ -14,7 +14,7 @@ from plotly.subplots import make_subplots
 
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
-from report_generator import REPORT_STYLE_LABELS, REPORT_STYLE_OPTIONS, generate_player_report
+from report_generator import generate_player_report
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_grouped_summary, summarize_monitoring_dataset
 from roles import get_profile, is_staff_user, pick_target_player, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
@@ -458,10 +458,7 @@ def _safe_filename(value: str) -> str:
 
 
 def _report_file_name(base_name: str, report_style: str) -> str:
-    if report_style == "legacy":
-        return base_name
-    stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
-    return f"{stem}_{report_style}.pdf"
+    return base_name
 
 
 @st.cache_data(show_spinner=False, ttl=180)
@@ -994,7 +991,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        player_col, scope_col, style_col = st.columns([1.05, 0.55, 0.55], gap="large")
+        player_col, scope_col = st.columns([1.15, 0.85], gap="large")
         with player_col:
             st.markdown('<div class="player-report-filter-label">Speler</div>', unsafe_allow_html=True)
             target_player_id, target_player_name, _ = pick_target_player(
@@ -1012,16 +1009,8 @@ def main() -> None:
                 label_visibility="collapsed",
                 key="player_report_scope_mode",
             )
-        with style_col:
-            st.markdown('<div class="player-report-filter-label">Rapportstijl</div>', unsafe_allow_html=True)
-            report_style = st.selectbox(
-                "Rapportstijl",
-                options=list(REPORT_STYLE_OPTIONS),
-                index=0,
-                format_func=lambda value: REPORT_STYLE_LABELS.get(value, value),
-                label_visibility="collapsed",
-                key="player_report_style",
-            )
+
+    report_style = "html"
 
     if not target_player_id or not target_player_name:
         st.info("Geen speler beschikbaar voor deze rapportage.")

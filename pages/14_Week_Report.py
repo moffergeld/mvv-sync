@@ -11,7 +11,7 @@ import streamlit as st
 
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
-from report_generator import REPORT_STYLE_LABELS, REPORT_STYLE_OPTIONS, generate_week_report
+from report_generator import generate_week_report
 from report_monitoring import (
     WELLNESS_PARAMETER_SPECS,
     build_monitoring_dataset,
@@ -473,10 +473,7 @@ def _week_pdf_filename(week_start: pd.Timestamp) -> str:
 
 
 def _report_file_name(base_name: str, report_style: str) -> str:
-    if report_style == "legacy":
-        return base_name
-    stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
-    return f"{stem}_{report_style}.pdf"
+    return base_name
 
 
 @st.cache_data(show_spinner=False, ttl=180)
@@ -1060,7 +1057,7 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-        filter_col, detail_col, style_col = st.columns([1.0, 0.45, 0.55], gap="large")
+        filter_col, detail_col = st.columns([1.2, 0.8], gap="large")
         with filter_col:
             st.markdown('<div class="week-report-filter-label">Week</div>', unsafe_allow_html=True)
             selected_week = st.selectbox(
@@ -1076,16 +1073,8 @@ def main() -> None:
                 f'<div class="week-report-filter-note">ISO week {selected_iso.year}-W{int(selected_iso.week):02d}</div>',
                 unsafe_allow_html=True,
             )
-        with style_col:
-            st.markdown('<div class="week-report-filter-label">Rapportstijl</div>', unsafe_allow_html=True)
-            report_style = st.selectbox(
-                "Rapportstijl",
-                options=list(REPORT_STYLE_OPTIONS),
-                index=0,
-                format_func=lambda value: REPORT_STYLE_LABELS.get(value, value),
-                label_visibility="collapsed",
-                key="week_report_style",
-            )
+
+    report_style = "html"
 
     selected_week = pd.Timestamp(selected_week).normalize()
     week_end = selected_week + pd.Timedelta(days=6)

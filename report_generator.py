@@ -9,20 +9,17 @@ from html_report_generator import (
     build_player_report_html_pdf_bytes,
     build_week_report_html_pdf_bytes,
 )
-from player_report_pdf import build_player_report_pdf_bytes
-from week_report_pdf import build_week_report_pdf_bytes
 
-REPORT_STYLE_LABELS: dict[str, str] = {
-    "legacy": "Klassiek rapport",
-    "html": "Nieuw vormgegeven rapport",
-}
+REPORT_STYLE_LABELS: dict[str, str] = {"html": "Rapport"}
 REPORT_STYLE_OPTIONS: tuple[str, ...] = tuple(REPORT_STYLE_LABELS.keys())
 
 ReportBuilder = Callable[..., bytes]
 
 
 def normalize_report_style(report_style: str | None = None) -> str:
-    style = (report_style or "legacy").strip().lower()
+    style = (report_style or "html").strip().lower()
+    if style == "legacy":
+        return "html"
     if style not in REPORT_STYLE_LABELS:
         allowed = ", ".join(REPORT_STYLE_OPTIONS)
         raise ValueError(f"Onbekende report_style '{report_style}'. Toegestane waarden: {allowed}.")
@@ -37,9 +34,7 @@ def _call_builder(builder: ReportBuilder, payload: Mapping[str, Any]) -> bytes:
 
 def _resolve_builder(report_kind: str, report_style: str) -> ReportBuilder:
     builders: dict[tuple[str, str], ReportBuilder] = {
-        ("week", "legacy"): build_week_report_pdf_bytes,
         ("week", "html"): build_week_report_html_pdf_bytes,
-        ("player", "legacy"): build_player_report_pdf_bytes,
         ("player", "html"): build_player_report_html_pdf_bytes,
     }
     key = (report_kind.strip().lower(), normalize_report_style(report_style))
@@ -53,7 +48,7 @@ def generate_report(
     report_kind: str,
     data: Mapping[str, Any] | None = None,
     output_path: str | Path | None = None,
-    report_style: str = "legacy",
+    report_style: str = "html",
     **kwargs: Any,
 ) -> bytes:
     payload: dict[str, Any] = {}
@@ -71,7 +66,7 @@ def generate_report(
 def generate_week_report(
     data: Mapping[str, Any] | None = None,
     output_path: str | Path | None = None,
-    report_style: str = "legacy",
+    report_style: str = "html",
     **kwargs: Any,
 ) -> bytes:
     return generate_report(
@@ -86,7 +81,7 @@ def generate_week_report(
 def generate_player_report(
     data: Mapping[str, Any] | None = None,
     output_path: str | Path | None = None,
-    report_style: str = "legacy",
+    report_style: str = "html",
     **kwargs: Any,
 ) -> bytes:
     return generate_report(
