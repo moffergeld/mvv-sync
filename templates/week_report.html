@@ -67,7 +67,7 @@
         </div>
         <div class="section-meta">{{ section.subtitle }}</div>
       </div>
-      <div class="chart-grid chart-grid--{{ section.panels|length }}">
+      <div class="chart-grid chart-grid--{{ section.columns or section.panels|length }}">
         {% for chart in section.panels %}
           <article class="panel panel--chart">
             {{ chart.svg | safe }}
