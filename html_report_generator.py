@@ -597,7 +597,8 @@ def _build_week_focus_cards(
     monitoring_summary: dict[str, object],
     day_table: pd.DataFrame,
 ) -> list[dict[str, str]]:
-    cards: list[dict[str, str]] = []
+    _ = monitoring_summary
+    _day_table = day_table
     td_change = summary.get("td_vs_prev")
     hsr_change = summary.get("hsr_vs_prev")
     load_title_parts: list[str] = []
@@ -606,71 +607,16 @@ def _build_week_focus_cards(
         load_title_parts.append(f"TD {_fmt_percent(td_change, signed=True)}")
     if pd.notna(hsr_change):
         load_title_parts.append(f"HSR {_fmt_percent(hsr_change, signed=True)}")
-    cards.append(
+    if not load_title_parts:
+        return []
+    return [
         {
             "eyebrow": "Load status",
-            "title": " | ".join(load_title_parts) if load_title_parts else _fmt_distance(summary.get("total_distance")),
-            "body": "Vergeleken met de rolling 4-week referentie voor externe load."
-            if load_title_parts
-            else "Totale teambelasting binnen de geselecteerde week.",
+            "title": " | ".join(load_title_parts),
+            "body": "Vergeleken met de rolling 4-week referentie voor externe load.",
             "tone": _tone_from_change(max(valid_changes, key=lambda item: abs(float(item)))) if valid_changes else "neutral",
         }
-    )
-
-    if isinstance(day_table, pd.DataFrame) and not day_table.empty:
-        peak_day = day_table.sort_values("total_distance", ascending=False).iloc[0]
-        cards.append(
-            {
-                "eyebrow": "Peak day",
-                "title": f"{_weekday_label(peak_day.get('datum'))} | {_fmt_distance(peak_day.get('total_distance'))}",
-                "body": (
-                    f"{_fmt_int(peak_day.get('active_players'))} spelers | "
-                    f"{_fmt_int(peak_day.get('player_sessions'))} sessies | "
-                    f"max {_fmt_speed(peak_day.get('max_speed'))}"
-                ),
-                "tone": "accent",
-            }
-        )
-    else:
-        cards.append(
-            {
-                "eyebrow": "Peak day",
-                "title": "--",
-                "body": "Geen dagniveau-data beschikbaar voor deze week.",
-                "tone": "neutral",
-            }
-        )
-
-    cards.append(
-        {
-            "eyebrow": "Speed activation",
-            "title": f"{_fmt_int(summary.get('speed_exposures'))} exposures",
-            "body": f"{_fmt_int(summary.get('sprints'))} sprints | top speed {_fmt_speed(summary.get('top_speed'))}",
-            "tone": "positive" if pd.notna(summary.get("speed_exposures")) and float(summary.get("speed_exposures")) > 0 else "neutral",
-        }
-    )
-
-    cards.append(
-        {
-            "eyebrow": "Monitoring coverage",
-            "title": (
-                f"{_fmt_int(monitoring_summary.get('wellness_players'))}/{_fmt_int(summary.get('active_players'))} wellness | "
-                f"{_fmt_int(monitoring_summary.get('rpe_players'))}/{_fmt_int(summary.get('active_players'))} RPE"
-            ),
-            "body": (
-                f"Readiness {_fmt_dec(monitoring_summary.get('readiness_avg'), 1)} | "
-                f"Avg RPE {_fmt_dec(monitoring_summary.get('avg_rpe'), 1)}"
-            ),
-            "tone": _tone_from_coverage(
-                min(
-                    float(monitoring_summary.get("wellness_players") or 0),
-                    float(monitoring_summary.get("rpe_players") or 0),
-                ),
-                summary.get("active_players"),
-            ),
-        }
-    )
-    return cards
+    ]
 
 
 def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
