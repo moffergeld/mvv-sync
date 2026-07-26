@@ -424,8 +424,8 @@ def _build_horizontal_bar_chart_svg(
     values: Sequence[object],
     *,
     color: str = "#6E1222",
-    width: int = 860,
-    height: int = 340,
+    width: int = 720,
+    height: int = 320,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -433,12 +433,12 @@ def _build_horizontal_bar_chart_svg(
     if not clean_labels or not clean_values or max(clean_values, default=0) <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
-    chart_max = _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 170, 40, 46, 28
+    chart_max = max(clean_values)
+    margin_left, margin_right, margin_top, margin_bottom = 126, 22, 44, 24
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     row_height = plot_height / max(1, len(clean_labels))
-    bar_height = max(14, min(22, row_height * 0.62))
+    bar_height = max(12, min(20, row_height * 0.6))
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -449,10 +449,10 @@ def _build_horizontal_bar_chart_svg(
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
         y = margin_top + row_height * index + (row_height - bar_height) / 2
         width_value = 0 if chart_max <= 0 else (value / chart_max) * plot_width
-        parts.append(f'<text x="{margin_left - 14}" y="{y + bar_height * 0.72:.1f}" text-anchor="end" font-size="10" fill="#334155">{escape(label)}</text>')
-        parts.append(f'<rect x="{margin_left}" y="{y:.1f}" width="{plot_width:.1f}" height="{bar_height:.1f}" rx="5" fill="#EFF3F9" />')
+        value_x = min(width - margin_right - 2, margin_left + width_value + 6)
+        parts.append(f'<text x="{margin_left - 10}" y="{y + bar_height * 0.72:.1f}" text-anchor="end" font-size="9" fill="#334155">{escape(label)}</text>')
         parts.append(f'<rect x="{margin_left}" y="{y:.1f}" width="{width_value:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
-        parts.append(f'<text x="{margin_left + width_value + 8:.1f}" y="{y + bar_height * 0.72:.1f}" font-size="10" fill="#0F172A">{escape(formatter(value))}</text>')
+        parts.append(f'<text x="{value_x:.1f}" y="{y + bar_height * 0.72:.1f}" font-size="9" fill="#0F172A">{escape(formatter(value))}</text>')
 
     parts.append("</svg>")
     return "".join(parts)
@@ -941,7 +941,7 @@ def build_week_report_html_pdf_bytes(
             {
                 "eyebrow": "Player leaders",
                 "title": "Top outputs within the squad",
-                "subtitle": "Snel overzicht van volume- en high-speed leiders voor de weekevaluatie.",
+                "subtitle": "Snel overzicht van volume-, high-speed- en sprintleiders voor de weekevaluatie.",
                 "panels": [
                     {
                         "svg": _build_horizontal_bar_chart_svg(
@@ -961,13 +961,6 @@ def build_week_report_html_pdf_bytes(
                             formatter=_fmt_distance,
                         )
                     },
-                ],
-            },
-            {
-                "eyebrow": "Leaders",
-                "title": "Sprint and internal load activation",
-                "subtitle": "Sprintleiders en sessie-RPE overzicht voor dagen met enkele of dubbele sessies.",
-                "panels": [
                     {
                         "svg": _build_horizontal_bar_chart_svg(
                             "Top Players by Sprints",
@@ -977,6 +970,13 @@ def build_week_report_html_pdf_bytes(
                             formatter=_fmt_int,
                         )
                     },
+                ],
+            },
+            {
+                "eyebrow": "Leaders",
+                "title": "Session RPE overview",
+                "subtitle": "Sessie-RPE overzicht voor dagen met enkele of dubbele sessies.",
+                "panels": [
                     {
                         "svg": _build_error_bar_chart_svg(
                             "Session RPE +/- SD",

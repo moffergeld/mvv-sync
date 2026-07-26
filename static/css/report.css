@@ -494,6 +494,11 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.chart-grid--3,
+.table-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .panel {
   padding: 4mm;
   border-radius: var(--radius-lg);
@@ -503,7 +508,7 @@ body {
 }
 
 .panel--chart {
-  padding: 3mm;
+  padding: 2.4mm;
 }
 
 .panel-head {
