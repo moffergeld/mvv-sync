@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ document_title }}</title>
+    <link rel="stylesheet" href="static/css/report.css" />
+  </head>
+  <body>
+    <main class="report-shell">
+      <header class="report-header">
+        <div class="report-header__brand">
+          {% if logo_src %}
+            <img src="{{ logo_src }}" alt="MVV Maastricht" class="report-header__logo" />
+          {% endif %}
+          <div class="report-header__copy">
+            <div class="report-header__kicker">{{ report_kicker }}</div>
+            <h1 class="report-header__title">{{ report_title }}</h1>
+            {% if report_subtitle %}
+              <p class="report-header__subtitle">{{ report_subtitle }}</p>
+            {% endif %}
+          </div>
+        </div>
+        {% if report_description %}
+          <p class="report-header__description">{{ report_description }}</p>
+        {% endif %}
+        {% if badges %}
+          <div class="badge-row">
+            {% for badge in badges %}
+              <span class="badge">{{ badge }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </header>
+
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

@@ -1,0 +1,768 @@
+from __future__ import annotations
+
+import math
+from html import escape
+from pathlib import Path
+from typing import Any, Callable, Iterable, Sequence
+
+import pandas as pd
+
+from pages.Subscripts.mvv_branding import TEAM_LOGO
+
+BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "templates"
+CSS_PATH = BASE_DIR / "static" / "css" / "report.css"
+LOGO_SRC = TEAM_LOGO.relative_to(BASE_DIR).as_posix() if TEAM_LOGO.exists() else ""
+
+SVG_COLORS = ["#C8102E", "#6E1222", "#EA3351", "#F59E0B", "#2563EB", "#0F766E"]
+
+
+def _require_jinja2() -> Any:
+    try:
+        from jinja2 import Environment, FileSystemLoader, select_autoescape
+    except ImportError as exc:
+        raise RuntimeError(
+            "HTML rapportstijl vereist Jinja2. Voeg jinja2 toe aan requirements.txt en installeer de dependency."
+        ) from exc
+    return Environment, FileSystemLoader, select_autoescape
+
+
+def _require_weasyprint() -> Any:
+    try:
+        from weasyprint import CSS, HTML
+    except ImportError as exc:
+        raise RuntimeError(
+            "HTML rapportstijl vereist WeasyPrint. Voeg weasyprint toe aan requirements.txt en installeer ook de benodigde systeembibliotheken."
+        ) from exc
+    return HTML, CSS
+
+
+def _template_environment() -> Any:
+    Environment, FileSystemLoader, select_autoescape = _require_jinja2()
+    return Environment(
+        loader=FileSystemLoader(str(TEMPLATES_DIR)),
+        autoescape=select_autoescape(["html", "xml"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+
+
+def _render_html_pdf(template_name: str, context: dict[str, Any]) -> bytes:
+    html_cls, css_cls = _require_weasyprint()
+    env = _template_environment()
+    template = env.get_template(template_name)
+    html = template.render(**context)
+    return html_cls(string=html, base_url=str(BASE_DIR)).write_pdf(
+        stylesheets=[css_cls(filename=str(CSS_PATH), base_url=str(BASE_DIR))]
+    )
+
+
+def _fmt_int(value: object) -> str:
+    if pd.isna(value):
+        return "--"
+    return f"{int(round(float(value))):,}".replace(",", ".")
+
+
+def _fmt_dec(value: object, decimals: int = 1) -> str:
+    if pd.isna(value):
+        return "--"
+    formatted = f"{float(value):,.{decimals}f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _fmt_distance(value: object) -> str:
+    base = _fmt_int(value)
+    return "--" if base == "--" else f"{base} m"
+
+
+def _fmt_speed(value: object) -> str:
+    base = _fmt_dec(value, 1)
+    return "--" if base == "--" else f"{base} km/h"
+
+
+def _fmt_minutes(value: object) -> str:
+    base = _fmt_int(value)
+    return "--" if base == "--" else f"{base} min"
+
+
+def _fmt_text(value: object) -> str:
+    if value is None or pd.isna(value):
+        return "--"
+    return str(value)
+
+
+def _fmt_axis(value: float) -> str:
+    if abs(value) >= 1000:
+        return _fmt_int(value)
+    if value.is_integer():
+        return str(int(value))
+    return _fmt_dec(value, 1)
+
+
+def _clean_series(values: Sequence[object]) -> list[float]:
+    cleaned: list[float] = []
+    for value in values:
+        numeric = pd.to_numeric(value, errors="coerce")
+        cleaned.append(float(numeric) if pd.notna(numeric) else 0.0)
+    return cleaned
+
+
+def _nice_max(value: float) -> float:
+    if value <= 0:
+        return 1.0
+    padded = value * 1.15
+    magnitude = 10 ** math.floor(math.log10(padded))
+    normalized = padded / magnitude
+    if normalized <= 1:
+        nice = 1
+    elif normalized <= 2:
+        nice = 2
+    elif normalized <= 5:
+        nice = 5
+    else:
+        nice = 10
+    return nice * magnitude
+
+
+def _empty_svg(title: str, message: str, *, width: int = 860, height: int = 250) -> str:
+    return f"""
+    <svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">
+      <rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />
+      <text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>
+      <text x="{width/2:.0f}" y="{height/2:.0f}" text-anchor="middle" font-size="15" fill="#64748B">{escape(message)}</text>
+    </svg>
+    """.strip()
+
+
+def _build_vertical_bar_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    values: Sequence[object],
+    *,
+    color: str = "#C8102E",
+    width: int = 860,
+    height: int = 270,
+    y_max: float | None = None,
+    formatter: Callable[[object], str] = _fmt_int,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    clean_values = _clean_series(values)
+    if not clean_labels or not clean_values or max(clean_values, default=0) <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
+    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 46, 90
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    slot_width = plot_width / max(1, len(clean_values))
+    bar_width = max(16, min(44, slot_width * 0.58))
+    label_font = 9 if len(clean_labels) > 8 else 10
+    grid_lines = 4
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
+        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="10" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+
+    for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
+        x_center = margin_left + slot_width * index + slot_width / 2
+        bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+        x = x_center - bar_width / 2
+        y = margin_top + plot_height - bar_height
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
+        if value > 0:
+            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 8, margin_top + 12):.1f}" text-anchor="middle" font-size="10" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
+        label_y = height - 24
+        parts.append(
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {x_center:.1f} {label_y})">{escape(label)}</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_grouped_bar_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    series: Sequence[dict[str, Any]],
+    *,
+    width: int = 860,
+    height: int = 280,
+    y_max: float | None = None,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    if not clean_labels or not series:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    clean_series = [
+        {
+            "label": str(item.get("label") or "Serie"),
+            "color": str(item.get("color") or SVG_COLORS[index % len(SVG_COLORS)]),
+            "values": _clean_series(item.get("values") or []),
+        }
+        for index, item in enumerate(series)
+    ]
+    flat_values = [value for item in clean_series for value in item["values"]]
+    if max(flat_values, default=0) <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    chart_max = y_max if y_max is not None else _nice_max(max(flat_values))
+    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 62, 90
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    slot_width = plot_width / max(1, len(clean_labels))
+    series_width = slot_width * 0.72
+    bar_width = max(9, min(22, series_width / max(1, len(clean_series))))
+    grid_lines = 4
+    label_font = 9 if len(clean_labels) > 8 else 10
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    legend_x = 24
+    for item in clean_series:
+        parts.append(f'<rect x="{legend_x}" y="44" width="12" height="12" rx="3" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 18}" y="54" font-size="10" fill="#475569">{escape(item["label"])}</text>')
+        legend_x += max(100, len(item["label"]) * 7 + 34)
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
+        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="10" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+
+    for label_index, label in enumerate(clean_labels):
+        x_slot = margin_left + slot_width * label_index
+        x_start = x_slot + (slot_width - series_width) / 2
+        for series_index, item in enumerate(clean_series):
+            value = item["values"][label_index] if label_index < len(item["values"]) else 0.0
+            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            x = x_start + series_index * bar_width
+            y = margin_top + plot_height - bar_height
+            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width - 2:.1f}" height="{bar_height:.1f}" rx="4" fill="{item["color"]}" />')
+        label_x = x_slot + slot_width / 2
+        label_y = height - 24
+        parts.append(
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {label_x:.1f} {label_y})">{escape(label)}</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_horizontal_bar_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    values: Sequence[object],
+    *,
+    color: str = "#6E1222",
+    width: int = 860,
+    height: int = 340,
+    formatter: Callable[[object], str] = _fmt_int,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    clean_values = _clean_series(values)
+    if not clean_labels or not clean_values or max(clean_values, default=0) <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    chart_max = _nice_max(max(clean_values))
+    margin_left, margin_right, margin_top, margin_bottom = 170, 40, 46, 28
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    row_height = plot_height / max(1, len(clean_labels))
+    bar_height = max(14, min(22, row_height * 0.62))
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
+        y = margin_top + row_height * index + (row_height - bar_height) / 2
+        width_value = 0 if chart_max <= 0 else (value / chart_max) * plot_width
+        parts.append(f'<text x="{margin_left - 14}" y="{y + bar_height * 0.72:.1f}" text-anchor="end" font-size="10" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<rect x="{margin_left}" y="{y:.1f}" width="{plot_width:.1f}" height="{bar_height:.1f}" rx="5" fill="#EFF3F9" />')
+        parts.append(f'<rect x="{margin_left}" y="{y:.1f}" width="{width_value:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
+        parts.append(f'<text x="{margin_left + width_value + 8:.1f}" y="{y + bar_height * 0.72:.1f}" font-size="10" fill="#0F172A">{escape(formatter(value))}</text>')
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_share_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    values: Sequence[object],
+    *,
+    width: int = 860,
+    height: int = 220,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    clean_values = _clean_series(values)
+    total = sum(clean_values)
+    if not clean_labels or total <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    bar_x, bar_y, bar_width, bar_height = 28, 66, width - 56, 28
+    current_x = bar_x
+    for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
+        color = SVG_COLORS[index % len(SVG_COLORS)]
+        segment_width = (value / total) * bar_width
+        parts.append(f'<rect x="{current_x:.1f}" y="{bar_y}" width="{segment_width:.1f}" height="{bar_height}" fill="{color}" rx="8" />')
+        current_x += segment_width
+
+    row_y = 124
+    for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
+        color = SVG_COLORS[index % len(SVG_COLORS)]
+        percentage = (value / total) * 100
+        col = index % 2
+        row = index // 2
+        x = 30 + col * ((width - 60) / 2)
+        y = row_y + row * 28
+        parts.append(f'<rect x="{x}" y="{y - 10}" width="12" height="12" rx="3" fill="{color}" />')
+        parts.append(
+            f'<text x="{x + 20}" y="{y}" font-size="10" fill="#334155">{escape(label)}: {escape(_fmt_distance(value))} ({escape(_fmt_dec(percentage, 1))}%)</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _table_payload(
+    title: str,
+    subtitle: str,
+    dataframe: pd.DataFrame | None,
+    columns: Sequence[tuple[str, str, Callable[[object], str] | None]],
+    *,
+    empty_message: str,
+) -> dict[str, Any]:
+    headers = [label for _, label, _ in columns]
+    if dataframe is None or dataframe.empty:
+        return {
+            "title": title,
+            "subtitle": subtitle,
+            "headers": headers,
+            "rows": [],
+            "empty_message": empty_message,
+        }
+
+    rows: list[list[str]] = []
+    for _, row in dataframe.iterrows():
+        rows.append(
+            [
+                formatter(row.get(column)) if formatter else _fmt_text(row.get(column))
+                for column, _, formatter in columns
+            ]
+        )
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "headers": headers,
+        "rows": rows,
+        "empty_message": empty_message,
+    }
+
+
+def _week_badges(summary: dict[str, object], monitoring_summary: dict[str, object]) -> list[str]:
+    badges = [
+        f"{_fmt_int(summary.get('active_days'))} actieve dagen",
+        f"{_fmt_int(summary.get('training_sessions'))} trainingen",
+        f"{_fmt_int(summary.get('match_sessions'))} matchsessies",
+        f"{_fmt_int(summary.get('player_sessions'))} player sessions",
+    ]
+    if pd.notna(summary.get("td_vs_prev")):
+        badges.append(f"TD vs vorige 4 weken: {_fmt_dec(summary.get('td_vs_prev'), 1)}%")
+    if pd.notna(summary.get("hsr_vs_prev")):
+        badges.append(f"HSR vs vorige 4 weken: {_fmt_dec(summary.get('hsr_vs_prev'), 1)}%")
+    if pd.notna(monitoring_summary.get("avg_rpe")):
+        badges.append(f"Gem. RPE: {_fmt_dec(monitoring_summary.get('avg_rpe'), 1)}")
+    return badges
+
+
+def build_week_report_html_pdf_bytes(
+    *,
+    week_label: str,
+    iso_label: str,
+    summary: dict[str, object],
+    monitoring_summary: dict[str, object],
+    day_table: pd.DataFrame,
+    type_table: pd.DataFrame,
+    player_table: pd.DataFrame,
+    monitoring_day_table: pd.DataFrame,
+    notes: Iterable[str],
+    day_stats: pd.DataFrame | None = None,
+    zone_df: pd.DataFrame | None = None,
+    rpe_session_day_table: pd.DataFrame | None = None,
+    monitoring_player_table: pd.DataFrame | None = None,
+) -> bytes:
+    top_players = (
+        player_table.sort_values("total_distance", ascending=False)
+        .head(12)
+        .assign(distance_per_min=lambda frame: pd.to_numeric(frame.get("distance_per_min"), errors="coerce"))
+        if isinstance(player_table, pd.DataFrame) and not player_table.empty
+        else pd.DataFrame()
+    )
+
+    monitoring_timeline = monitoring_day_table.copy() if isinstance(monitoring_day_table, pd.DataFrame) else pd.DataFrame()
+    if not monitoring_timeline.empty and "readiness_score" not in monitoring_timeline.columns:
+        monitoring_timeline["readiness_score"] = pd.NA
+
+    context = {
+        "document_title": f"Week Report | {week_label}",
+        "report_title": "Week Report",
+        "report_kicker": "MVV Maastricht | Reports | HTML report",
+        "report_subtitle": f"{week_label} | {iso_label}",
+        "report_description": "Nieuwe HTML/CSS-rapportstijl op basis van dezelfde weekdata, samenvattingen en monitoringberekeningen als de bestaande PDF-export.",
+        "logo_src": LOGO_SRC,
+        "badges": _week_badges(summary, monitoring_summary),
+        "cards": [
+            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
+            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
+            {"label": "Dist / Player", "value": _fmt_distance(summary.get("dist_per_player")), "foot": "Teamload gedeeld door actieve spelers"},
+            {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totale sprintacties in deze week"},
+            {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
+            {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
+        ],
+        "chart_rows": [
+            [
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Daily Team Distance",
+                        day_table.get("label", pd.Series(dtype=str)).tolist(),
+                        day_table.get("total_distance", pd.Series(dtype=float)).tolist(),
+                        color="#6E1222",
+                        formatter=_fmt_distance,
+                    )
+                },
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Daily Team HSR / HSD",
+                        day_table.get("label", pd.Series(dtype=str)).tolist(),
+                        day_table.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
+                        color="#EA3351",
+                        formatter=_fmt_distance,
+                    )
+                },
+            ],
+            [
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Daily Speed Exposures",
+                        day_table.get("label", pd.Series(dtype=str)).tolist(),
+                        day_table.get("speed_exposures", pd.Series(dtype=float)).tolist(),
+                        color="#C8102E",
+                        formatter=_fmt_int,
+                    )
+                },
+                {
+                    "svg": _build_share_chart_svg(
+                        "Distance Zone Share",
+                        zone_df.get("zone", pd.Series(dtype=str)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
+                        zone_df.get("value", pd.Series(dtype=float)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
+                    )
+                },
+            ],
+            [
+                {
+                    "svg": _build_horizontal_bar_chart_svg(
+                        "Top Players by Total Distance",
+                        top_players.get("player_name", pd.Series(dtype=str)).tolist(),
+                        top_players.get("total_distance", pd.Series(dtype=float)).tolist(),
+                        color="#6E1222",
+                        formatter=_fmt_distance,
+                    )
+                },
+                {
+                    "svg": _build_grouped_bar_chart_svg(
+                        "Monitoring Overview",
+                        monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
+                        [
+                            {"label": "Muscle", "color": "#6E1222", "values": monitoring_timeline.get("muscle_soreness", pd.Series(dtype=float)).tolist()},
+                            {"label": "Fatigue", "color": "#EA3351", "values": monitoring_timeline.get("fatigue", pd.Series(dtype=float)).tolist()},
+                            {"label": "Sleep", "color": "#2563EB", "values": monitoring_timeline.get("sleep_quality", pd.Series(dtype=float)).tolist()},
+                            {"label": "Mood", "color": "#F59E0B", "values": monitoring_timeline.get("mood", pd.Series(dtype=float)).tolist()},
+                        ],
+                        y_max=10,
+                    )
+                },
+            ],
+        ],
+        "table_rows": [
+            [
+                _table_payload(
+                    "Training vs Match",
+                    "Verdeling van de weekbelasting per sessiecategorie.",
+                    type_table,
+                    [
+                        ("session_category", "Type", None),
+                        ("active_players", "Players", _fmt_int),
+                        ("player_sessions", "Sessions", _fmt_int),
+                        ("total_distance", "Distance", _fmt_distance),
+                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                        ("sprints", "Sprints", _fmt_int),
+                        ("max_speed", "Top Speed", _fmt_speed),
+                    ],
+                    empty_message="Geen sessie-indeling beschikbaar.",
+                ),
+                _table_payload(
+                    "Top Players",
+                    "Spelers met de hoogste totale afstand in deze week.",
+                    top_players,
+                    [
+                        ("player_name", "Speler", None),
+                        ("sessions", "Sessies", _fmt_int),
+                        ("total_distance", "Distance", _fmt_distance),
+                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                        ("sprints", "Sprints", _fmt_int),
+                        ("max_speed", "Top Speed", _fmt_speed),
+                    ],
+                    empty_message="Geen spelerssamenvatting beschikbaar.",
+                ),
+            ],
+            [
+                _table_payload(
+                    "Monitoring Timeline",
+                    "Wellness, readiness en RPE door de week heen.",
+                    monitoring_timeline,
+                    [
+                        ("label", "Periode", None),
+                        ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
+                        ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
+                        ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
+                        ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
+                        ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
+                        ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
+                        ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
+                    ],
+                    empty_message="Geen monitoringdata beschikbaar.",
+                ),
+            ],
+        ],
+        "notes": list(notes),
+    }
+    return _render_html_pdf("week_report.html", context)
+
+
+def _player_badges(player_name: str, scope_label: str, period_label: str, summary: dict[str, object]) -> list[str]:
+    badges = [
+        f"Speler: {player_name}",
+        f"Scope: {scope_label}",
+        f"Periode: {period_label}",
+        f"{_fmt_int(summary.get('sessions'))} sessies",
+        f"{_fmt_int(summary.get('active_days'))} actieve dagen",
+    ]
+    if pd.notna(summary.get("distance_per_min")):
+        badges.append(f"Intensiteit: {_fmt_dec(summary.get('distance_per_min'), 1)} m/min")
+    if pd.notna(summary.get("speed_exposures")):
+        badges.append(f"Speed exposures: {_fmt_int(summary.get('speed_exposures'))}")
+    return badges
+
+
+def build_player_report_html_pdf_bytes(
+    *,
+    player_name: str,
+    scope_label: str,
+    period_label: str,
+    summary: dict[str, object],
+    monitoring_summary: dict[str, object],
+    sessions_df: pd.DataFrame,
+    monitoring_group_df: pd.DataFrame,
+    notes: Iterable[str],
+    period_df: pd.DataFrame | None = None,
+    type_table: pd.DataFrame | None = None,
+    zone_df: pd.DataFrame | None = None,
+    recent_sessions_subtitle: str | None = None,
+) -> bytes:
+    period_table = period_df.copy() if isinstance(period_df, pd.DataFrame) else pd.DataFrame()
+    type_summary = type_table.copy() if isinstance(type_table, pd.DataFrame) else pd.DataFrame()
+    zones = zone_df.copy() if isinstance(zone_df, pd.DataFrame) else pd.DataFrame()
+    monitoring_rows = monitoring_group_df.copy() if isinstance(monitoring_group_df, pd.DataFrame) else pd.DataFrame()
+    recent_sessions = sessions_df.copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
+    recent_sessions = recent_sessions.head(12).copy() if not recent_sessions.empty else recent_sessions
+
+    workload_values = period_table.get("total_distance", pd.Series(dtype=float)).tolist()
+    intensity_values = period_table.get("distance_per_min", pd.Series(dtype=float)).tolist()
+
+    context = {
+        "document_title": f"Player Report | {player_name}",
+        "report_title": "Player Report",
+        "report_kicker": "MVV Maastricht | Reports | HTML report",
+        "report_subtitle": f"{player_name} | {scope_label} | {period_label}",
+        "report_description": "Nieuwe HTML/CSS-rapportstijl voor individuele speleranalyse op basis van dezelfde GPS-, wellness- en RPE-selectie als de bestaande export.",
+        "logo_src": LOGO_SRC,
+        "badges": _player_badges(player_name, scope_label, period_label, summary),
+        "cards": [
+            {"label": "Sessions", "value": _fmt_int(summary.get("sessions")), "foot": "Summary-sessies binnen de huidige scope"},
+            {"label": "Active Days", "value": _fmt_int(summary.get("active_days")), "foot": "Dagen met GPS-activiteit"},
+            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Totale afstand in de huidige scope"},
+            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
+            {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totaal aantal sprintacties"},
+            {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
+        ],
+        "chart_rows": [
+            [
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Workload Trend",
+                        period_table.get("label", pd.Series(dtype=str)).tolist(),
+                        workload_values,
+                        color="#6E1222",
+                        formatter=_fmt_distance,
+                    )
+                },
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Intensity Trend",
+                        period_table.get("label", pd.Series(dtype=str)).tolist(),
+                        intensity_values,
+                        color="#EA3351",
+                        formatter=lambda value: f"{_fmt_dec(value, 1)} m/min",
+                    )
+                },
+            ],
+            [
+                {
+                    "svg": _build_share_chart_svg(
+                        "Distance Zone Share",
+                        zones.get("zone", pd.Series(dtype=str)).tolist(),
+                        zones.get("value", pd.Series(dtype=float)).tolist(),
+                    )
+                },
+                {
+                    "svg": _build_horizontal_bar_chart_svg(
+                        "Recent Sessions by Distance",
+                        recent_sessions.get("datum_label", pd.Series(dtype=str)).tolist(),
+                        recent_sessions.get("total_distance", pd.Series(dtype=float)).tolist(),
+                        color="#C8102E",
+                        formatter=_fmt_distance,
+                    )
+                },
+            ],
+            [
+                {
+                    "svg": _build_grouped_bar_chart_svg(
+                        "Physical Wellness",
+                        monitoring_rows.get("label", pd.Series(dtype=str)).tolist(),
+                        [
+                            {"label": "Muscle", "color": "#6E1222", "values": monitoring_rows.get("muscle_soreness", pd.Series(dtype=float)).tolist()},
+                            {"label": "Fatigue", "color": "#EA3351", "values": monitoring_rows.get("fatigue", pd.Series(dtype=float)).tolist()},
+                        ],
+                        y_max=10,
+                    )
+                },
+                {
+                    "svg": _build_grouped_bar_chart_svg(
+                        "Mental Wellness",
+                        monitoring_rows.get("label", pd.Series(dtype=str)).tolist(),
+                        [
+                            {"label": "Sleep", "color": "#2563EB", "values": monitoring_rows.get("sleep_quality", pd.Series(dtype=float)).tolist()},
+                            {"label": "Stress", "color": "#0F766E", "values": monitoring_rows.get("stress", pd.Series(dtype=float)).tolist()},
+                            {"label": "Mood", "color": "#F59E0B", "values": monitoring_rows.get("mood", pd.Series(dtype=float)).tolist()},
+                        ],
+                        y_max=10,
+                    )
+                },
+            ],
+            [
+                {
+                    "svg": _build_vertical_bar_chart_svg(
+                        "Average RPE",
+                        monitoring_rows.get("label", pd.Series(dtype=str)).tolist(),
+                        monitoring_rows.get("avg_rpe", pd.Series(dtype=float)).tolist(),
+                        color="#EA3351",
+                        formatter=lambda value: _fmt_dec(value, 1),
+                        y_max=10,
+                    )
+                }
+            ],
+        ],
+        "table_rows": [
+            [
+                _table_payload(
+                    "Period Table",
+                    "GPS-uitkomsten per dag of week binnen de gekozen scope.",
+                    period_table,
+                    [
+                        ("label", "Periode", None),
+                        ("sessions", "Sessies", _fmt_int),
+                        ("total_distance", "Distance", _fmt_distance),
+                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                        ("number_of_sprints", "Sprints", _fmt_int),
+                        ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
+                        ("max_speed", "Top Speed", _fmt_speed),
+                    ],
+                    empty_message="Geen periodetabel beschikbaar.",
+                ),
+                _table_payload(
+                    "Training vs Match",
+                    "Vergelijking tussen trainings- en wedstrijdbelasting.",
+                    type_summary,
+                    [
+                        ("session_category", "Type", None),
+                        ("sessions", "Sessies", _fmt_int),
+                        ("total_distance", "Distance", _fmt_distance),
+                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                        ("sprints", "Sprints", _fmt_int),
+                        ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
+                        ("max_speed", "Top Speed", _fmt_speed),
+                    ],
+                    empty_message="Geen trainings- versus matchdata beschikbaar.",
+                ),
+            ],
+            [
+                _table_payload(
+                    "Recent Sessions",
+                    recent_sessions_subtitle or "Laatste sessies binnen de huidige selectie.",
+                    recent_sessions,
+                    [
+                        ("datum_label", "Datum", None),
+                        ("type", "Type", None),
+                        ("event", "Event", None),
+                        ("total_distance", "Distance", _fmt_distance),
+                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                        ("number_of_sprints", "Sprints", _fmt_int),
+                        ("duration", "Duur", _fmt_minutes),
+                        ("max_speed", "Top Speed", _fmt_speed),
+                    ],
+                    empty_message="Geen recente sessies beschikbaar.",
+                ),
+                _table_payload(
+                    "Monitoring Timeline",
+                    "Wellness, readiness en RPE over de gekozen spelerperiode.",
+                    monitoring_rows,
+                    [
+                        ("label", "Periode", None),
+                        ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
+                        ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
+                        ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
+                        ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
+                        ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
+                        ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
+                        ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
+                    ],
+                    empty_message="Geen monitoringdata beschikbaar.",
+                ),
+            ],
+        ],
+        "notes": list(notes),
+    }
+    return _render_html_pdf("player_report.html", context)

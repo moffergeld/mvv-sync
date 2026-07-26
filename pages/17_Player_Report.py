@@ -14,7 +14,7 @@ from plotly.subplots import make_subplots
 
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
-from player_report_pdf import build_player_report_pdf_bytes
+from report_generator import REPORT_STYLE_LABELS, REPORT_STYLE_OPTIONS, generate_player_report
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_grouped_summary, summarize_monitoring_dataset
 from roles import get_profile, is_staff_user, pick_target_player, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
@@ -455,6 +455,13 @@ def _format_minutes(value: object) -> str:
 def _safe_filename(value: str) -> str:
     sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip())
     return sanitized.strip("_") or "report"
+
+
+def _report_file_name(base_name: str, report_style: str) -> str:
+    if report_style == "legacy":
+        return base_name
+    stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
+    return f"{stem}_{report_style}.pdf"
 
 
 @st.cache_data(show_spinner=False, ttl=180)
@@ -987,7 +994,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
-        player_col, scope_col = st.columns([1.25, 0.75], gap="large")
+        player_col, scope_col, style_col = st.columns([1.05, 0.55, 0.55], gap="large")
         with player_col:
             st.markdown('<div class="player-report-filter-label">Speler</div>', unsafe_allow_html=True)
             target_player_id, target_player_name, _ = pick_target_player(
@@ -1004,6 +1011,16 @@ def main() -> None:
                 index=0,
                 label_visibility="collapsed",
                 key="player_report_scope_mode",
+            )
+        with style_col:
+            st.markdown('<div class="player-report-filter-label">Rapportstijl</div>', unsafe_allow_html=True)
+            report_style = st.selectbox(
+                "Rapportstijl",
+                options=list(REPORT_STYLE_OPTIONS),
+                index=0,
+                format_func=lambda value: REPORT_STYLE_LABELS.get(value, value),
+                label_visibility="collapsed",
+                key="player_report_style",
             )
 
     if not target_player_id or not target_player_name:
@@ -1142,7 +1159,8 @@ def main() -> None:
     pdf_error = None
     pdf_bytes: bytes | None = None
     try:
-        pdf_bytes = build_player_report_pdf_bytes(
+        pdf_bytes = generate_player_report(
+            report_style=report_style,
             player_name=str(target_player_name),
             scope_label=scope_mode,
             period_label=period_label,
@@ -1150,6 +1168,10 @@ def main() -> None:
             monitoring_summary=monitoring_summary,
             sessions_df=recent_sessions_preview,
             monitoring_group_df=monitoring_group_df,
+            period_df=period_df,
+            type_table=type_table,
+            zone_df=zone_df,
+            recent_sessions_subtitle=recent_sessions_subtitle,
             notes=notes,
         )
     except Exception as exc:
@@ -1161,7 +1183,10 @@ def main() -> None:
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
         if pdf_bytes:
-            file_name = f"{_safe_filename(target_player_name)}_{scope_mode.lower()}_report.pdf"
+            file_name = _report_file_name(
+                f"{_safe_filename(target_player_name)}_{scope_mode.lower()}_report.pdf",
+                report_style,
+            )
             st.download_button(
                 "Download PDF",
                 data=pdf_bytes,

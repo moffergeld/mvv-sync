@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from html import escape
 from typing import Callable
 
@@ -12,6 +11,7 @@ import streamlit as st
 
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from report_generator import REPORT_STYLE_LABELS, REPORT_STYLE_OPTIONS, generate_week_report
 from report_monitoring import (
     WELLNESS_PARAMETER_SPECS,
     build_monitoring_dataset,
@@ -21,7 +21,6 @@ from report_monitoring import (
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
-from week_report_pdf import build_week_report_pdf_bytes
 
 
 st.set_page_config(page_title="Week Report", layout="wide", initial_sidebar_state="expanded")
@@ -41,12 +40,6 @@ MVV_TEXT_SOFT = "rgba(248,250,252,0.76)"
 MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
-
-
-def _build_week_report_pdf_compatible(**kwargs) -> bytes:
-    signature = inspect.signature(build_week_report_pdf_bytes)
-    compatible_kwargs = {key: value for key, value in kwargs.items() if key in signature.parameters}
-    return build_week_report_pdf_bytes(**compatible_kwargs)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
 
 GPS_SELECT_COLS = [
@@ -477,6 +470,13 @@ def _format_signed_pct(value: object) -> str:
 def _week_pdf_filename(week_start: pd.Timestamp) -> str:
     iso = week_start.isocalendar()
     return f"week_report_{iso.year}_W{int(iso.week):02d}.pdf"
+
+
+def _report_file_name(base_name: str, report_style: str) -> str:
+    if report_style == "legacy":
+        return base_name
+    stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
+    return f"{stem}_{report_style}.pdf"
 
 
 @st.cache_data(show_spinner=False, ttl=180)
@@ -1030,7 +1030,7 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-        filter_col, detail_col = st.columns([1.2, 0.8], gap="large")
+        filter_col, detail_col, style_col = st.columns([1.0, 0.45, 0.55], gap="large")
         with filter_col:
             st.markdown('<div class="week-report-filter-label">Week</div>', unsafe_allow_html=True)
             selected_week = st.selectbox(
@@ -1046,6 +1046,16 @@ def main() -> None:
             st.markdown(
                 f'<div class="week-report-filter-note">ISO week {selected_iso.year}-W{int(selected_iso.week):02d}</div>',
                 unsafe_allow_html=True,
+            )
+        with style_col:
+            st.markdown('<div class="week-report-filter-label">Rapportstijl</div>', unsafe_allow_html=True)
+            report_style = st.selectbox(
+                "Rapportstijl",
+                options=list(REPORT_STYLE_OPTIONS),
+                index=0,
+                format_func=lambda value: REPORT_STYLE_LABELS.get(value, value),
+                label_visibility="collapsed",
+                key="week_report_style",
             )
 
     selected_week = pd.Timestamp(selected_week).normalize()
@@ -1124,7 +1134,8 @@ def main() -> None:
     pdf_bytes: bytes | None = None
     try:
         selected_iso = selected_week.isocalendar()
-        pdf_bytes = _build_week_report_pdf_compatible(
+        pdf_bytes = generate_week_report(
+            report_style=report_style,
             week_label=_week_label(selected_week),
             iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
             summary=summary,
@@ -1136,6 +1147,7 @@ def main() -> None:
             zone_df=zone_df,
             monitoring_day_table=monitoring_day_table,
             rpe_session_day_table=rpe_session_day_table,
+            monitoring_player_table=monitoring_player_table,
             notes=notes,
         )
     except Exception as exc:
@@ -1150,7 +1162,7 @@ def main() -> None:
             st.download_button(
                 "Download PDF",
                 data=pdf_bytes,
-                file_name=_week_pdf_filename(selected_week),
+                file_name=_report_file_name(_week_pdf_filename(selected_week), report_style),
                 mime="application/pdf",
                 width="stretch",
                 key="week_report_pdf_download",

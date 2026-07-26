@@ -1,0 +1,86 @@
+{% extends "report_base.html" %}
+
+{% block content %}
+  <section class="report-section">
+    <div class="section-head">
+      <h2>Visual Snapshot</h2>
+      <p>Individuele kern-KPI's binnen dezelfde speler- en periodeselectie als de huidige export.</p>
+    </div>
+    <div class="metric-grid metric-grid--compact">
+      {% for card in cards %}
+        <article class="metric-card">
+          <div class="metric-card__label">{{ card.label }}</div>
+          <div class="metric-card__value">{{ card.value }}</div>
+          <div class="metric-card__foot">{{ card.foot }}</div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% for row in chart_rows %}
+    <section class="report-section">
+      <div class="chart-grid chart-grid--{{ row|length }}">
+        {% for chart in row %}
+          <article class="panel panel--chart">
+            {{ chart.svg | safe }}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  {% for row in table_rows %}
+    <section class="report-section">
+      <div class="table-grid table-grid--{{ row|length }}">
+        {% for table in row %}
+          <article class="panel panel--table">
+            <div class="panel-head">
+              <h2>{{ table.title }}</h2>
+              <p>{{ table.subtitle }}</p>
+            </div>
+            {% if table.rows %}
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    {% for header in table.headers %}
+                      <th>{{ header }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for cells in table.rows %}
+                    <tr>
+                      {% for cell in cells %}
+                        <td>{{ cell }}</td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}
+              <div class="empty-state">{{ table.empty_message }}</div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="report-section">
+    <article class="panel panel--notes">
+      <div class="panel-head">
+        <h2>Analyst Notes</h2>
+        <p>Compacte toelichting voor individuele follow-up of staffbespreking.</p>
+      </div>
+      {% if notes %}
+        <ul class="notes-list">
+          {% for note in notes %}
+            <li>{{ note }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state">Geen notities beschikbaar.</div>
+      {% endif %}
+    </article>
+  </section>
+{% endblock %}
