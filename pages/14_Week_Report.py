@@ -1013,10 +1013,17 @@ def main() -> None:
         st.stop()
 
     history_df = build_week_history(all_df)
-    week_options = history_df["week_start"].tolist()
+    week_options = history_df.sort_values("week_start", ascending=False)["week_start"].tolist()
     if not week_options:
         st.info("Geen weken beschikbaar in de Summary-data.")
         st.stop()
+
+    default_week = week_options[0]
+    if (
+        "week_report_selected_week" not in st.session_state
+        or st.session_state["week_report_selected_week"] not in week_options
+    ):
+        st.session_state["week_report_selected_week"] = default_week
 
     logo_markup = (
         f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="week-report-logo" />'
@@ -1059,7 +1066,6 @@ def main() -> None:
             selected_week = st.selectbox(
                 "Week",
                 options=week_options,
-                index=0,
                 format_func=_week_label,
                 label_visibility="collapsed",
                 key="week_report_selected_week",
@@ -1191,6 +1197,13 @@ def main() -> None:
                 mime="application/pdf",
                 width="stretch",
                 key="week_report_pdf_download",
+            )
+        else:
+            st.button(
+                "Download PDF",
+                key="week_report_pdf_download_disabled",
+                width="stretch",
+                disabled=True,
             )
     with action_cols[2]:
         if pdf_error:
