@@ -619,22 +619,6 @@ def _table_payload(
     }
 
 
-def _week_badges(summary: dict[str, object], monitoring_summary: dict[str, object]) -> list[str]:
-    badges = [
-        f"{_fmt_int(summary.get('active_days'))} actieve dagen",
-        f"{_fmt_int(summary.get('training_sessions'))} trainingen",
-        f"{_fmt_int(summary.get('match_sessions'))} matchsessies",
-        f"{_fmt_int(summary.get('player_sessions'))} player sessions",
-    ]
-    if pd.notna(summary.get("td_vs_prev")):
-        badges.append(f"TD vs vorige 4 weken: {_fmt_dec(summary.get('td_vs_prev'), 1)}%")
-    if pd.notna(summary.get("hsr_vs_prev")):
-        badges.append(f"HSR vs vorige 4 weken: {_fmt_dec(summary.get('hsr_vs_prev'), 1)}%")
-    if pd.notna(monitoring_summary.get("avg_rpe")):
-        badges.append(f"Gem. RPE: {_fmt_dec(monitoring_summary.get('avg_rpe'), 1)}")
-    return badges
-
-
 def _fmt_percent(value: object, decimals: int = 1, *, signed: bool = False) -> str:
     if pd.isna(value):
         return "--"
@@ -848,19 +832,6 @@ def build_week_report_html_pdf_bytes(
             na_position="last",
         ).head(12)
 
-    header_meta = [
-        {"label": "Week", "value": week_label, "foot": iso_label},
-        {
-            "label": "Activity",
-            "value": f"{_fmt_int(summary.get('active_days'))} dagen",
-            "foot": f"{_fmt_int(summary.get('player_sessions'))} player sessions",
-        },
-        {
-            "label": "Monitoring",
-            "value": f"{_fmt_int(monitoring_summary.get('wellness_entries'))} / {_fmt_int(monitoring_summary.get('rpe_entries'))}",
-            "foot": "Wellness / RPE entries",
-        },
-    ]
     monitoring_cards = [
         {"label": "Readiness Avg", "value": _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "foot": "Teamgemiddelde over alle monitoringdagen"},
         {"label": "Avg RPE", "value": _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "foot": "Gemiddelde interne load binnen de week"},
@@ -873,10 +844,10 @@ def build_week_report_html_pdf_bytes(
         "report_title": "Week Report",
         "report_kicker": "MVV Maastricht | Reports | Team Week Overview",
         "report_subtitle": f"{week_label} | {iso_label}",
-        "report_description": "Compact staffoverzicht voor trainingssturing, wedstrijdbelasting en monitoring follow-up binnen dezelfde weekselectie.",
+        "report_description": "",
         "logo_src": LOGO_SRC,
-        "report_header_meta": header_meta,
-        "badges": _week_badges(summary, monitoring_summary),
+        "report_header_meta": [],
+        "badges": [],
         "cards": [
             {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
             {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
