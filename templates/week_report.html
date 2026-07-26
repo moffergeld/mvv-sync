@@ -58,6 +58,25 @@
     {% endif %}
   </section>
 
+  {% for section in chart_sections %}
+    <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">{{ section.eyebrow }}</div>
+          <h2>{{ section.title }}</h2>
+        </div>
+        <div class="section-meta">{{ section.subtitle }}</div>
+      </div>
+      <div class="chart-grid chart-grid--{{ section.panels|length }}">
+        {% for chart in section.panels %}
+          <article class="panel panel--chart">
+            {{ chart.svg | safe }}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
   {% for section in table_sections %}
     <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
       <div class="section-heading">
@@ -96,25 +115,6 @@
             {% else %}
               <div class="empty-state">{{ table.empty_message }}</div>
             {% endif %}
-          </article>
-        {% endfor %}
-      </div>
-    </section>
-  {% endfor %}
-
-  {% for section in chart_sections %}
-    <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
-      <div class="section-heading">
-        <div>
-          <div class="section-kicker">{{ section.eyebrow }}</div>
-          <h2>{{ section.title }}</h2>
-        </div>
-        <div class="section-meta">{{ section.subtitle }}</div>
-      </div>
-      <div class="chart-grid chart-grid--{{ section.panels|length }}">
-        {% for chart in section.panels %}
-          <article class="panel panel--chart">
-            {{ chart.svg | safe }}
           </article>
         {% endfor %}
       </div>

@@ -267,6 +267,157 @@ def _build_grouped_bar_chart_svg(
     return "".join(parts)
 
 
+def _build_error_bar_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    mean_values: Sequence[object],
+    error_values: Sequence[object],
+    *,
+    color: str = "#C8102E",
+    width: int = 860,
+    height: int = 280,
+    y_max: float | None = None,
+    formatter: Callable[[object], str] = _fmt_int,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    clean_means = _clean_series(mean_values)
+    clean_errors = _clean_series(error_values)
+    if not clean_labels or not clean_means or max(clean_means, default=0) <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    maxima = [mean + error for mean, error in zip(clean_means, clean_errors, strict=False)]
+    chart_max = y_max if y_max is not None else _nice_max(max(maxima, default=max(clean_means, default=0)))
+    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 46, 90
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    slot_width = plot_width / max(1, len(clean_means))
+    bar_width = max(16, min(42, slot_width * 0.54))
+    label_font = 9 if len(clean_labels) > 8 else 10
+    grid_lines = 4
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
+        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="10" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+
+    for index, (label, mean_value, error_value) in enumerate(zip(clean_labels, clean_means, clean_errors, strict=False)):
+        x_center = margin_left + slot_width * index + slot_width / 2
+        bar_height = 0 if chart_max <= 0 else (mean_value / chart_max) * plot_height
+        x = x_center - bar_width / 2
+        y = margin_top + plot_height - bar_height
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
+
+        error_top_value = min(chart_max, mean_value + error_value)
+        error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
+        cap_half = max(6, bar_width * 0.28)
+        parts.append(f'<line x1="{x_center:.1f}" y1="{error_top_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="#475569" stroke-width="1.4" />')
+        parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="#475569" stroke-width="1.4" />')
+
+        if mean_value > 0:
+            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 8, margin_top + 12):.1f}" text-anchor="middle" font-size="10" font-weight="700" fill="#0F172A">{escape(formatter(mean_value))}</text>')
+        label_y = height - 24
+        parts.append(
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {x_center:.1f} {label_y})">{escape(label)}</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_grouped_error_bar_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    series: Sequence[dict[str, Any]],
+    *,
+    width: int = 860,
+    height: int = 290,
+    y_max: float | None = None,
+) -> str:
+    clean_labels = [_fmt_text(label) for label in labels]
+    if not clean_labels or not series:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    clean_series = [
+        {
+            "label": str(item.get("label") or "Serie"),
+            "color": str(item.get("color") or SVG_COLORS[index % len(SVG_COLORS)]),
+            "values": _clean_series(item.get("values") or []),
+            "errors": _clean_series(item.get("errors") or []),
+        }
+        for index, item in enumerate(series)
+    ]
+    flat_maxima = [
+        value + (item["errors"][idx] if idx < len(item["errors"]) else 0.0)
+        for item in clean_series
+        for idx, value in enumerate(item["values"])
+    ]
+    if max(flat_maxima, default=0) <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    chart_max = y_max if y_max is not None else _nice_max(max(flat_maxima))
+    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 62, 90
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    slot_width = plot_width / max(1, len(clean_labels))
+    series_width = slot_width * 0.72
+    bar_width = max(9, min(20, series_width / max(1, len(clean_series))))
+    grid_lines = 4
+    label_font = 9 if len(clean_labels) > 8 else 10
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+    ]
+
+    legend_x = 24
+    for item in clean_series:
+        parts.append(f'<rect x="{legend_x}" y="44" width="12" height="12" rx="3" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 18}" y="54" font-size="10" fill="#475569">{escape(item["label"])}</text>')
+        legend_x += max(100, len(item["label"]) * 7 + 34)
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
+        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="10" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+
+    for label_index, label in enumerate(clean_labels):
+        x_slot = margin_left + slot_width * label_index
+        x_start = x_slot + (slot_width - series_width) / 2
+        for series_index, item in enumerate(clean_series):
+            value = item["values"][label_index] if label_index < len(item["values"]) else 0.0
+            error = item["errors"][label_index] if label_index < len(item["errors"]) else 0.0
+            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            x = x_start + series_index * bar_width
+            y = margin_top + plot_height - bar_height
+            draw_width = max(6, bar_width - 2)
+            x_center = x + draw_width / 2
+            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{draw_width:.1f}" height="{bar_height:.1f}" rx="4" fill="{item["color"]}" />')
+            error_top_value = min(chart_max, value + error)
+            error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
+            cap_half = max(4, draw_width * 0.28)
+            parts.append(f'<line x1="{x_center:.1f}" y1="{error_top_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="#475569" stroke-width="1.2" />')
+            parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="#475569" stroke-width="1.2" />')
+        label_x = x_slot + slot_width / 2
+        label_y = height - 24
+        parts.append(
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {label_x:.1f} {label_y})">{escape(label)}</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _build_horizontal_bar_chart_svg(
     title: str,
     labels: Sequence[object],
@@ -605,6 +756,12 @@ def build_week_report_html_pdf_bytes(
         if isinstance(player_table, pd.DataFrame) and not player_table.empty
         else pd.DataFrame()
     )
+    sprint_leaders = (
+        player_table.sort_values("sprints", ascending=False)
+        .head(12)
+        if isinstance(player_table, pd.DataFrame) and not player_table.empty
+        else pd.DataFrame()
+    )
 
     monitoring_timeline = monitoring_day_table.copy() if isinstance(monitoring_day_table, pd.DataFrame) else pd.DataFrame()
     if not monitoring_timeline.empty and "readiness_score" not in monitoring_timeline.columns:
@@ -692,6 +849,71 @@ def build_week_report_html_pdf_bytes(
                 ],
             },
             {
+                "eyebrow": "Squad spread",
+                "title": "Average player load +/- SD",
+                "subtitle": "Dagelijkse gemiddelde spelerbelasting met spreiding binnen de selectie.",
+                "page_break": True,
+                "panels": [
+                    {
+                        "svg": _build_error_bar_chart_svg(
+                            "Player Avg Total Distance +/- SD",
+                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
+                            squad_spread.get("total_distance_mean", pd.Series(dtype=float)).tolist(),
+                            squad_spread.get("total_distance_std", pd.Series(dtype=float)).tolist(),
+                            color="#6E1222",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                    {
+                        "svg": _build_error_bar_chart_svg(
+                            "Player Avg HSR / HSD +/- SD",
+                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
+                            squad_spread.get("hsr_hsd_mean", pd.Series(dtype=float)).tolist(),
+                            squad_spread.get("hsr_hsd_std", pd.Series(dtype=float)).tolist(),
+                            color="#EA3351",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                ],
+            },
+            {
+                "eyebrow": "Squad spread",
+                "title": "Explosive outputs +/- SD",
+                "subtitle": "Acceleraties, deceleraties en sprintgemiddelden per speler per dag.",
+                "panels": [
+                    {
+                        "svg": _build_grouped_error_bar_chart_svg(
+                            "Player Avg Accel / Decel +/- SD",
+                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
+                            [
+                                {
+                                    "label": "Accelerations",
+                                    "color": "#6E1222",
+                                    "values": squad_spread.get("total_accelerations_mean", pd.Series(dtype=float)).tolist(),
+                                    "errors": squad_spread.get("total_accelerations_std", pd.Series(dtype=float)).tolist(),
+                                },
+                                {
+                                    "label": "Decelerations",
+                                    "color": "#EA3351",
+                                    "values": squad_spread.get("total_decelerations_mean", pd.Series(dtype=float)).tolist(),
+                                    "errors": squad_spread.get("total_decelerations_std", pd.Series(dtype=float)).tolist(),
+                                },
+                            ],
+                        )
+                    },
+                    {
+                        "svg": _build_error_bar_chart_svg(
+                            "Player Avg Sprints +/- SD",
+                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
+                            squad_spread.get("sprints_mean", pd.Series(dtype=float)).tolist(),
+                            squad_spread.get("sprints_std", pd.Series(dtype=float)).tolist(),
+                            color="#C8102E",
+                            formatter=lambda value: _fmt_dec(value, 1),
+                        )
+                    },
+                ],
+            },
+            {
                 "eyebrow": "Speed profile",
                 "title": "Activation and zone distribution",
                 "subtitle": "Speed exposures per dag en verdeling van de weekafstand over de locomotion zones.",
@@ -715,10 +937,65 @@ def build_week_report_html_pdf_bytes(
                 ],
             },
             {
+                "eyebrow": "Monitoring",
+                "title": "Daily wellness profile +/- SD",
+                "subtitle": "Fysieke en mentale welzijnsindicatoren per dag met standaarddeviatie.",
+                "page_break": True,
+                "panels": [
+                    {
+                        "svg": _build_grouped_error_bar_chart_svg(
+                            "Physical Wellness +/- SD",
+                            monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
+                            [
+                                {
+                                    "label": "Muscle",
+                                    "color": "#6E1222",
+                                    "values": monitoring_timeline.get("muscle_soreness", pd.Series(dtype=float)).tolist(),
+                                    "errors": monitoring_timeline.get("muscle_soreness_std", pd.Series(dtype=float)).tolist(),
+                                },
+                                {
+                                    "label": "Fatigue",
+                                    "color": "#EA3351",
+                                    "values": monitoring_timeline.get("fatigue", pd.Series(dtype=float)).tolist(),
+                                    "errors": monitoring_timeline.get("fatigue_std", pd.Series(dtype=float)).tolist(),
+                                },
+                            ],
+                            y_max=10,
+                        )
+                    },
+                    {
+                        "svg": _build_grouped_error_bar_chart_svg(
+                            "Mental Wellness +/- SD",
+                            monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
+                            [
+                                {
+                                    "label": "Sleep",
+                                    "color": "#2563EB",
+                                    "values": monitoring_timeline.get("sleep_quality", pd.Series(dtype=float)).tolist(),
+                                    "errors": monitoring_timeline.get("sleep_quality_std", pd.Series(dtype=float)).tolist(),
+                                },
+                                {
+                                    "label": "Stress",
+                                    "color": "#0F766E",
+                                    "values": monitoring_timeline.get("stress", pd.Series(dtype=float)).tolist(),
+                                    "errors": monitoring_timeline.get("stress_std", pd.Series(dtype=float)).tolist(),
+                                },
+                                {
+                                    "label": "Mood",
+                                    "color": "#F59E0B",
+                                    "values": monitoring_timeline.get("mood", pd.Series(dtype=float)).tolist(),
+                                    "errors": monitoring_timeline.get("mood_std", pd.Series(dtype=float)).tolist(),
+                                },
+                            ],
+                            y_max=10,
+                        )
+                    },
+                ],
+            },
+            {
                 "eyebrow": "Player leaders",
                 "title": "Top outputs within the squad",
                 "subtitle": "Snel overzicht van volume- en high-speed leiders voor de weekevaluatie.",
-                "page_break": True,
                 "panels": [
                     {
                         "svg": _build_horizontal_bar_chart_svg(
@@ -741,29 +1018,25 @@ def build_week_report_html_pdf_bytes(
                 ],
             },
             {
-                "eyebrow": "Monitoring",
-                "title": "Wellness and internal load control",
-                "subtitle": "Alle wellness-parameters plus sessie-RPE, inclusief dagen met dubbele trainingen.",
+                "eyebrow": "Leaders",
+                "title": "Sprint and internal load activation",
+                "subtitle": "Sprintleiders en sessie-RPE overzicht voor dagen met enkele of dubbele sessies.",
                 "panels": [
                     {
-                        "svg": _build_grouped_bar_chart_svg(
-                            "Monitoring Overview",
-                            monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
-                            [
-                                {"label": "Muscle", "color": "#6E1222", "values": monitoring_timeline.get("muscle_soreness", pd.Series(dtype=float)).tolist()},
-                                {"label": "Fatigue", "color": "#C8102E", "values": monitoring_timeline.get("fatigue", pd.Series(dtype=float)).tolist()},
-                                {"label": "Sleep", "color": "#2563EB", "values": monitoring_timeline.get("sleep_quality", pd.Series(dtype=float)).tolist()},
-                                {"label": "Stress", "color": "#0F766E", "values": monitoring_timeline.get("stress", pd.Series(dtype=float)).tolist()},
-                                {"label": "Mood", "color": "#F59E0B", "values": monitoring_timeline.get("mood", pd.Series(dtype=float)).tolist()},
-                            ],
-                            y_max=10,
+                        "svg": _build_horizontal_bar_chart_svg(
+                            "Top Players by Sprints",
+                            sprint_leaders.get("player_name", pd.Series(dtype=str)).tolist(),
+                            sprint_leaders.get("sprints", pd.Series(dtype=float)).tolist(),
+                            color="#EA3351",
+                            formatter=_fmt_int,
                         )
                     },
                     {
-                        "svg": _build_vertical_bar_chart_svg(
-                            "Session RPE by Session",
+                        "svg": _build_error_bar_chart_svg(
+                            "Session RPE +/- SD",
                             rpe_session_timeline.get("axis_label", pd.Series(dtype=str)).tolist(),
                             rpe_session_timeline.get("avg_rpe", pd.Series(dtype=float)).tolist(),
+                            rpe_session_timeline.get("avg_rpe_std", pd.Series(dtype=float)).tolist(),
                             color="#EA3351",
                             formatter=lambda value: _fmt_dec(value, 1),
                             y_max=10,
@@ -889,6 +1162,26 @@ def build_week_report_html_pdf_bytes(
                             ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
                         ],
                         empty_message="Geen monitoringwatchlist beschikbaar.",
+                    ),
+                ],
+            },
+            {
+                "eyebrow": "Session detail",
+                "title": "Session RPE detail",
+                "subtitle": "Interne load uitgesplitst per sessie-index op dagen met meerdere trainingen.",
+                "tables": [
+                    _table_payload(
+                        "RPE Sessions",
+                        "Sessie-voor-sessie team-RPE inclusief spreiding en aantal spelers.",
+                        rpe_session_timeline,
+                        [
+                            ("label", "Dag", None),
+                            ("session_label", "Sessie", None),
+                            ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
+                            ("avg_rpe_std", "RPE SD", lambda value: _fmt_dec(value, 1)),
+                            ("rpe_players", "Players", _fmt_int),
+                        ],
+                        empty_message="Geen sessie-RPE detail beschikbaar.",
                     ),
                 ],
             },
