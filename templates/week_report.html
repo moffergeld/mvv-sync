@@ -2,11 +2,15 @@
 
 {% block content %}
   <section class="report-section">
-    <div class="section-head">
-      <h2>Visual Snapshot</h2>
-      <p>Kern-KPI's uit dezelfde weekselectie als de bestaande rapportage.</p>
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Executive summary</div>
+        <h2>Team week snapshot</h2>
+      </div>
+      <div class="section-meta">Kern-KPI's en staffsignalen voor dezelfde weekselectie als het dashboard</div>
     </div>
-    <div class="metric-grid" style="grid-template-columns: repeat({{ cards|length }}, 1fr);">
+
+    <div class="metric-grid metric-grid--6">
       {% for card in cards %}
         <article class="metric-card">
           <div class="metric-card__label">{{ card.label }}</div>
@@ -15,24 +19,56 @@
         </article>
       {% endfor %}
     </div>
-  </section>
 
-  {% for row in chart_rows %}
-    <section class="report-section">
-      <div class="chart-grid chart-grid--{{ row|length }}">
-        {% for chart in row %}
-          <article class="panel panel--chart">
-            {{ chart.svg | safe }}
+    {% if focus_cards %}
+      <div class="focus-grid">
+        {% for card in focus_cards %}
+          <article class="focus-card focus-card--{{ card.tone }}">
+            <div class="focus-card__eyebrow">{{ card.eyebrow }}</div>
+            <div class="focus-card__title">{{ card.title }}</div>
+            <div class="focus-card__body">{{ card.body }}</div>
           </article>
         {% endfor %}
       </div>
-    </section>
-  {% endfor %}
+    {% endif %}
 
-  {% for row in table_rows %}
-    <section class="report-section">
-      <div class="table-grid table-grid--{{ row|length }}">
-        {% for table in row %}
+    {% if day_cards %}
+      <div class="section-subheading">
+        <div class="section-subheading__title">Week rhythm</div>
+        <div class="section-subheading__meta">Actieve dagen in volgorde van de microcycle</div>
+      </div>
+      <div class="day-card-grid">
+        {% for card in day_cards %}
+          <article class="day-card day-card--{{ card.tone }}">
+            <div class="day-card__label">{{ card.label }}</div>
+            <div class="day-card__value">{{ card.value }}</div>
+            <div class="day-card__subvalue">{{ card.subvalue }}</div>
+            <div class="day-card__meta">{{ card.meta }}</div>
+            <div class="day-card__stats">
+              {% for item in card.stats %}
+                <div class="day-card__stat">
+                  <span class="day-card__stat-label">{{ item.label }}</span>
+                  <span class="day-card__stat-value">{{ item.value }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+
+  {% for section in table_sections %}
+    <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">{{ section.eyebrow }}</div>
+          <h2>{{ section.title }}</h2>
+        </div>
+        <div class="section-meta">{{ section.subtitle }}</div>
+      </div>
+      <div class="table-grid table-grid--{{ section.tables|length }}">
+        {% for table in section.tables %}
           <article class="panel panel--table">
             <div class="panel-head">
               <h2>{{ table.title }}</h2>
@@ -66,11 +102,73 @@
     </section>
   {% endfor %}
 
+  {% for section in chart_sections %}
+    <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">{{ section.eyebrow }}</div>
+          <h2>{{ section.title }}</h2>
+        </div>
+        <div class="section-meta">{{ section.subtitle }}</div>
+      </div>
+      <div class="chart-grid chart-grid--{{ section.panels|length }}">
+        {% for chart in section.panels %}
+          <article class="panel panel--chart">
+            {{ chart.svg | safe }}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="report-section">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Player leadership</div>
+        <h2>Top performers this week</h2>
+      </div>
+      <div class="section-meta">Leiders op volume, high speed, sprintacties en intensiteit</div>
+    </div>
+    {% if leader_cards %}
+      <div class="leader-grid">
+        {% for card in leader_cards %}
+          <article class="leader-card">
+            <div class="leader-card__label">{{ card.label }}</div>
+            <div class="leader-card__player">{{ card.player }}</div>
+            <div class="leader-card__value">{{ card.value }}</div>
+            <div class="leader-card__foot">{{ card.foot }}</div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">Geen spelersleiders beschikbaar.</div>
+    {% endif %}
+  </section>
+
+  <section class="report-section">
+    <div class="section-heading">
+      <div>
+        <div class="section-kicker">Monitoring overview</div>
+        <h2>Internal load and wellbeing</h2>
+      </div>
+      <div class="section-meta">Weekgemiddelden en coverage voor wellness, readiness en RPE</div>
+    </div>
+    <div class="metric-grid metric-grid--4">
+      {% for card in monitoring_cards %}
+        <article class="metric-card metric-card--subtle">
+          <div class="metric-card__label">{{ card.label }}</div>
+          <div class="metric-card__value">{{ card.value }}</div>
+          <div class="metric-card__foot">{{ card.foot }}</div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
   <section class="report-section">
     <article class="panel panel--notes">
       <div class="panel-head">
-        <h2>Analyst Notes</h2>
-        <p>Samenvatting voor staff en snelle PDF-review.</p>
+        <h2>Staff Notes</h2>
+        <p>Korte conclusies voor de weekbespreking en vervolgplanning.</p>
       </div>
       {% if notes %}
         <ul class="notes-list">

@@ -403,6 +403,179 @@ def _week_badges(summary: dict[str, object], monitoring_summary: dict[str, objec
     return badges
 
 
+def _fmt_percent(value: object, decimals: int = 1, *, signed: bool = False) -> str:
+    if pd.isna(value):
+        return "--"
+    numeric = float(value)
+    prefix = "+" if signed and numeric > 0 else ""
+    return f"{prefix}{_fmt_dec(numeric, decimals)}%"
+
+
+def _weekday_label(value: object) -> str:
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.isna(ts):
+        return _fmt_text(value)
+    weekdays = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+    return f"{weekdays[int(ts.weekday())]} {ts:%d/%m}"
+
+
+def _tone_from_change(value: object) -> str:
+    if pd.isna(value):
+        return "neutral"
+    magnitude = abs(float(value))
+    if magnitude >= 20:
+        return "alert"
+    if magnitude >= 8:
+        return "warning"
+    return "positive"
+
+
+def _tone_from_coverage(covered: object, total: object) -> str:
+    if pd.isna(covered) or pd.isna(total) or float(total) <= 0:
+        return "neutral"
+    ratio = float(covered) / float(total)
+    if ratio < 0.6:
+        return "alert"
+    if ratio < 0.8:
+        return "warning"
+    return "positive"
+
+
+def _build_week_focus_cards(
+    summary: dict[str, object],
+    monitoring_summary: dict[str, object],
+    day_table: pd.DataFrame,
+) -> list[dict[str, str]]:
+    cards: list[dict[str, str]] = []
+    td_change = summary.get("td_vs_prev")
+    hsr_change = summary.get("hsr_vs_prev")
+    load_title_parts: list[str] = []
+    valid_changes = [value for value in [td_change, hsr_change] if pd.notna(value)]
+    if pd.notna(td_change):
+        load_title_parts.append(f"TD {_fmt_percent(td_change, signed=True)}")
+    if pd.notna(hsr_change):
+        load_title_parts.append(f"HSR {_fmt_percent(hsr_change, signed=True)}")
+    cards.append(
+        {
+            "eyebrow": "Load status",
+            "title": " | ".join(load_title_parts) if load_title_parts else _fmt_distance(summary.get("total_distance")),
+            "body": "Vergeleken met de rolling 4-week referentie voor externe load."
+            if load_title_parts
+            else "Totale teambelasting binnen de geselecteerde week.",
+            "tone": _tone_from_change(max(valid_changes, key=lambda item: abs(float(item)))) if valid_changes else "neutral",
+        }
+    )
+
+    if isinstance(day_table, pd.DataFrame) and not day_table.empty:
+        peak_day = day_table.sort_values("total_distance", ascending=False).iloc[0]
+        cards.append(
+            {
+                "eyebrow": "Peak day",
+                "title": f"{_weekday_label(peak_day.get('datum'))} | {_fmt_distance(peak_day.get('total_distance'))}",
+                "body": (
+                    f"{_fmt_int(peak_day.get('active_players'))} spelers | "
+                    f"{_fmt_int(peak_day.get('player_sessions'))} sessies | "
+                    f"max {_fmt_speed(peak_day.get('max_speed'))}"
+                ),
+                "tone": "accent",
+            }
+        )
+    else:
+        cards.append(
+            {
+                "eyebrow": "Peak day",
+                "title": "--",
+                "body": "Geen dagniveau-data beschikbaar voor deze week.",
+                "tone": "neutral",
+            }
+        )
+
+    cards.append(
+        {
+            "eyebrow": "Speed activation",
+            "title": f"{_fmt_int(summary.get('speed_exposures'))} exposures",
+            "body": f"{_fmt_int(summary.get('sprints'))} sprints | top speed {_fmt_speed(summary.get('top_speed'))}",
+            "tone": "positive" if pd.notna(summary.get("speed_exposures")) and float(summary.get("speed_exposures")) > 0 else "neutral",
+        }
+    )
+
+    cards.append(
+        {
+            "eyebrow": "Monitoring coverage",
+            "title": (
+                f"{_fmt_int(monitoring_summary.get('wellness_players'))}/{_fmt_int(summary.get('active_players'))} wellness | "
+                f"{_fmt_int(monitoring_summary.get('rpe_players'))}/{_fmt_int(summary.get('active_players'))} RPE"
+            ),
+            "body": (
+                f"Readiness {_fmt_dec(monitoring_summary.get('readiness_avg'), 1)} | "
+                f"Avg RPE {_fmt_dec(monitoring_summary.get('avg_rpe'), 1)}"
+            ),
+            "tone": _tone_from_coverage(
+                min(
+                    float(monitoring_summary.get("wellness_players") or 0),
+                    float(monitoring_summary.get("rpe_players") or 0),
+                ),
+                summary.get("active_players"),
+            ),
+        }
+    )
+    return cards
+
+
+def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
+    if not isinstance(day_table, pd.DataFrame) or day_table.empty:
+        return []
+    peak_distance = pd.to_numeric(day_table.get("total_distance"), errors="coerce").max()
+    cards: list[dict[str, object]] = []
+    for _, row in day_table.sort_values("datum").iterrows():
+        total_distance = row.get("total_distance")
+        tone = "accent" if pd.notna(total_distance) and pd.notna(peak_distance) and float(total_distance) == float(peak_distance) else "neutral"
+        cards.append(
+            {
+                "label": _weekday_label(row.get("datum")),
+                "value": _fmt_distance(total_distance),
+                "subvalue": f"{_fmt_distance(row.get('distance_per_player'))} per speler",
+                "meta": f"{_fmt_int(row.get('active_players'))} spelers | {_fmt_int(row.get('player_sessions'))} sessies",
+                "stats": [
+                    {"label": "HSR / HSD", "value": _fmt_distance(row.get("hsr_hsd"))},
+                    {"label": "Sprints", "value": _fmt_int(row.get("sprints"))},
+                    {"label": "Exposures", "value": _fmt_int(row.get("speed_exposures"))},
+                    {"label": "Max speed", "value": _fmt_speed(row.get("max_speed"))},
+                ],
+                "tone": tone,
+            }
+        )
+    return cards
+
+
+def _build_week_leader_cards(player_table: pd.DataFrame) -> list[dict[str, str]]:
+    if not isinstance(player_table, pd.DataFrame) or player_table.empty:
+        return []
+
+    leader_specs: list[tuple[str, str, Callable[[object], str], Callable[[pd.Series], str]]] = [
+        ("TD leader", "total_distance", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
+        ("HSR leader", "hsr_hsd", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
+        ("Sprint leader", "sprints", _fmt_int, lambda row: _fmt_distance(row.get("total_distance"))),
+        ("Top speed", "max_speed", _fmt_speed, lambda row: _fmt_distance(row.get("hsr_hsd"))),
+        ("Intensity", "distance_per_min", lambda value: f"{_fmt_dec(value, 1)} m/min", lambda row: _fmt_distance(row.get("total_distance"))),
+    ]
+    cards: list[dict[str, str]] = []
+    for label, column, formatter, foot_factory in leader_specs:
+        ranked = player_table.dropna(subset=[column]).sort_values(column, ascending=False)
+        if ranked.empty:
+            continue
+        top_row = ranked.iloc[0]
+        cards.append(
+            {
+                "label": label,
+                "player": _fmt_text(top_row.get("player_name")),
+                "value": formatter(top_row.get(column)),
+                "foot": foot_factory(top_row),
+            }
+        )
+    return cards
+
+
 def build_week_report_html_pdf_bytes(
     *,
     week_label: str,
@@ -426,18 +599,59 @@ def build_week_report_html_pdf_bytes(
         if isinstance(player_table, pd.DataFrame) and not player_table.empty
         else pd.DataFrame()
     )
+    hsr_leaders = (
+        player_table.sort_values("hsr_hsd", ascending=False)
+        .head(12)
+        if isinstance(player_table, pd.DataFrame) and not player_table.empty
+        else pd.DataFrame()
+    )
 
     monitoring_timeline = monitoring_day_table.copy() if isinstance(monitoring_day_table, pd.DataFrame) else pd.DataFrame()
     if not monitoring_timeline.empty and "readiness_score" not in monitoring_timeline.columns:
         monitoring_timeline["readiness_score"] = pd.NA
+    rpe_session_timeline = rpe_session_day_table.copy() if isinstance(rpe_session_day_table, pd.DataFrame) else pd.DataFrame()
+    if not rpe_session_timeline.empty:
+        rpe_session_timeline["axis_label"] = rpe_session_timeline.apply(
+            lambda row: f"{_fmt_text(row.get('label'))} S{_fmt_int(row.get('session_index'))}",
+            axis=1,
+        )
+    squad_spread = day_stats.copy() if isinstance(day_stats, pd.DataFrame) else pd.DataFrame()
+    monitoring_watchlist = monitoring_player_table.copy() if isinstance(monitoring_player_table, pd.DataFrame) else pd.DataFrame()
+    if not monitoring_watchlist.empty:
+        monitoring_watchlist = monitoring_watchlist.sort_values(
+            ["readiness_score", "avg_rpe", "player_name"],
+            ascending=[True, False, True],
+            na_position="last",
+        ).head(12)
+
+    header_meta = [
+        {"label": "Week", "value": week_label, "foot": iso_label},
+        {
+            "label": "Activity",
+            "value": f"{_fmt_int(summary.get('active_days'))} dagen",
+            "foot": f"{_fmt_int(summary.get('player_sessions'))} player sessions",
+        },
+        {
+            "label": "Monitoring",
+            "value": f"{_fmt_int(monitoring_summary.get('wellness_entries'))} / {_fmt_int(monitoring_summary.get('rpe_entries'))}",
+            "foot": "Wellness / RPE entries",
+        },
+    ]
+    monitoring_cards = [
+        {"label": "Readiness Avg", "value": _fmt_dec(monitoring_summary.get("readiness_avg"), 1), "foot": "Teamgemiddelde over alle monitoringdagen"},
+        {"label": "Avg RPE", "value": _fmt_dec(monitoring_summary.get("avg_rpe"), 1), "foot": "Gemiddelde interne load binnen de week"},
+        {"label": "Wellness Entries", "value": _fmt_int(monitoring_summary.get("wellness_entries")), "foot": f"{_fmt_int(monitoring_summary.get('wellness_players'))} spelers met input"},
+        {"label": "RPE Entries", "value": _fmt_int(monitoring_summary.get("rpe_entries")), "foot": f"{_fmt_int(monitoring_summary.get('rpe_players'))} spelers met input"},
+    ]
 
     context = {
         "document_title": f"Week Report | {week_label}",
         "report_title": "Week Report",
-        "report_kicker": "MVV Maastricht | Reports | HTML report",
+        "report_kicker": "MVV Maastricht | Reports | Team Week Overview",
         "report_subtitle": f"{week_label} | {iso_label}",
-        "report_description": "Nieuwe HTML/CSS-rapportstijl op basis van dezelfde weekdata, samenvattingen en monitoringberekeningen als de bestaande PDF-export.",
+        "report_description": "Compact staffoverzicht voor trainingssturing, wedstrijdbelasting en monitoring follow-up binnen dezelfde weekselectie.",
         "logo_src": LOGO_SRC,
+        "report_header_meta": header_meta,
         "badges": _week_badges(summary, monitoring_summary),
         "cards": [
             {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
@@ -447,120 +661,237 @@ def build_week_report_html_pdf_bytes(
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
         ],
-        "chart_rows": [
-            [
-                {
-                    "svg": _build_vertical_bar_chart_svg(
-                        "Daily Team Distance",
-                        day_table.get("label", pd.Series(dtype=str)).tolist(),
-                        day_table.get("total_distance", pd.Series(dtype=float)).tolist(),
-                        color="#6E1222",
-                        formatter=_fmt_distance,
-                    )
-                },
-                {
-                    "svg": _build_vertical_bar_chart_svg(
-                        "Daily Team HSR / HSD",
-                        day_table.get("label", pd.Series(dtype=str)).tolist(),
-                        day_table.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
-                        color="#EA3351",
-                        formatter=_fmt_distance,
-                    )
-                },
-            ],
-            [
-                {
-                    "svg": _build_vertical_bar_chart_svg(
-                        "Daily Speed Exposures",
-                        day_table.get("label", pd.Series(dtype=str)).tolist(),
-                        day_table.get("speed_exposures", pd.Series(dtype=float)).tolist(),
-                        color="#C8102E",
-                        formatter=_fmt_int,
-                    )
-                },
-                {
-                    "svg": _build_share_chart_svg(
-                        "Distance Zone Share",
-                        zone_df.get("zone", pd.Series(dtype=str)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
-                        zone_df.get("value", pd.Series(dtype=float)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
-                    )
-                },
-            ],
-            [
-                {
-                    "svg": _build_horizontal_bar_chart_svg(
-                        "Top Players by Total Distance",
-                        top_players.get("player_name", pd.Series(dtype=str)).tolist(),
-                        top_players.get("total_distance", pd.Series(dtype=float)).tolist(),
-                        color="#6E1222",
-                        formatter=_fmt_distance,
-                    )
-                },
-                {
-                    "svg": _build_grouped_bar_chart_svg(
-                        "Monitoring Overview",
-                        monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
-                        [
-                            {"label": "Muscle", "color": "#6E1222", "values": monitoring_timeline.get("muscle_soreness", pd.Series(dtype=float)).tolist()},
-                            {"label": "Fatigue", "color": "#EA3351", "values": monitoring_timeline.get("fatigue", pd.Series(dtype=float)).tolist()},
-                            {"label": "Sleep", "color": "#2563EB", "values": monitoring_timeline.get("sleep_quality", pd.Series(dtype=float)).tolist()},
-                            {"label": "Mood", "color": "#F59E0B", "values": monitoring_timeline.get("mood", pd.Series(dtype=float)).tolist()},
-                        ],
-                        y_max=10,
-                    )
-                },
-            ],
+        "focus_cards": _build_week_focus_cards(summary, monitoring_summary, day_table),
+        "day_cards": _build_week_day_cards(day_table),
+        "leader_cards": _build_week_leader_cards(player_table),
+        "monitoring_cards": monitoring_cards,
+        "chart_sections": [
+            {
+                "eyebrow": "Load profile",
+                "title": "Weekly load rhythm",
+                "subtitle": "Dagelijkse teambelasting en high-speed output binnen de geselecteerde microcycle.",
+                "panels": [
+                    {
+                        "svg": _build_vertical_bar_chart_svg(
+                            "Daily Team Distance",
+                            day_table.get("label", pd.Series(dtype=str)).tolist(),
+                            day_table.get("total_distance", pd.Series(dtype=float)).tolist(),
+                            color="#6E1222",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                    {
+                        "svg": _build_vertical_bar_chart_svg(
+                            "Daily Team HSR / HSD",
+                            day_table.get("label", pd.Series(dtype=str)).tolist(),
+                            day_table.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
+                            color="#EA3351",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                ],
+            },
+            {
+                "eyebrow": "Speed profile",
+                "title": "Activation and zone distribution",
+                "subtitle": "Speed exposures per dag en verdeling van de weekafstand over de locomotion zones.",
+                "panels": [
+                    {
+                        "svg": _build_vertical_bar_chart_svg(
+                            "Daily Speed Exposures",
+                            day_table.get("label", pd.Series(dtype=str)).tolist(),
+                            day_table.get("speed_exposures", pd.Series(dtype=float)).tolist(),
+                            color="#C8102E",
+                            formatter=_fmt_int,
+                        )
+                    },
+                    {
+                        "svg": _build_share_chart_svg(
+                            "Distance Zone Share",
+                            zone_df.get("zone", pd.Series(dtype=str)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
+                            zone_df.get("value", pd.Series(dtype=float)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
+                        )
+                    },
+                ],
+            },
+            {
+                "eyebrow": "Player leaders",
+                "title": "Top outputs within the squad",
+                "subtitle": "Snel overzicht van volume- en high-speed leiders voor de weekevaluatie.",
+                "page_break": True,
+                "panels": [
+                    {
+                        "svg": _build_horizontal_bar_chart_svg(
+                            "Top Players by Total Distance",
+                            top_players.get("player_name", pd.Series(dtype=str)).tolist(),
+                            top_players.get("total_distance", pd.Series(dtype=float)).tolist(),
+                            color="#6E1222",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                    {
+                        "svg": _build_horizontal_bar_chart_svg(
+                            "Top Players by HSR / HSD",
+                            hsr_leaders.get("player_name", pd.Series(dtype=str)).tolist(),
+                            hsr_leaders.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
+                            color="#C8102E",
+                            formatter=_fmt_distance,
+                        )
+                    },
+                ],
+            },
+            {
+                "eyebrow": "Monitoring",
+                "title": "Wellness and internal load control",
+                "subtitle": "Alle wellness-parameters plus sessie-RPE, inclusief dagen met dubbele trainingen.",
+                "panels": [
+                    {
+                        "svg": _build_grouped_bar_chart_svg(
+                            "Monitoring Overview",
+                            monitoring_timeline.get("label", pd.Series(dtype=str)).tolist(),
+                            [
+                                {"label": "Muscle", "color": "#6E1222", "values": monitoring_timeline.get("muscle_soreness", pd.Series(dtype=float)).tolist()},
+                                {"label": "Fatigue", "color": "#C8102E", "values": monitoring_timeline.get("fatigue", pd.Series(dtype=float)).tolist()},
+                                {"label": "Sleep", "color": "#2563EB", "values": monitoring_timeline.get("sleep_quality", pd.Series(dtype=float)).tolist()},
+                                {"label": "Stress", "color": "#0F766E", "values": monitoring_timeline.get("stress", pd.Series(dtype=float)).tolist()},
+                                {"label": "Mood", "color": "#F59E0B", "values": monitoring_timeline.get("mood", pd.Series(dtype=float)).tolist()},
+                            ],
+                            y_max=10,
+                        )
+                    },
+                    {
+                        "svg": _build_vertical_bar_chart_svg(
+                            "Session RPE by Session",
+                            rpe_session_timeline.get("axis_label", pd.Series(dtype=str)).tolist(),
+                            rpe_session_timeline.get("avg_rpe", pd.Series(dtype=float)).tolist(),
+                            color="#EA3351",
+                            formatter=lambda value: _fmt_dec(value, 1),
+                            y_max=10,
+                        )
+                    },
+                ],
+            },
         ],
-        "table_rows": [
-            [
-                _table_payload(
-                    "Training vs Match",
-                    "Verdeling van de weekbelasting per sessiecategorie.",
-                    type_table,
-                    [
-                        ("session_category", "Type", None),
-                        ("active_players", "Players", _fmt_int),
-                        ("player_sessions", "Sessions", _fmt_int),
-                        ("total_distance", "Distance", _fmt_distance),
-                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
-                        ("sprints", "Sprints", _fmt_int),
-                        ("max_speed", "Top Speed", _fmt_speed),
-                    ],
-                    empty_message="Geen sessie-indeling beschikbaar.",
-                ),
-                _table_payload(
-                    "Top Players",
-                    "Spelers met de hoogste totale afstand in deze week.",
-                    top_players,
-                    [
-                        ("player_name", "Speler", None),
-                        ("sessions", "Sessies", _fmt_int),
-                        ("total_distance", "Distance", _fmt_distance),
-                        ("hsr_hsd", "HSR / HSD", _fmt_distance),
-                        ("sprints", "Sprints", _fmt_int),
-                        ("max_speed", "Top Speed", _fmt_speed),
-                    ],
-                    empty_message="Geen spelerssamenvatting beschikbaar.",
-                ),
-            ],
-            [
-                _table_payload(
-                    "Monitoring Timeline",
-                    "Wellness, readiness en RPE door de week heen.",
-                    monitoring_timeline,
-                    [
-                        ("label", "Periode", None),
-                        ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
-                        ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
-                        ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
-                        ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
-                        ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
-                        ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
-                        ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
-                    ],
-                    empty_message="Geen monitoringdata beschikbaar.",
-                ),
-            ],
+        "table_sections": [
+            {
+                "eyebrow": "Week flow",
+                "title": "Week at a glance",
+                "subtitle": "Dagritme en sessieverdeling voor de volledige teamweek.",
+                "tables": [
+                    _table_payload(
+                        "Week at a glance",
+                        "Dagoverzicht met spelers, sessies en externe load.",
+                        day_table,
+                        [
+                            ("label", "Dag", None),
+                            ("active_players", "Players", _fmt_int),
+                            ("player_sessions", "Sessions", _fmt_int),
+                            ("total_distance", "TD", _fmt_distance),
+                            ("distance_per_player", "Dist / Player", _fmt_distance),
+                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("sprints", "Sprints", _fmt_int),
+                            ("speed_exposures", "Exposures", _fmt_int),
+                            ("max_speed", "Top Speed", _fmt_speed),
+                        ],
+                        empty_message="Geen weekoverzicht beschikbaar.",
+                    ),
+                    _table_payload(
+                        "Training vs Match",
+                        "Verdeling van de weekbelasting per sessiecategorie.",
+                        type_table,
+                        [
+                            ("session_category", "Type", None),
+                            ("active_players", "Players", _fmt_int),
+                            ("player_sessions", "Sessions", _fmt_int),
+                            ("total_distance", "TD", _fmt_distance),
+                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("sprints", "Sprints", _fmt_int),
+                            ("max_speed", "Top Speed", _fmt_speed),
+                        ],
+                        empty_message="Geen sessie-indeling beschikbaar.",
+                    ),
+                ],
+            },
+            {
+                "eyebrow": "Squad output",
+                "title": "Leaders and spread",
+                "subtitle": "Volumeleiders en spreiding per dag als basis voor staffbespreking.",
+                "tables": [
+                    _table_payload(
+                        "Top Players",
+                        "Spelers met de hoogste totale afstand in deze week.",
+                        top_players,
+                        [
+                            ("player_name", "Speler", None),
+                            ("sessions", "Sessies", _fmt_int),
+                            ("total_distance", "TD", _fmt_distance),
+                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("sprints", "Sprints", _fmt_int),
+                            ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
+                            ("max_speed", "Top Speed", _fmt_speed),
+                        ],
+                        empty_message="Geen spelerssamenvatting beschikbaar.",
+                    ),
+                    _table_payload(
+                        "Squad Spread by Day",
+                        "Gemiddelde en spreiding per speler op dagniveau.",
+                        squad_spread,
+                        [
+                            ("label", "Dag", None),
+                            ("player_count", "Players", _fmt_int),
+                            ("total_distance_mean", "TD mean", _fmt_distance),
+                            ("total_distance_std", "TD SD", _fmt_distance),
+                            ("hsr_hsd_mean", "HSR mean", _fmt_distance),
+                            ("hsr_hsd_std", "HSR SD", _fmt_distance),
+                            ("sprints_mean", "Sprint mean", lambda value: _fmt_dec(value, 1)),
+                            ("sprints_std", "Sprint SD", lambda value: _fmt_dec(value, 1)),
+                            ("distance_per_min_mean", "m/min", lambda value: _fmt_dec(value, 1)),
+                        ],
+                        empty_message="Geen squad-spread beschikbaar.",
+                    ),
+                ],
+            },
+            {
+                "eyebrow": "Monitoring detail",
+                "title": "Readiness, wellness and RPE",
+                "subtitle": "Dag- en spelersniveau voor interne load en welzijnsopvolging.",
+                "tables": [
+                    _table_payload(
+                        "Monitoring Timeline",
+                        "Wellness, readiness en RPE door de week heen.",
+                        monitoring_timeline,
+                        [
+                            ("label", "Periode", None),
+                            ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
+                            ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
+                            ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
+                            ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
+                            ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
+                            ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
+                            ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
+                        ],
+                        empty_message="Geen monitoringdata beschikbaar.",
+                    ),
+                    _table_payload(
+                        "Monitoring Watchlist",
+                        "Spelers met de laagste readiness en hoogste interne load binnen de week.",
+                        monitoring_watchlist,
+                        [
+                            ("player_name", "Speler", None),
+                            ("wellness_days", "Wellness Days", _fmt_int),
+                            ("rpe_days", "RPE Days", _fmt_int),
+                            ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
+                            ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
+                            ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
+                            ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
+                            ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
+                            ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
+                            ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
+                        ],
+                        empty_message="Geen monitoringwatchlist beschikbaar.",
+                    ),
+                ],
+            },
         ],
         "notes": list(notes),
     }
