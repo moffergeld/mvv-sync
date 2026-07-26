@@ -88,6 +88,12 @@ def _fmt_distance(value: object) -> str:
     return "--" if base == "--" else f"{base} m"
 
 
+def _fmt_distance_km(value: object) -> str:
+    if pd.isna(value):
+        return "--"
+    return f"{_fmt_dec(float(value) / 1000.0, 1)} km"
+
+
 def _fmt_speed(value: object) -> str:
     base = _fmt_dec(value, 1)
     return "--" if base == "--" else f"{base} km/h"
@@ -849,9 +855,9 @@ def build_week_report_html_pdf_bytes(
         "report_header_meta": [],
         "badges": [],
         "cards": [
-            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
-            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
-            {"label": "Dist / Player", "value": _fmt_distance(summary.get("dist_per_player")), "foot": "Teamload gedeeld door actieve spelers"},
+            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
+            {"label": "HSR / HSD", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
+            {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": "Teamload gedeeld door actieve spelers"},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totale sprintacties in deze week"},
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
