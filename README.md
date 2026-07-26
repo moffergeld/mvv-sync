@@ -102,6 +102,9 @@ Daarnaast blijft de bestaande dependency voor de legacy-PDF bestaan:
 ## WeasyPrint systeembibliotheken
 
 Afhankelijk van de omgeving heeft WeasyPrint extra systeembibliotheken nodig.
+Voor de cloud-deploy staat de Linux-lijst nu in:
+
+- `packages.txt`
 
 Voor lokale Windows-omgevingen kan een extra GTK/Pango/Cairo-runtime nodig zijn.
 Voor Linux-deployments is meestal een set renderbibliotheken nodig die door het platform beschikbaar moet zijn.

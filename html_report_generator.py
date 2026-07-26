@@ -16,6 +16,13 @@ LOGO_SRC = TEAM_LOGO.relative_to(BASE_DIR).as_posix() if TEAM_LOGO.exists() else
 
 SVG_COLORS = ["#C8102E", "#6E1222", "#EA3351", "#F59E0B", "#2563EB", "#0F766E"]
 
+HTML_RUNTIME_UNAVAILABLE_MESSAGE = (
+    "Nieuw vormgegeven rapport is op deze server nog niet beschikbaar. "
+    "De WeasyPrint runtime mist nog Linux-systeembibliotheken. "
+    "Na redeploy met de packages uit packages.txt moet deze stijl werken. "
+    "Kies tijdelijk 'Klassiek rapport'."
+)
+
 
 def _require_jinja2() -> Any:
     try:
@@ -30,10 +37,8 @@ def _require_jinja2() -> Any:
 def _require_weasyprint() -> Any:
     try:
         from weasyprint import CSS, HTML
-    except ImportError as exc:
-        raise RuntimeError(
-            "HTML rapportstijl vereist WeasyPrint. Voeg weasyprint toe aan requirements.txt en installeer ook de benodigde systeembibliotheken."
-        ) from exc
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(HTML_RUNTIME_UNAVAILABLE_MESSAGE) from exc
     return HTML, CSS
 
 
