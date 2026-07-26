@@ -587,6 +587,29 @@ def build_week_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
+def build_week_zone_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
+    if week_df.empty:
+        return pd.DataFrame()
+    weekdays = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+    grouped = (
+        week_df.groupby("datum", dropna=False)
+        .agg(
+            walking=("walking", "sum"),
+            jogging=("jogging", "sum"),
+            running=("running", "sum"),
+            sprint=("sprint", "sum"),
+            high_sprint=("high_sprint", "sum"),
+        )
+        .reset_index()
+        .sort_values("datum")
+        .reset_index(drop=True)
+    )
+    grouped["label"] = grouped["datum"].apply(
+        lambda value: f"{weekdays[int(value.weekday())]} {value:%d/%m}" if pd.notna(value) else "--"
+    )
+    return grouped
+
+
 def build_week_day_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     if week_df.empty:
         return pd.DataFrame()
@@ -1098,6 +1121,7 @@ def main() -> None:
     player_table = build_week_player_table(week_df)
     type_table = build_week_type_table(week_df)
     zone_df = build_zone_totals(week_df)
+    zone_day_table = build_week_zone_day_table(week_df)
     history_row = history_df.loc[history_df["week_start"] == selected_week]
     summary = build_week_summary(all_df, week_df, history_row.iloc[0] if not history_row.empty else None)
     notes = build_week_notes(summary, day_table, player_table)
@@ -1145,6 +1169,7 @@ def main() -> None:
             type_table=type_table,
             player_table=player_table,
             zone_df=zone_df,
+            zone_day_table=zone_day_table,
             monitoring_day_table=monitoring_day_table,
             rpe_session_day_table=rpe_session_day_table,
             monitoring_player_table=monitoring_player_table,

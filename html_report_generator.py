@@ -15,6 +15,14 @@ CSS_PATH = BASE_DIR / "static" / "css" / "report.css"
 LOGO_SRC = TEAM_LOGO.relative_to(BASE_DIR).as_posix() if TEAM_LOGO.exists() else ""
 
 SVG_COLORS = ["#C8102E", "#6E1222", "#EA3351", "#F59E0B", "#2563EB", "#0F766E"]
+ZONE_SPECS = [
+    ("Walking", "walking", "#F5D2D8"),
+    ("Jogging", "jogging", "#F1A4B5"),
+    ("Running", "running", "#E97A93"),
+    ("Sprint", "sprint", "#D92B4D"),
+    ("High Sprint", "high_sprint", "#6E1222"),
+]
+ZONE_COLOR_LOOKUP = {label: color for label, _, color in ZONE_SPECS}
 
 HTML_RUNTIME_UNAVAILABLE_MESSAGE = (
     "Nieuw vormgegeven rapport is op deze server nog niet beschikbaar. "
@@ -503,6 +511,79 @@ def _build_share_chart_svg(
     return "".join(parts)
 
 
+def _describe_zone_series(labels: Sequence[object], values: Sequence[object]) -> list[tuple[str, float, str]]:
+    described: list[tuple[str, float, str]] = []
+    clean_labels = [_fmt_text(label) for label in labels]
+    clean_values = _clean_series(values)
+    for index, (label, value) in enumerate(zip(clean_labels, clean_values, strict=False)):
+        if value <= 0:
+            continue
+        color = ZONE_COLOR_LOOKUP.get(label, SVG_COLORS[index % len(SVG_COLORS)])
+        described.append((label, value, color))
+    return described
+
+
+def _build_pie_chart_svg(
+    title: str,
+    labels: Sequence[object],
+    values: Sequence[object],
+    *,
+    width: int = 860,
+    height: int = 340,
+) -> str:
+    described = _describe_zone_series(labels, values)
+    total = sum(value for _, value, _ in described)
+    if total <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    pie_cx = width / 2
+    pie_cy = 126
+    radius = 82
+    legend_top = 236
+    legend_cols = 2
+    legend_col_width = (width - 92) / legend_cols
+    legend_row_height = 24
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
+        f'<text x="26" y="40" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="{pie_cx:.1f}" y="{height - 22}" text-anchor="middle" font-size="11" fill="#64748B">Totale afstand: {escape(_fmt_distance(total))}</text>',
+    ]
+
+    if len(described) == 1:
+        _, _, color = described[0]
+        parts.append(f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{radius:.1f}" fill="{color}" stroke="#FFFFFF" stroke-width="2" />')
+    else:
+        start_angle = -math.pi / 2
+        for _, value, color in described:
+            sweep = (value / total) * math.tau
+            end_angle = start_angle + sweep
+            start_x = pie_cx + radius * math.cos(start_angle)
+            start_y = pie_cy + radius * math.sin(start_angle)
+            end_x = pie_cx + radius * math.cos(end_angle)
+            end_y = pie_cy + radius * math.sin(end_angle)
+            large_arc = 1 if sweep > math.pi else 0
+            parts.append(
+                f'<path d="M {pie_cx:.1f} {pie_cy:.1f} L {start_x:.1f} {start_y:.1f} A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {end_x:.1f} {end_y:.1f} Z" fill="{color}" stroke="#FFFFFF" stroke-width="2" />'
+            )
+            start_angle = end_angle
+
+    for index, (label, value, color) in enumerate(described):
+        percentage = (value / total) * 100 if total > 0 else 0.0
+        col = index % legend_cols
+        row = index // legend_cols
+        x = 46 + col * legend_col_width
+        y = legend_top + row * legend_row_height
+        parts.append(f'<rect x="{x:.1f}" y="{y - 10:.1f}" width="12" height="12" rx="3" fill="{color}" />')
+        parts.append(
+            f'<text x="{x + 20:.1f}" y="{y:.1f}" font-size="11" fill="#334155">{escape(label)}: {escape(_fmt_dec(percentage, 1))}% ({escape(_fmt_distance(value))})</text>'
+        )
+
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def _table_payload(
     title: str,
     subtitle: str,
@@ -645,6 +726,44 @@ def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
     return cards
 
 
+def _build_zone_share_panels(zone_df: pd.DataFrame | None, zone_day_table: pd.DataFrame | None) -> list[dict[str, str]]:
+    panels: list[dict[str, str]] = []
+    zones = zone_df.copy() if isinstance(zone_df, pd.DataFrame) else pd.DataFrame()
+    zone_days = zone_day_table.copy() if isinstance(zone_day_table, pd.DataFrame) else pd.DataFrame()
+
+    if not zones.empty:
+        panels.append(
+            {
+                "svg": _build_pie_chart_svg(
+                    "Hele week",
+                    zones.get("zone", pd.Series(dtype=str)).tolist(),
+                    zones.get("value", pd.Series(dtype=float)).tolist(),
+                )
+            }
+        )
+
+    if not zone_days.empty:
+        for _, row in zone_days.sort_values("datum").iterrows():
+            labels: list[str] = []
+            values: list[float] = []
+            for label, column, _ in ZONE_SPECS:
+                numeric = pd.to_numeric(row.get(column), errors="coerce")
+                if pd.notna(numeric) and float(numeric) > 0:
+                    labels.append(label)
+                    values.append(float(numeric))
+            if not values:
+                continue
+            panel_title = _fmt_text(row.get("label"))
+            if panel_title == "--":
+                panel_title = _weekday_label(row.get("datum"))
+            panels.append({"svg": _build_pie_chart_svg(panel_title, labels, values)})
+
+    if panels:
+        return panels
+
+    return [{"svg": _empty_svg("Distance Zone Share", "Geen data beschikbaar.", height=340)}]
+
+
 def _build_week_leader_cards(player_table: pd.DataFrame) -> list[dict[str, str]]:
     if not isinstance(player_table, pd.DataFrame) or player_table.empty:
         return []
@@ -686,6 +805,7 @@ def build_week_report_html_pdf_bytes(
     notes: Iterable[str],
     day_stats: pd.DataFrame | None = None,
     zone_df: pd.DataFrame | None = None,
+    zone_day_table: pd.DataFrame | None = None,
     rpe_session_day_table: pd.DataFrame | None = None,
     monitoring_player_table: pd.DataFrame | None = None,
 ) -> bytes:
@@ -719,6 +839,7 @@ def build_week_report_html_pdf_bytes(
             axis=1,
         )
     squad_spread = day_stats.copy() if isinstance(day_stats, pd.DataFrame) else pd.DataFrame()
+    zone_day_distribution = zone_day_table.copy() if isinstance(zone_day_table, pd.DataFrame) else pd.DataFrame()
     monitoring_watchlist = monitoring_player_table.copy() if isinstance(monitoring_player_table, pd.DataFrame) else pd.DataFrame()
     if not monitoring_watchlist.empty:
         monitoring_watchlist = monitoring_watchlist.sort_values(
@@ -864,8 +985,8 @@ def build_week_report_html_pdf_bytes(
             },
             {
                 "eyebrow": "Speed profile",
-                "title": "Activation and zone distribution",
-                "subtitle": "Speed exposures per dag en verdeling van de weekafstand over de locomotion zones.",
+                "title": "Daily speed exposures",
+                "subtitle": "Sessies per dag op of boven 90% van de individuele seizoensmax.",
                 "columns": 1,
                 "panels": [
                     {
@@ -877,14 +998,14 @@ def build_week_report_html_pdf_bytes(
                             formatter=_fmt_int,
                         )
                     },
-                    {
-                        "svg": _build_share_chart_svg(
-                            "Distance Zone Share",
-                            zone_df.get("zone", pd.Series(dtype=str)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
-                            zone_df.get("value", pd.Series(dtype=float)).tolist() if isinstance(zone_df, pd.DataFrame) else [],
-                        )
-                    },
                 ],
+            },
+            {
+                "eyebrow": "Locomotion zones",
+                "title": "Distance zone share",
+                "subtitle": "Verdeling van walking, jogging, running, sprint en high sprint voor de hele week en per actieve dag.",
+                "columns": 2,
+                "panels": _build_zone_share_panels(zone_df, zone_day_distribution),
             },
             {
                 "eyebrow": "Monitoring",
