@@ -1268,6 +1268,7 @@ def build_week_report_html_pdf_bytes(
     zone_day_table: pd.DataFrame | None = None,
     rpe_session_day_table: pd.DataFrame | None = None,
     monitoring_player_table: pd.DataFrame | None = None,
+    report_revision: str | None = None,
 ) -> bytes:
     top_players = (
         player_table.sort_values("total_distance", ascending=False)
@@ -1315,15 +1316,18 @@ def build_week_report_html_pdf_bytes(
         {"label": "RPE Entries", "value": _fmt_int(monitoring_summary.get("rpe_entries")), "foot": f"{_fmt_int(monitoring_summary.get('rpe_players'))} spelers met input"},
     ]
 
+    revision_label = _fmt_text(report_revision) if report_revision else "REV-HTML"
+    export_stamp = pd.Timestamp.now().strftime("%d-%m-%Y %H:%M")
+
     context = {
         "document_title": f"Week Report | {week_label}",
         "report_title": "Week Report",
         "report_kicker": "MVV Maastricht | Reports | Team Week Overview",
-        "report_subtitle": f"{week_label} | {iso_label}",
+        "report_subtitle": f"{week_label} | {iso_label} | {revision_label}",
         "report_description": "",
         "logo_src": LOGO_SRC,
         "report_header_meta": [],
-        "badges": [],
+        "badges": [f"Export {revision_label}", export_stamp],
         "cards": [
             {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
             {"label": "HSR / HSD", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},

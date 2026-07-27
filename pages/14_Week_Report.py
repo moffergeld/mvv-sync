@@ -41,6 +41,7 @@ MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
+WEEK_REPORT_HTML_REVISION = "REV-20260727C"
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -472,10 +473,20 @@ def _week_pdf_filename(week_start: pd.Timestamp) -> str:
     return f"week_report_{iso.year}_W{int(iso.week):02d}.pdf"
 
 
-def _report_file_name(base_name: str, report_style: str) -> str:
+def _report_file_name(base_name: str, report_style: str, report_revision: str | None = None) -> str:
     stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
     style_slug = "html" if "nieuw" in report_style.lower() else "report"
+    revision_slug = (
+        str(report_revision or "")
+        .strip()
+        .lower()
+        .replace(" ", "-")
+        .replace("/", "-")
+        .replace("_", "-")
+    )
     stamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    if revision_slug:
+        return f"{stem}_{style_slug}_{revision_slug}_{stamp}.pdf"
     return f"{stem}_{style_slug}_{stamp}.pdf"
 
 
@@ -1158,6 +1169,7 @@ def main() -> None:
     try:
         pdf_bytes = generate_week_report(
             report_style=report_style,
+            report_revision=WEEK_REPORT_HTML_REVISION,
             week_label=_week_label(selected_week),
             iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
             summary=summary,
@@ -1184,9 +1196,9 @@ def main() -> None:
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
         st.download_button(
-            "Download HTML PDF",
+            f"Download HTML PDF ({WEEK_REPORT_HTML_REVISION})",
             data=pdf_bytes or b"HTML PDF unavailable",
-            file_name=_report_file_name(_week_pdf_filename(selected_week), report_style),
+            file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
             mime="application/pdf",
             width="stretch",
             key="week_report_pdf_download",
@@ -1195,6 +1207,8 @@ def main() -> None:
     with action_cols[2]:
         if pdf_error:
             st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
+        else:
+            st.caption(f"Actieve exportrevisie: {WEEK_REPORT_HTML_REVISION}")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 
