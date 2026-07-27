@@ -21,6 +21,7 @@ from report_monitoring import (
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from utils.streamlit_ui import apply_streamlit_chrome
+from week_report_pdf import build_week_report_pdf_bytes
 
 
 st.set_page_config(page_title="Week Report", layout="wide", initial_sidebar_state="expanded")
@@ -1151,27 +1152,47 @@ def main() -> None:
 
     pdf_error = None
     pdf_bytes: bytes | None = None
+    selected_iso = selected_week.isocalendar()
+    html_pdf_payload = {
+        "week_label": _week_label(selected_week),
+        "iso_label": f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
+        "summary": summary,
+        "monitoring_summary": monitoring_summary,
+        "day_table": day_table,
+        "day_stats": day_stats,
+        "type_table": type_table,
+        "player_table": player_table,
+        "zone_df": zone_df,
+        "zone_day_table": zone_day_table,
+        "monitoring_day_table": monitoring_day_table,
+        "rpe_session_day_table": rpe_session_day_table,
+        "monitoring_player_table": monitoring_player_table,
+        "notes": notes,
+    }
+    legacy_pdf_payload = {
+        "week_label": html_pdf_payload["week_label"],
+        "iso_label": html_pdf_payload["iso_label"],
+        "summary": summary,
+        "monitoring_summary": monitoring_summary,
+        "day_table": day_table,
+        "day_stats": day_stats,
+        "type_table": type_table,
+        "player_table": player_table,
+        "zone_df": zone_df,
+        "monitoring_day_table": monitoring_day_table,
+        "rpe_session_day_table": rpe_session_day_table,
+        "notes": notes,
+    }
     try:
-        selected_iso = selected_week.isocalendar()
-        pdf_bytes = generate_week_report(
-            report_style=report_style,
-            week_label=_week_label(selected_week),
-            iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
-            summary=summary,
-            monitoring_summary=monitoring_summary,
-            day_table=day_table,
-            day_stats=day_stats,
-            type_table=type_table,
-            player_table=player_table,
-            zone_df=zone_df,
-            zone_day_table=zone_day_table,
-            monitoring_day_table=monitoring_day_table,
-            rpe_session_day_table=rpe_session_day_table,
-            monitoring_player_table=monitoring_player_table,
-            notes=notes,
-        )
+        pdf_bytes = generate_week_report(report_style=report_style, **html_pdf_payload)
     except Exception as exc:
-        pdf_error = str(exc)
+        try:
+            pdf_bytes = build_week_report_pdf_bytes(**legacy_pdf_payload)
+        except Exception as legacy_exc:
+            if str(exc) == str(legacy_exc):
+                pdf_error = str(exc)
+            else:
+                pdf_error = f"{exc} | fallback: {legacy_exc}"
 
     action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
     with action_cols[0]:
@@ -1186,13 +1207,6 @@ def main() -> None:
                 mime="application/pdf",
                 width="stretch",
                 key="week_report_pdf_download",
-            )
-        else:
-            st.button(
-                "Download PDF",
-                key="week_report_pdf_download_disabled",
-                width="stretch",
-                disabled=True,
             )
     with action_cols[2]:
         if pdf_error:
