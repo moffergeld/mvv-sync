@@ -61,6 +61,7 @@ body {
 .day-card,
 .leader-card {
   break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .report-header {
@@ -214,6 +215,7 @@ body {
   justify-content: space-between;
   margin-bottom: 2.5mm;
   break-after: avoid;
+  page-break-after: avoid;
 }
 
 .section-heading > div:first-child {
@@ -261,6 +263,7 @@ body {
   align-items: center;
   margin: 3mm 0 2mm;
   break-after: avoid;
+  page-break-after: avoid;
 }
 
 .section-subheading__title {
@@ -531,17 +534,19 @@ body {
 
 .chart-grid,
 .table-grid {
-  display: flex;
-  flex-wrap: wrap;
-  margin-left: -3mm;
-  margin-right: -3mm;
+  display: block;
+  font-size: 0;
+  margin-left: -2.2mm;
+  margin-right: -2.2mm;
 }
 
 .chart-grid > .panel,
 .table-grid > .panel {
-  padding-left: 3mm;
-  padding-right: 3mm;
-  margin-bottom: var(--gap-lg);
+  display: inline-block;
+  vertical-align: top;
+  padding-left: 2.2mm;
+  padding-right: 2.2mm;
+  margin-bottom: 4.2mm;
 }
 
 .chart-grid--1 > .panel,
@@ -568,16 +573,18 @@ body {
 }
 
 .panel--chart {
-  padding: 1.8mm;
+  padding: 1.3mm;
 }
 
 .panel-head {
   margin-bottom: 2mm;
   break-after: avoid;
+  page-break-after: avoid;
 }
 
 .panel--table {
   break-inside: auto;
+  page-break-inside: auto;
 }
 
 .chart-svg {

@@ -146,12 +146,11 @@ def _nice_max(value: float) -> float:
     return nice * magnitude
 
 
-def _empty_svg(title: str, message: str, *, width: int = 860, height: int = 290) -> str:
+def _empty_svg(title: str, message: str, *, width: int = 860, height: int = 220) -> str:
     return f"""
     <svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">
-      <rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />
-      <text x="26" y="40" font-size="24" font-weight="700" fill="#0B1020">{escape(title)}</text>
-      <text x="{width/2:.0f}" y="{height/2:.0f}" text-anchor="middle" font-size="17" fill="#64748B">{escape(message)}</text>
+      <text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>
+      <text x="{width/2:.0f}" y="{height/2:.0f}" text-anchor="middle" font-size="12" fill="#64748B">{escape(message)}</text>
     </svg>
     """.strip()
 
@@ -163,7 +162,7 @@ def _build_vertical_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 270,
+    height: int = 220,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -173,38 +172,37 @@ def _build_vertical_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 46, 90
+    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 30, 48
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_values))
-    bar_width = max(16, min(44, slot_width * 0.58))
-    label_font = 11 if len(clean_labels) > 8 else 12
+    bar_width = max(14, min(34, slot_width * 0.5))
+    label_font = 9 if len(clean_labels) > 8 else 10
     grid_lines = 4
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="26" y="40" font-size="24" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
-        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
-        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="11" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
+        parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
         x_center = margin_left + slot_width * index + slot_width / 2
         bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
         x = x_center - bar_width / 2
         y = margin_top + plot_height - bar_height
-        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="4" fill="{color}" />')
         if value > 0:
-            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 8, margin_top + 14):.1f}" text-anchor="middle" font-size="11" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
-        label_y = height - 24
+            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
+        label_y = height - 12
         parts.append(
-            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {x_center:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {x_center:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -217,7 +215,7 @@ def _build_grouped_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 280,
+    height: int = 230,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -237,33 +235,32 @@ def _build_grouped_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_values))
-    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 62, 90
+    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 44, 48
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
     series_width = slot_width * 0.72
-    bar_width = max(12, min(26, series_width / max(1, len(clean_series))))
+    bar_width = max(10, min(20, series_width / max(1, len(clean_series))))
     grid_lines = 4
-    label_font = 11 if len(clean_labels) > 8 else 12
+    label_font = 9 if len(clean_labels) > 8 else 10
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="26" y="40" font-size="24" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
-    legend_x = 24
+    legend_x = 8
     for item in clean_series:
-        parts.append(f'<rect x="{legend_x}" y="46" width="14" height="14" rx="3" fill="{item["color"]}" />')
-        parts.append(f'<text x="{legend_x + 20}" y="58" font-size="11" fill="#475569">{escape(item["label"])}</text>')
-        legend_x += max(118, len(item["label"]) * 8 + 38)
+        parts.append(f'<rect x="{legend_x}" y="26" width="10" height="10" rx="2" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 16}" y="35" font-size="9" fill="#475569">{escape(item["label"])}</text>')
+        legend_x += max(92, len(item["label"]) * 7 + 30)
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
-        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
-        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="11" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
+        parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
     for label_index, label in enumerate(clean_labels):
         x_slot = margin_left + slot_width * label_index
@@ -273,11 +270,11 @@ def _build_grouped_bar_chart_svg(
             bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
             x = x_start + series_index * bar_width
             y = margin_top + plot_height - bar_height
-            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width - 2:.1f}" height="{bar_height:.1f}" rx="4" fill="{item["color"]}" />')
+            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width - 2:.1f}" height="{bar_height:.1f}" rx="3" fill="{item["color"]}" />')
         label_x = x_slot + slot_width / 2
-        label_y = height - 24
+        label_y = height - 12
         parts.append(
-            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {label_x:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {label_x:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -292,7 +289,7 @@ def _build_error_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 280,
+    height: int = 230,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -304,33 +301,32 @@ def _build_error_bar_chart_svg(
 
     maxima = [mean + error for mean, error in zip(clean_means, clean_errors, strict=False)]
     chart_max = y_max if y_max is not None else _nice_max(max(maxima, default=max(clean_means, default=0)))
-    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 46, 90
+    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 30, 48
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_means))
-    bar_width = max(16, min(42, slot_width * 0.54))
-    label_font = 11 if len(clean_labels) > 8 else 12
+    bar_width = max(14, min(34, slot_width * 0.48))
+    label_font = 9 if len(clean_labels) > 8 else 10
     grid_lines = 4
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="26" y="40" font-size="24" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
-        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
-        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="11" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
+        parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
     for index, (label, mean_value, error_value) in enumerate(zip(clean_labels, clean_means, clean_errors, strict=False)):
         x_center = margin_left + slot_width * index + slot_width / 2
         bar_height = 0 if chart_max <= 0 else (mean_value / chart_max) * plot_height
         x = x_center - bar_width / 2
         y = margin_top + plot_height - bar_height
-        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="5" fill="{color}" />')
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="4" fill="{color}" />')
 
         error_top_value = min(chart_max, mean_value + error_value)
         error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
@@ -339,10 +335,10 @@ def _build_error_bar_chart_svg(
         parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="#475569" stroke-width="1.4" />')
 
         if mean_value > 0:
-            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 8, margin_top + 14):.1f}" text-anchor="middle" font-size="11" font-weight="700" fill="#0F172A">{escape(formatter(mean_value))}</text>')
-        label_y = height - 24
+            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(mean_value))}</text>')
+        label_y = height - 12
         parts.append(
-            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {x_center:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {x_center:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -355,7 +351,7 @@ def _build_grouped_error_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 290,
+    height: int = 240,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -380,33 +376,32 @@ def _build_grouped_error_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_maxima))
-    margin_left, margin_right, margin_top, margin_bottom = 64, 24, 62, 90
+    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 44, 48
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
     series_width = slot_width * 0.72
-    bar_width = max(12, min(24, series_width / max(1, len(clean_series))))
+    bar_width = max(10, min(20, series_width / max(1, len(clean_series))))
     grid_lines = 4
-    label_font = 11 if len(clean_labels) > 8 else 12
+    label_font = 9 if len(clean_labels) > 8 else 10
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="26" y="40" font-size="24" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
-    legend_x = 24
+    legend_x = 8
     for item in clean_series:
-        parts.append(f'<rect x="{legend_x}" y="46" width="14" height="14" rx="3" fill="{item["color"]}" />')
-        parts.append(f'<text x="{legend_x + 20}" y="58" font-size="11" fill="#475569">{escape(item["label"])}</text>')
-        legend_x += max(118, len(item["label"]) * 8 + 38)
+        parts.append(f'<rect x="{legend_x}" y="26" width="10" height="10" rx="2" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 16}" y="35" font-size="9" fill="#475569">{escape(item["label"])}</text>')
+        legend_x += max(92, len(item["label"]) * 7 + 30)
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
-        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E2E8F0" stroke-dasharray="4 6" />')
-        parts.append(f'<text x="{margin_left - 12}" y="{y + 4:.1f}" text-anchor="end" font-size="11" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
+        parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
+        parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
     for label_index, label in enumerate(clean_labels):
         x_slot = margin_left + slot_width * label_index
@@ -419,16 +414,16 @@ def _build_grouped_error_bar_chart_svg(
             y = margin_top + plot_height - bar_height
             draw_width = max(6, bar_width - 2)
             x_center = x + draw_width / 2
-            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{draw_width:.1f}" height="{bar_height:.1f}" rx="4" fill="{item["color"]}" />')
+            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{draw_width:.1f}" height="{bar_height:.1f}" rx="3" fill="{item["color"]}" />')
             error_top_value = min(chart_max, value + error)
             error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
             cap_half = max(4, draw_width * 0.28)
             parts.append(f'<line x1="{x_center:.1f}" y1="{error_top_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="#475569" stroke-width="1.2" />')
             parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="#475569" stroke-width="1.2" />')
         label_x = x_slot + slot_width / 2
-        label_y = height - 24
+        label_y = height - 12
         parts.append(
-            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-42 {label_x:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {label_x:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -459,8 +454,7 @@ def _build_horizontal_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
@@ -491,8 +485,7 @@ def _build_share_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="24" y="36" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     bar_x, bar_y, bar_width, bar_height = 28, 66, width - 56, 28
@@ -555,8 +548,7 @@ def _build_pie_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="16" fill="#F8FAFC" stroke="#D7DEE8" />',
-        f'<text x="26" y="40" font-size="22" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
         f'<text x="{pie_cx:.1f}" y="{height - 22}" text-anchor="middle" font-size="11" fill="#64748B">Totale afstand: {escape(_fmt_distance(total))}</text>',
     ]
 
