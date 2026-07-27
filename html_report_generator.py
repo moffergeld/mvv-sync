@@ -198,7 +198,7 @@ def _build_vertical_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 200,
+    height: int = 228,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -208,7 +208,7 @@ def _build_vertical_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 28, 42
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 42, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_values))
@@ -218,13 +218,19 @@ def _build_vertical_bar_chart_svg(
     gradient_id = _chart_id(title, "bar-grad")
     area_id = _chart_id(title, "bar-area")
     shadow_id = _chart_id(title, "bar-shadow")
+    panel_id = _chart_id(title, "bar-panel")
     line_color = _blend_hex(color, "#20324B", 0.34)
     avg_value = sum(clean_values) / max(1, len(clean_values))
+    peak_value = max(clean_values, default=0.0)
     line_points: list[tuple[float, float]] = []
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        f'<stop offset="100%" stop-color="{_blend_hex(color, "#FFFFFF", 0.92)}" />',
+        "</linearGradient>",
         f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="0" y2="1">',
         f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.30)}" />',
         f'<stop offset="100%" stop-color="{color}" />',
@@ -237,14 +243,22 @@ def _build_vertical_bar_chart_svg(
         '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
         "</defs>",
-        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
-        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="6" rx="14" fill="{_alpha_hex(color, 0.92)}" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{width - 176:.1f}" y="8" width="166" height="24" rx="12" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.20)}" />',
+        f'<text x="{width - 166:.1f}" y="24" font-size="9.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))} | Peak {escape(formatter(peak_value))}</text>',
     ]
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
+        if step < grid_lines:
+            band_y = margin_top + plot_height - ((step + 1) / grid_lines) * plot_height
+            parts.append(
+                f'<rect x="{margin_left:.1f}" y="{band_y:.1f}" width="{plot_width:.1f}" height="{plot_height / grid_lines:.1f}" fill="{_alpha_hex(color, 0.03 if step % 2 == 0 else 0.015)}" />'
+            )
         parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
         parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
@@ -268,9 +282,7 @@ def _build_vertical_bar_chart_svg(
         bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
         x = x_center - bar_width / 2
         y = margin_top + plot_height - bar_height
-        parts.append(
-            f'<rect x="{x:.1f}" y="{margin_top + plot_height - 1:.1f}" width="{bar_width:.1f}" height="{1:.1f}" rx="6" fill="{_alpha_hex(color, 0.14)}" />'
-        )
+        parts.append(f'<rect x="{x:.1f}" y="{margin_top + plot_height - 2:.1f}" width="{bar_width:.1f}" height="2" rx="6" fill="{_alpha_hex(color, 0.12)}" />')
         parts.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="url(#{gradient_id})" filter="url(#{shadow_id})" />'
         )
@@ -281,7 +293,7 @@ def _build_vertical_bar_chart_svg(
             parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
         label_y = height - 12
         parts.append(
-            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {x_center:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
         )
 
     if avg_value > 0:
@@ -303,7 +315,7 @@ def _build_grouped_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 210,
+    height: int = 224,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -323,7 +335,7 @@ def _build_grouped_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_values))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 40, 42
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 44, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
@@ -333,10 +345,15 @@ def _build_grouped_bar_chart_svg(
     label_font = 9 if len(clean_labels) > 8 else 10
     shadow_id = _chart_id(title, "group-shadow")
     gradient_ids = [_chart_id(f"{title}-{item['label']}", "group-grad") for item in clean_series]
+    panel_id = _chart_id(title, "group-panel")
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F6FAFF" />',
+        "</linearGradient>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
         "</filter>",
@@ -353,16 +370,16 @@ def _build_grouped_bar_chart_svg(
     parts.extend(
         [
             "</defs>",
-        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-            f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+            f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
         ]
     )
 
-    legend_x = 8
+    legend_x = 10
     for item in clean_series:
-        parts.append(f'<rect x="{legend_x}" y="25" width="28" height="12" rx="6" fill="{_alpha_hex(item["color"], 0.16)}" stroke="{_alpha_hex(item["color"], 0.28)}" />')
-        parts.append(f'<rect x="{legend_x + 4}" y="28" width="8" height="6" rx="3" fill="{item["color"]}" />')
-        parts.append(f'<text x="{legend_x + 18}" y="34" font-size="9" fill="#475569">{escape(item["label"])}</text>')
+        parts.append(f'<rect x="{legend_x}" y="28" width="30" height="12" rx="6" fill="{_alpha_hex(item["color"], 0.16)}" stroke="{_alpha_hex(item["color"], 0.28)}" />')
+        parts.append(f'<rect x="{legend_x + 4}" y="31" width="8" height="6" rx="3" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 18}" y="37" font-size="9" fill="#475569">{escape(item["label"])}</text>')
         legend_x += max(92, len(item["label"]) * 7 + 30)
 
     for step in range(grid_lines + 1):
@@ -386,7 +403,7 @@ def _build_grouped_bar_chart_svg(
         label_x = x_slot + slot_width / 2
         label_y = height - 12
         parts.append(
-            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {label_x:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {label_x:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -401,7 +418,7 @@ def _build_error_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 210,
+    height: int = 224,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -413,7 +430,7 @@ def _build_error_bar_chart_svg(
 
     maxima = [mean + error for mean, error in zip(clean_means, clean_errors, strict=False)]
     chart_max = y_max if y_max is not None else _nice_max(max(maxima, default=max(clean_means, default=0)))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 28, 42
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 42, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_means))
@@ -422,12 +439,18 @@ def _build_error_bar_chart_svg(
     grid_lines = 4
     gradient_id = _chart_id(title, "err-grad")
     shadow_id = _chart_id(title, "err-shadow")
+    panel_id = _chart_id(title, "err-panel")
     line_color = _blend_hex(color, "#20324B", 0.34)
     avg_value = sum(clean_means) / max(1, len(clean_means))
+    peak_value = max(clean_means, default=0.0)
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        f'<stop offset="100%" stop-color="{_blend_hex(color, "#FFFFFF", 0.92)}" />',
+        "</linearGradient>",
         f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="0" y2="1">',
         f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.30)}" />',
         f'<stop offset="100%" stop-color="{color}" />',
@@ -436,14 +459,21 @@ def _build_error_bar_chart_svg(
         '<feDropShadow dx="0" dy="2" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
         "</filter>",
         "</defs>",
-        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
+        f'<rect x="{width - 176:.1f}" y="8" width="166" height="24" rx="12" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.20)}" />',
+        f'<text x="{width - 166:.1f}" y="24" font-size="9.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))} | Peak {escape(formatter(peak_value))}</text>',
     ]
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
         axis_value = chart_max * ratio
+        if step < grid_lines:
+            band_y = margin_top + plot_height - ((step + 1) / grid_lines) * plot_height
+            parts.append(
+                f'<rect x="{margin_left:.1f}" y="{band_y:.1f}" width="{plot_width:.1f}" height="{plot_height / grid_lines:.1f}" fill="{_alpha_hex(color, 0.03 if step % 2 == 0 else 0.015)}" />'
+            )
         parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
         parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
@@ -466,7 +496,7 @@ def _build_error_bar_chart_svg(
             parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(mean_value))}</text>')
         label_y = height - 12
         parts.append(
-            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {x_center:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
         )
 
     if avg_value > 0:
@@ -510,7 +540,7 @@ def _build_grouped_error_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_maxima))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 40, 42
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 44, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
@@ -520,10 +550,15 @@ def _build_grouped_error_bar_chart_svg(
     label_font = 9 if len(clean_labels) > 8 else 10
     shadow_id = _chart_id(title, "gerr-shadow")
     gradient_ids = [_chart_id(f"{title}-{item['label']}", "gerr-grad") for item in clean_series]
+    panel_id = _chart_id(title, "gerr-panel")
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F6FAFF" />',
+        "</linearGradient>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
         "</filter>",
@@ -540,16 +575,16 @@ def _build_grouped_error_bar_chart_svg(
     parts.extend(
         [
             "</defs>",
-        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-            f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+            f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
         ]
     )
 
-    legend_x = 8
+    legend_x = 10
     for item in clean_series:
-        parts.append(f'<rect x="{legend_x}" y="25" width="28" height="12" rx="6" fill="{_alpha_hex(item["color"], 0.16)}" stroke="{_alpha_hex(item["color"], 0.28)}" />')
-        parts.append(f'<rect x="{legend_x + 4}" y="28" width="8" height="6" rx="3" fill="{item["color"]}" />')
-        parts.append(f'<text x="{legend_x + 18}" y="34" font-size="9" fill="#475569">{escape(item["label"])}</text>')
+        parts.append(f'<rect x="{legend_x}" y="28" width="30" height="12" rx="6" fill="{_alpha_hex(item["color"], 0.16)}" stroke="{_alpha_hex(item["color"], 0.28)}" />')
+        parts.append(f'<rect x="{legend_x + 4}" y="31" width="8" height="6" rx="3" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 18}" y="37" font-size="9" fill="#475569">{escape(item["label"])}</text>')
         legend_x += max(92, len(item["label"]) * 7 + 30)
 
     for step in range(grid_lines + 1):
@@ -581,7 +616,7 @@ def _build_grouped_error_bar_chart_svg(
         label_x = x_slot + slot_width / 2
         label_y = height - 12
         parts.append(
-            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-32 {label_x:.1f} {label_y})">{escape(label)}</text>'
+            f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {label_x:.1f} {label_y})">{escape(label)}</text>'
         )
 
     parts.append("</svg>")
@@ -604,18 +639,23 @@ def _build_horizontal_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = max(clean_values)
-    margin_left, margin_right, margin_top, margin_bottom = 120, 18, 38, 20
+    margin_left, margin_right, margin_top, margin_bottom = 124, 18, 42, 20
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     row_height = plot_height / max(1, len(clean_labels))
     bar_height = max(12, min(20, row_height * 0.6))
     gradient_id = _chart_id(title, "hbar-grad")
     glow_id = _chart_id(title, "hbar-shadow")
+    panel_id = _chart_id(title, "hbar-panel")
     track_fill = "#EEF3F9"
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        f'<stop offset="100%" stop-color="{_blend_hex(color, "#FFFFFF", 0.94)}" />',
+        "</linearGradient>",
         f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="1" y2="0">',
         f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.16)}" />',
         f'<stop offset="100%" stop-color="{color}" />',
@@ -624,8 +664,8 @@ def _build_horizontal_bar_chart_svg(
         '<feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="rgba(15,23,42,0.12)" />',
         "</filter>",
         "</defs>",
-        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
     ]
 
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
@@ -705,7 +745,7 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 220,
+    height: int = 232,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -714,30 +754,36 @@ def _build_pie_chart_svg(
 
     donut_panel_x = 18
     donut_panel_y = 42
-    donut_panel_w = 292
-    donut_panel_h = 156
-    legend_panel_x = 332
+    donut_panel_w = 308
+    donut_panel_h = 166
+    legend_panel_x = 344
     legend_panel_y = 42
     legend_panel_w = width - legend_panel_x - 18
-    legend_panel_h = 156
-    pie_cx = donut_panel_x + 120
-    pie_cy = donut_panel_y + 78
-    radius = 58
-    inner_radius = 32
-    legend_top = legend_panel_y + 26
-    legend_row_height = 23
+    legend_panel_h = 166
+    pie_cx = donut_panel_x + 128
+    pie_cy = donut_panel_y + 84
+    radius = 64
+    inner_radius = 34
+    legend_top = legend_panel_y + 28
+    legend_row_height = 24
     ring_shadow = _chart_id(title, "donut-shadow")
+    panel_id = _chart_id(title, "donut-panel")
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F8FBFF" />',
+        "</linearGradient>",
         f'<filter id="{ring_shadow}" x="-20%" y="-20%" width="160%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
         "</defs>",
-        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-        f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="{donut_panel_h}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
-        f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="{legend_panel_h}" rx="12" fill="#FFFFFF" stroke="#E6EDF5" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="{donut_panel_h}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
+        f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="{legend_panel_h}" rx="14" fill="#FFFFFF" stroke="#DCE6F2" />',
+        f'<line x1="{legend_panel_x - 10:.1f}" y1="{legend_panel_y + 16:.1f}" x2="{legend_panel_x - 10:.1f}" y2="{legend_panel_y + legend_panel_h - 16:.1f}" stroke="#DCE6F2" />',
         f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{radius:.1f}" fill="none" stroke="#EEF3F9" stroke-width="{radius - inner_radius:.1f}" />',
     ]
 
@@ -765,8 +811,9 @@ def _build_pie_chart_svg(
     top_share = max((value / total) * 100 for _, value, _ in described)
     parts.append(f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{inner_radius - 3:.1f}" fill="#FFFFFF" stroke="#E2E8F0" />')
     parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy - 2:.1f}" text-anchor="middle" font-size="18" font-weight="800" fill="#0F172A">{escape(_fmt_dec(top_share, 0))}%</text>')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 16:.1f}" text-anchor="middle" font-size="9" fill="#64748B">zone share</text>')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 12:.1f}" text-anchor="middle" font-size="9.5" fill="#475569">Total {escape(_fmt_distance(total))}</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 16:.1f}" text-anchor="middle" font-size="9.5" fill="#64748B">zone share</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 18:.1f}" text-anchor="middle" font-size="10" fill="#475569">Total {escape(_fmt_distance(total))}</text>')
+    parts.append(f'<text x="{legend_panel_x + 18:.1f}" y="{legend_panel_y + 18:.1f}" font-size="9.5" font-weight="800" fill="#64748B">VERDELING</text>')
 
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
@@ -1175,7 +1222,7 @@ def build_week_report_html_pdf_bytes(
                 "eyebrow": "Locomotion zones",
                 "title": "Distance zone share",
                 "subtitle": "Verdeling van walking, jogging, running, sprint en high sprint voor de hele week en per actieve dag.",
-                "columns": 3,
+                "columns": 2,
                 "panels": _build_zone_share_panels(zone_df, zone_day_distribution),
             },
             {

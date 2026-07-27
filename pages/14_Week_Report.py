@@ -473,7 +473,10 @@ def _week_pdf_filename(week_start: pd.Timestamp) -> str:
 
 
 def _report_file_name(base_name: str, report_style: str) -> str:
-    return base_name
+    stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
+    style_slug = "html" if "nieuw" in report_style.lower() else "report"
+    stamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    return f"{stem}_{style_slug}_{stamp}.pdf"
 
 
 @st.cache_data(show_spinner=False, ttl=180)
