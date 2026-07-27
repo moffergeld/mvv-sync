@@ -1171,22 +1171,24 @@ def main() -> None:
             notes=notes,
         )
     except Exception as exc:
-        pdf_error = str(exc)
+        pdf_error = str(exc).strip() or exc.__class__.__name__ or "Onbekende fout tijdens HTML/CSS PDF-export."
+    if not pdf_bytes and not pdf_error:
+        pdf_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
 
     action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
     with action_cols[0]:
         if st.button("Open Reports", key="week_report_back_bottom", width="stretch"):
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
-        if pdf_bytes:
-            st.download_button(
-                "Download HTML PDF",
-                data=pdf_bytes,
-                file_name=_report_file_name(_week_pdf_filename(selected_week), report_style),
-                mime="application/pdf",
-                width="stretch",
-                key="week_report_pdf_download",
-            )
+        st.download_button(
+            "Download HTML PDF",
+            data=pdf_bytes or b"HTML PDF unavailable",
+            file_name=_report_file_name(_week_pdf_filename(selected_week), report_style),
+            mime="application/pdf",
+            width="stretch",
+            key="week_report_pdf_download",
+            disabled=not bool(pdf_bytes),
+        )
     with action_cols[2]:
         if pdf_error:
             st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
