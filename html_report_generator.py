@@ -237,8 +237,8 @@ def _build_vertical_bar_chart_svg(
         '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
         "</defs>",
-        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
         f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for step in range(grid_lines + 1):
@@ -248,14 +248,34 @@ def _build_vertical_bar_chart_svg(
         parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
         parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
+    if len(line_points) == 0:
+        for index, value in enumerate(clean_values):
+            x_center = margin_left + slot_width * index + slot_width / 2
+            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            y = margin_top + plot_height - bar_height
+            line_points.append((x_center, y))
+
+    if len(line_points) >= 2:
+        area_points = [(margin_left, margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
+        area_path = _series_path(area_points) + " Z"
+        parts.append(f'<path d="{area_path}" fill="url(#{area_id})" />')
+        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />')
+        for x_center, y in line_points:
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="3.6" fill="#FFFFFF" stroke="{line_color}" stroke-width="1.8" />')
+
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
         x_center = margin_left + slot_width * index + slot_width / 2
         bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
         x = x_center - bar_width / 2
         y = margin_top + plot_height - bar_height
-        line_points.append((x_center, y))
+        parts.append(
+            f'<rect x="{x:.1f}" y="{margin_top + plot_height - 1:.1f}" width="{bar_width:.1f}" height="{1:.1f}" rx="6" fill="{_alpha_hex(color, 0.14)}" />'
+        )
         parts.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="url(#{gradient_id})" filter="url(#{shadow_id})" />'
+        )
+        parts.append(
+            f'<rect x="{x + 3:.1f}" y="{y + 3:.1f}" width="{max(4.0, bar_width - 6):.1f}" height="{max(6.0, bar_height * 0.24):.1f}" rx="4" fill="{_alpha_hex("#FFFFFF", 0.18)}" />'
         )
         if value > 0:
             parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
@@ -272,14 +292,6 @@ def _build_vertical_bar_chart_svg(
         parts.append(
             f'<text x="{width - margin_right - 2:.1f}" y="{avg_y - 5:.1f}" text-anchor="end" font-size="8.5" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
         )
-
-    if len(line_points) >= 2:
-        area_points = [(margin_left, margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
-        area_path = _series_path(area_points) + " Z"
-        parts.append(f'<path d="{area_path}" fill="url(#{area_id})" />')
-        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />')
-        for x_center, y in line_points:
-            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="3.2" fill="#FFFFFF" stroke="{line_color}" stroke-width="1.8" />')
 
     parts.append("</svg>")
     return "".join(parts)
@@ -693,21 +705,27 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 240,
+    height: int = 220,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
     if total <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
-    pie_cx = width / 2
-    pie_cy = 102
-    radius = 62
-    inner_radius = 34
-    legend_top = 176
-    legend_cols = 2
-    legend_col_width = (width - 92) / legend_cols
-    legend_row_height = 24
+    donut_panel_x = 18
+    donut_panel_y = 42
+    donut_panel_w = 292
+    donut_panel_h = 156
+    legend_panel_x = 332
+    legend_panel_y = 42
+    legend_panel_w = width - legend_panel_x - 18
+    legend_panel_h = 156
+    pie_cx = donut_panel_x + 120
+    pie_cy = donut_panel_y + 78
+    radius = 58
+    inner_radius = 32
+    legend_top = legend_panel_y + 26
+    legend_row_height = 23
     ring_shadow = _chart_id(title, "donut-shadow")
 
     parts: list[str] = [
@@ -718,6 +736,8 @@ def _build_pie_chart_svg(
         "</filter>",
         "</defs>",
         f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="{donut_panel_h}" rx="12" fill="#F8FBFF" stroke="#E6EDF5" />',
+        f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="{legend_panel_h}" rx="12" fill="#FFFFFF" stroke="#E6EDF5" />',
         f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{radius:.1f}" fill="none" stroke="#EEF3F9" stroke-width="{radius - inner_radius:.1f}" />',
     ]
 
@@ -746,16 +766,19 @@ def _build_pie_chart_svg(
     parts.append(f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{inner_radius - 3:.1f}" fill="#FFFFFF" stroke="#E2E8F0" />')
     parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy - 2:.1f}" text-anchor="middle" font-size="18" font-weight="800" fill="#0F172A">{escape(_fmt_dec(top_share, 0))}%</text>')
     parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 16:.1f}" text-anchor="middle" font-size="9" fill="#64748B">zone share</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 12:.1f}" text-anchor="middle" font-size="9.5" fill="#475569">Total {escape(_fmt_distance(total))}</text>')
 
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
-        col = index % legend_cols
-        row = index // legend_cols
-        x = 46 + col * legend_col_width
-        y = legend_top + row * legend_row_height
-        parts.append(f'<rect x="{x:.1f}" y="{y - 10:.1f}" width="12" height="12" rx="3" fill="{color}" />')
+        row_y = legend_top + index * legend_row_height
+        row_box_y = row_y - 13
         parts.append(
-            f'<text x="{x + 20:.1f}" y="{y:.1f}" font-size="11" fill="#334155">{escape(label)}: {escape(_fmt_dec(percentage, 1))}% ({escape(_fmt_distance(value))})</text>'
+            f'<rect x="{legend_panel_x + 14:.1f}" y="{row_box_y:.1f}" width="{legend_panel_w - 28:.1f}" height="18" rx="9" fill="{_alpha_hex(color, 0.06)}" />'
+        )
+        parts.append(f'<circle cx="{legend_panel_x + 28:.1f}" cy="{row_y - 4:.1f}" r="5.5" fill="{color}" />')
+        parts.append(f'<text x="{legend_panel_x + 42:.1f}" y="{row_y:.1f}" font-size="10.5" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(
+            f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="10" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance(value))}</text>'
         )
 
     parts.append("</svg>")
