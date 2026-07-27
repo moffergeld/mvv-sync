@@ -163,7 +163,7 @@ def _build_vertical_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 330,
+    height: int = 270,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -217,7 +217,7 @@ def _build_grouped_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 340,
+    height: int = 280,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -292,7 +292,7 @@ def _build_error_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 340,
+    height: int = 280,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -355,7 +355,7 @@ def _build_grouped_error_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 350,
+    height: int = 290,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -442,7 +442,7 @@ def _build_horizontal_bar_chart_svg(
     *,
     color: str = "#6E1222",
     width: int = 720,
-    height: int = 320,
+    height: int = 250,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -481,7 +481,7 @@ def _build_share_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 220,
+    height: int = 190,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
     clean_values = _clean_series(values)
@@ -538,7 +538,7 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 340,
+    height: int = 280,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -865,16 +865,16 @@ def build_week_report_html_pdf_bytes(
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
         ],
-        "focus_cards": _build_week_focus_cards(summary, monitoring_summary, day_table),
-        "day_cards": _build_week_day_cards(day_table),
-        "leader_cards": _build_week_leader_cards(player_table),
-        "monitoring_cards": monitoring_cards,
+        "focus_cards": [],
+        "day_cards": [],
+        "leader_cards": [],
+        "monitoring_cards": [],
         "chart_sections": [
             {
                 "eyebrow": "Load profile",
                 "title": "Weekly load rhythm",
                 "subtitle": "Dagelijkse teambelasting en high-speed output binnen de geselecteerde microcycle.",
-                "columns": 1,
+                "columns": 2,
                 "panels": [
                     {
                         "svg": _build_vertical_bar_chart_svg(
@@ -900,8 +900,7 @@ def build_week_report_html_pdf_bytes(
                 "eyebrow": "Squad spread",
                 "title": "Average player load +/- SD",
                 "subtitle": "Dagelijkse gemiddelde spelerbelasting met spreiding binnen de selectie.",
-                "page_break": True,
-                "columns": 1,
+                "columns": 2,
                 "panels": [
                     {
                         "svg": _build_error_bar_chart_svg(
@@ -929,7 +928,7 @@ def build_week_report_html_pdf_bytes(
                 "eyebrow": "Squad spread",
                 "title": "Explosive outputs +/- SD",
                 "subtitle": "Acceleraties, deceleraties en sprintgemiddelden per speler per dag.",
-                "columns": 1,
+                "columns": 2,
                 "panels": [
                     {
                         "svg": _build_grouped_error_bar_chart_svg(
@@ -984,15 +983,14 @@ def build_week_report_html_pdf_bytes(
                 "eyebrow": "Locomotion zones",
                 "title": "Distance zone share",
                 "subtitle": "Verdeling van walking, jogging, running, sprint en high sprint voor de hele week en per actieve dag.",
-                "columns": 2,
+                "columns": 3,
                 "panels": _build_zone_share_panels(zone_df, zone_day_distribution),
             },
             {
                 "eyebrow": "Monitoring",
                 "title": "Daily wellness profile +/- SD",
                 "subtitle": "Fysieke en mentale welzijnsindicatoren per dag met standaarddeviatie.",
-                "page_break": True,
-                "columns": 1,
+                "columns": 2,
                 "panels": [
                     {
                         "svg": _build_grouped_error_bar_chart_svg(

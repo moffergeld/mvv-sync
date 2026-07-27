@@ -1,6 +1,6 @@
 @page {
   size: A4 landscape;
-  margin: 11mm 12mm 13mm 12mm;
+  margin: 8mm 9mm 10mm 9mm;
 
   @bottom-right {
     content: "Pagina " counter(page) " / " counter(pages);
@@ -55,20 +55,17 @@ body {
 }
 
 .report-header,
-.report-section,
 .panel,
 .metric-card,
 .focus-card,
 .day-card,
-.leader-card,
-.chart-grid,
-.table-grid {
+.leader-card {
   break-inside: avoid;
 }
 
 .report-header {
-  margin-bottom: 7mm;
-  padding: 8mm;
+  margin-bottom: 5mm;
+  padding: 6mm;
   border: 0.35mm solid var(--panel-border);
   border-top: 1mm solid var(--brand-red);
   border-radius: 18px;
@@ -174,7 +171,7 @@ body {
 }
 
 .report-header__description {
-  margin: 4.5mm 0 0;
+  margin: 3mm 0 0;
   color: var(--text-body);
   max-width: 230mm;
 }
@@ -183,7 +180,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 2.2mm;
-  margin-top: 4mm;
+  margin-top: 3mm;
 }
 
 .badge {
@@ -199,7 +196,8 @@ body {
 }
 
 .report-section {
-  margin-bottom: 6mm;
+  margin-bottom: 4mm;
+  break-inside: auto;
 }
 
 .report-section--page-break {
@@ -207,14 +205,15 @@ body {
 }
 
 .section-head {
-  margin-bottom: 3.5mm;
+  margin-bottom: 2.5mm;
 }
 
 .section-heading {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 3.5mm;
+  margin-bottom: 2.5mm;
+  break-after: avoid;
 }
 
 .section-heading > div:first-child {
@@ -249,7 +248,7 @@ body {
 
 .section-head p,
 .panel-head p {
-  margin: 1.2mm 0 0;
+  margin: 0.8mm 0 0;
   color: var(--text-soft);
   font-size: 8.8pt;
   line-height: 1.45;
@@ -260,7 +259,8 @@ body {
   justify-content: space-between;
   gap: 6mm;
   align-items: center;
-  margin: 4mm 0 2.5mm;
+  margin: 3mm 0 2mm;
+  break-after: avoid;
 }
 
 .section-subheading__title {
@@ -300,7 +300,7 @@ body {
 }
 
 .metric-card {
-  padding: 4mm;
+  padding: 3.2mm;
   border-radius: var(--radius-md);
   border: 0.32mm solid var(--panel-border);
   background: var(--panel-bg);
@@ -321,17 +321,17 @@ body {
 }
 
 .metric-card__value {
-  margin-top: 2mm;
+  margin-top: 1.3mm;
   color: var(--text-strong);
-  font-size: 18.5pt;
+  font-size: 16.5pt;
   font-weight: 800;
   line-height: 1.06;
 }
 
 .metric-card__foot {
-  margin-top: 2.1mm;
+  margin-top: 1.4mm;
   color: var(--text-soft);
-  font-size: 8.4pt;
+  font-size: 8pt;
 }
 
 .focus-grid {
@@ -350,7 +350,7 @@ body {
 }
 
 .focus-card {
-  padding: 4mm;
+  padding: 3.2mm;
   border-radius: 14px;
   border: 0.32mm solid var(--panel-border);
   background: var(--panel-bg);
@@ -385,17 +385,17 @@ body {
 }
 
 .focus-card__title {
-  margin-top: 1.8mm;
+  margin-top: 1.2mm;
   color: var(--text-strong);
-  font-size: 13.2pt;
+  font-size: 12.2pt;
   font-weight: 800;
   line-height: 1.15;
 }
 
 .focus-card__body {
-  margin-top: 1.8mm;
+  margin-top: 1.2mm;
   color: var(--text-body);
-  font-size: 8.6pt;
+  font-size: 8.2pt;
 }
 
 .day-card-grid {
@@ -413,7 +413,7 @@ body {
 }
 
 .day-card {
-  padding: 3.6mm;
+  padding: 3mm;
   border-radius: 14px;
   border: 0.3mm solid var(--panel-border);
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
@@ -433,21 +433,21 @@ body {
 }
 
 .day-card__value {
-  margin-top: 1.8mm;
+  margin-top: 1.2mm;
   color: var(--text-strong);
-  font-size: 14pt;
+  font-size: 12.6pt;
   font-weight: 800;
 }
 
 .day-card__subvalue {
-  margin-top: 1.2mm;
+  margin-top: 0.8mm;
   color: var(--text-body);
   font-size: 8.4pt;
   font-weight: 700;
 }
 
 .day-card__meta {
-  margin-top: 1.2mm;
+  margin-top: 0.8mm;
   color: var(--text-soft);
   font-size: 8pt;
 }
@@ -455,7 +455,7 @@ body {
 .day-card__stats {
   display: flex;
   flex-wrap: wrap;
-  margin-top: 2.8mm;
+  margin-top: 1.8mm;
 }
 
 .day-card__stat {
@@ -494,7 +494,7 @@ body {
 }
 
 .leader-card {
-  padding: 3.6mm;
+  padding: 3mm;
   border-radius: 14px;
   border: 0.32mm solid var(--panel-border);
   background: var(--panel-bg);
@@ -510,21 +510,21 @@ body {
 }
 
 .leader-card__player {
-  margin-top: 1.8mm;
+  margin-top: 1.1mm;
   color: var(--text-strong);
-  font-size: 10pt;
+  font-size: 9.4pt;
   font-weight: 800;
 }
 
 .leader-card__value {
-  margin-top: 1.4mm;
+  margin-top: 1mm;
   color: var(--brand-red-deep);
-  font-size: 12.4pt;
+  font-size: 11.2pt;
   font-weight: 800;
 }
 
 .leader-card__foot {
-  margin-top: 1.4mm;
+  margin-top: 1mm;
   color: var(--text-soft);
   font-size: 8pt;
 }
@@ -560,7 +560,7 @@ body {
 }
 
 .panel {
-  padding: 4mm;
+  padding: 3.2mm;
   border-radius: var(--radius-lg);
   border: 0.32mm solid var(--panel-border);
   background: var(--panel-bg);
@@ -568,11 +568,16 @@ body {
 }
 
 .panel--chart {
-  padding: 2.4mm;
+  padding: 1.8mm;
 }
 
 .panel-head {
-  margin-bottom: 3mm;
+  margin-bottom: 2mm;
+  break-after: avoid;
+}
+
+.panel--table {
+  break-inside: auto;
 }
 
 .chart-svg {
@@ -585,7 +590,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 8.35pt;
+  font-size: 7.8pt;
 }
 
 .data-table thead {
@@ -594,7 +599,7 @@ body {
 
 .data-table th,
 .data-table td {
-  padding: 2mm 2.3mm;
+  padding: 1.4mm 1.8mm;
   border-bottom: 0.24mm solid #e2e8f0;
   vertical-align: top;
   word-break: break-word;
@@ -602,7 +607,7 @@ body {
 
 .data-table th {
   color: var(--text-soft);
-  font-size: 7.2pt;
+  font-size: 6.8pt;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -620,7 +625,7 @@ body {
 }
 
 .notes-list li {
-  margin-bottom: 2.2mm;
+  margin-bottom: 1.6mm;
 }
 
 .empty-state {

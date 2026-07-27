@@ -121,15 +121,15 @@
     </section>
   {% endfor %}
 
-  <section class="report-section">
-    <div class="section-heading">
-      <div>
-        <div class="section-kicker">Player leadership</div>
-        <h2>Top performers this week</h2>
+  {% if leader_cards %}
+    <section class="report-section">
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">Player leadership</div>
+          <h2>Top performers this week</h2>
+        </div>
+        <div class="section-meta">Leiders op volume, high speed, sprintacties en intensiteit</div>
       </div>
-      <div class="section-meta">Leiders op volume, high speed, sprintacties en intensiteit</div>
-    </div>
-    {% if leader_cards %}
       <div class="leader-grid">
         {% for card in leader_cards %}
           <article class="leader-card">
@@ -140,29 +140,29 @@
           </article>
         {% endfor %}
       </div>
-    {% else %}
-      <div class="empty-state">Geen spelersleiders beschikbaar.</div>
-    {% endif %}
-  </section>
+    </section>
+  {% endif %}
 
-  <section class="report-section">
-    <div class="section-heading">
-      <div>
-        <div class="section-kicker">Monitoring overview</div>
-        <h2>Internal load and wellbeing</h2>
+  {% if monitoring_cards %}
+    <section class="report-section">
+      <div class="section-heading">
+        <div>
+          <div class="section-kicker">Monitoring overview</div>
+          <h2>Internal load and wellbeing</h2>
+        </div>
+        <div class="section-meta">Weekgemiddelden en coverage voor wellness, readiness en RPE</div>
       </div>
-      <div class="section-meta">Weekgemiddelden en coverage voor wellness, readiness en RPE</div>
-    </div>
-    <div class="metric-grid metric-grid--4">
-      {% for card in monitoring_cards %}
-        <article class="metric-card metric-card--subtle">
-          <div class="metric-card__label">{{ card.label }}</div>
-          <div class="metric-card__value">{{ card.value }}</div>
-          <div class="metric-card__foot">{{ card.foot }}</div>
-        </article>
-      {% endfor %}
-    </div>
-  </section>
+      <div class="metric-grid metric-grid--4">
+        {% for card in monitoring_cards %}
+          <article class="metric-card metric-card--subtle">
+            <div class="metric-card__label">{{ card.label }}</div>
+            <div class="metric-card__value">{{ card.value }}</div>
+            <div class="metric-card__foot">{{ card.foot }}</div>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
 
   <section class="report-section">
     <article class="panel panel--notes">
