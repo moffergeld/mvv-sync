@@ -567,6 +567,34 @@ body {
   width: 33.333%;
 }
 
+.chart-grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.8mm;
+  margin-right: -1.8mm;
+  align-items: flex-start;
+}
+
+.chart-grid > .panel {
+  padding-left: 1.8mm;
+  padding-right: 1.8mm;
+  margin-bottom: 3mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.chart-grid--1 > .panel {
+  width: 100%;
+}
+
+.chart-grid--2 > .panel {
+  width: 50%;
+}
+
+.chart-grid--3 > .panel {
+  width: 33.333%;
+}
+
 .chart-table {
   width: calc(100% + 4.4mm);
   margin-left: -2.2mm;
@@ -609,7 +637,7 @@ body {
 }
 
 .panel--chart {
-  padding: 0.8mm;
+  padding: 0.4mm;
   border: none;
   background: transparent;
   box-shadow: none;

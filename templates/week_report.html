@@ -68,23 +68,15 @@
         </div>
         <div class="section-meta">{{ section.subtitle }}</div>
       </div>
-      <table class="chart-table chart-table--{{ columns }}">
-        <tbody>
-          {% for row in section.panels|batch(columns, none) %}
-            <tr class="chart-table__row">
-              {% for chart in row %}
-                <td class="chart-table__cell chart-table__cell--{{ columns }}">
-                  {% if chart %}
-                    <article class="panel panel--chart">
-                      {{ chart.svg | safe }}
-                    </article>
-                  {% endif %}
-                </td>
-              {% endfor %}
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="chart-grid chart-grid--{{ columns }}">
+        {% for chart in section.panels %}
+          {% if chart %}
+            <article class="panel panel--chart">
+              {{ chart.svg | safe }}
+            </article>
+          {% endif %}
+        {% endfor %}
+      </div>
     </section>
   {% endfor %}
 
