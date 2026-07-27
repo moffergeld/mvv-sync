@@ -41,6 +41,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
+APP_BUILD_STAMP = "MAIN-20260727G"
 
 
 def _fallback_consume_login_notice() -> Optional[str]:
@@ -486,6 +487,7 @@ def render_home_css() -> None:
 def login_ui() -> None:
     maintenance_banner()
     st.markdown("## Inloggen")
+    st.caption(f"Build: {APP_BUILD_STAMP}")
 
     with st.form("login_form", clear_on_submit=False):
         email = st.text_input("Email", key="login_email")
