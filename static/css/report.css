@@ -199,12 +199,12 @@ body {
 .report-section {
   margin-bottom: 3mm;
   break-inside: auto;
-  padding: 3.2mm 3.6mm 3mm;
-  border: 0.3mm solid #d9e4ef;
-  border-top: 0.9mm solid rgba(200, 16, 46, 0.88);
-  border-radius: 18px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fc 100%);
-  box-shadow: 0 2.2mm 6mm rgba(15, 23, 42, 0.05);
+  padding: 2.8mm 3.2mm 3mm;
+  border: 0.28mm solid #dee7f1;
+  border-top: 1.05mm solid rgba(200, 16, 46, 0.96);
+  border-radius: 20px;
+  background: linear-gradient(180deg, #f5f8fc 0%, #eef3f8 100%);
+  box-shadow: 0 2mm 5mm rgba(15, 23, 42, 0.04);
 }
 
 .report-section--page-break {
@@ -219,9 +219,9 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 2.2mm;
-  padding-bottom: 1.6mm;
-  border-bottom: 0.24mm solid rgba(148, 163, 184, 0.24);
+  margin-bottom: 2mm;
+  padding-bottom: 1.4mm;
+  border-bottom: 0.26mm solid rgba(148, 163, 184, 0.22);
   break-after: avoid;
   page-break-after: avoid;
 }
@@ -583,7 +583,7 @@ body {
 
 .chart-table__cell {
   vertical-align: top;
-  padding: 0 2.2mm 3.2mm;
+  padding: 0 1.6mm 2.6mm;
   break-inside: avoid;
   page-break-inside: avoid;
 }
@@ -609,11 +609,10 @@ body {
 }
 
 .panel--chart {
-  padding: 1.5mm;
-  border-color: #d6e3ef;
-  border-top: 0.8mm solid rgba(200, 16, 46, 0.58);
-  background: linear-gradient(180deg, #ffffff 0%, #f6faff 100%);
-  box-shadow: 0 2.2mm 6.2mm rgba(15, 23, 42, 0.07);
+  padding: 0.8mm;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .panel-head {
