@@ -46,6 +46,10 @@ body {
   background: var(--page-bg);
 }
 
+* {
+  box-sizing: border-box;
+}
+
 .report-shell {
   display: block;
 }
@@ -77,10 +81,8 @@ body {
 }
 
 .report-header__top--split {
-  display: grid;
-  grid-template-columns: 1.65fr 1fr;
-  gap: 6mm;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
 }
 
 .report-header__brand {
@@ -125,9 +127,21 @@ body {
 }
 
 .report-header__meta-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3mm;
+  display: flex;
+  flex-wrap: wrap;
+  width: 38%;
+  margin-left: 5mm;
+  font-size: 0;
+}
+
+.report-header__top--split .report-header__brand {
+  width: 57%;
+}
+
+.report-header__meta-grid > .header-meta-card {
+  width: 33.333%;
+  padding-right: 2.2mm;
+  margin-bottom: 3mm;
 }
 
 .header-meta-card {
@@ -197,11 +211,14 @@ body {
 }
 
 .section-heading {
-  display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 6mm;
-  align-items: end;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   margin-bottom: 3.5mm;
+}
+
+.section-heading > div:first-child {
+  width: 56%;
 }
 
 .section-kicker {
@@ -227,6 +244,7 @@ body {
   font-size: 8.8pt;
   text-align: right;
   line-height: 1.45;
+  width: 40%;
 }
 
 .section-head p,
@@ -257,20 +275,28 @@ body {
 }
 
 .metric-grid {
-  display: grid;
-  gap: var(--gap-md);
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.8mm;
+  margin-right: -1.8mm;
 }
 
-.metric-grid--compact {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.metric-grid > .metric-card {
+  padding-left: 1.8mm;
+  padding-right: 1.8mm;
+  margin-bottom: var(--gap-md);
 }
 
-.metric-grid--4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.metric-grid--compact > .metric-card {
+  width: 33.333%;
 }
 
-.metric-grid--6 {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+.metric-grid--4 > .metric-card {
+  width: 25%;
+}
+
+.metric-grid--6 > .metric-card {
+  width: 16.666%;
 }
 
 .metric-card {
@@ -309,10 +335,18 @@ body {
 }
 
 .focus-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--gap-md);
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.8mm;
+  margin-right: -1.8mm;
   margin-top: var(--gap-md);
+}
+
+.focus-grid > .focus-card {
+  width: 50%;
+  padding-left: 1.8mm;
+  padding-right: 1.8mm;
+  margin-bottom: var(--gap-md);
 }
 
 .focus-card {
@@ -365,9 +399,17 @@ body {
 }
 
 .day-card-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 3.5mm;
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.75mm;
+  margin-right: -1.75mm;
+}
+
+.day-card-grid > .day-card {
+  width: 25%;
+  padding-left: 1.75mm;
+  padding-right: 1.75mm;
+  margin-bottom: 3.5mm;
 }
 
 .day-card {
@@ -411,16 +453,17 @@ body {
 }
 
 .day-card__stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.8mm 3mm;
+  display: flex;
+  flex-wrap: wrap;
   margin-top: 2.8mm;
 }
 
 .day-card__stat {
-  display: flex;
-  flex-direction: column;
+  display: inline-block;
+  vertical-align: top;
+  width: 50%;
   gap: 0.6mm;
+  margin-bottom: 1.8mm;
 }
 
 .day-card__stat-label {
@@ -437,9 +480,17 @@ body {
 }
 
 .leader-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 3mm;
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -1.5mm;
+  margin-right: -1.5mm;
+}
+
+.leader-grid > .leader-card {
+  width: 20%;
+  padding-left: 1.5mm;
+  padding-right: 1.5mm;
+  margin-bottom: 3mm;
 }
 
 .leader-card {
@@ -480,23 +531,32 @@ body {
 
 .chart-grid,
 .table-grid {
-  display: grid;
-  gap: var(--gap-lg);
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -3mm;
+  margin-right: -3mm;
 }
 
-.chart-grid--1,
-.table-grid--1 {
-  grid-template-columns: 1fr;
+.chart-grid > .panel,
+.table-grid > .panel {
+  padding-left: 3mm;
+  padding-right: 3mm;
+  margin-bottom: var(--gap-lg);
 }
 
-.chart-grid--2,
-.table-grid--2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.chart-grid--1 > .panel,
+.table-grid--1 > .panel {
+  width: 100%;
 }
 
-.chart-grid--3,
-.table-grid--3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.chart-grid--2 > .panel,
+.table-grid--2 > .panel {
+  width: 50%;
+}
+
+.chart-grid--3 > .panel,
+.table-grid--3 > .panel {
+  width: 33.333%;
 }
 
 .panel {
