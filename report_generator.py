@@ -5,13 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
-from html_report_generator import (
-    HTML_RUNTIME_UNAVAILABLE_MESSAGE,
-    build_player_report_html_pdf_bytes,
-    build_week_report_html_pdf_bytes,
-)
-from player_report_pdf import build_player_report_pdf_bytes
-from week_report_pdf import build_week_report_pdf_bytes
+from html_report_generator import build_player_report_html_pdf_bytes, build_week_report_html_pdf_bytes
 
 REPORT_STYLE_LABELS: dict[str, str] = {"html": "Rapport"}
 REPORT_STYLE_OPTIONS: tuple[str, ...] = tuple(REPORT_STYLE_LABELS.keys())
@@ -21,8 +15,6 @@ ReportBuilder = Callable[..., bytes]
 
 def normalize_report_style(report_style: str | None = None) -> str:
     style = (report_style or "html").strip().lower()
-    if style == "legacy":
-        return "html"
     if style not in REPORT_STYLE_LABELS:
         allowed = ", ".join(REPORT_STYLE_OPTIONS)
         raise ValueError(f"Onbekende report_style '{report_style}'. Toegestane waarden: {allowed}.")
@@ -35,14 +27,12 @@ def _call_builder(builder: ReportBuilder, payload: Mapping[str, Any]) -> bytes:
     return builder(**compatible_kwargs)
 
 
-def _resolve_builder(report_kind: str, report_style: str, *, normalize: bool = True) -> ReportBuilder:
+def _resolve_builder(report_kind: str, report_style: str) -> ReportBuilder:
     builders: dict[tuple[str, str], ReportBuilder] = {
-        ("week", "legacy"): build_week_report_pdf_bytes,
         ("week", "html"): build_week_report_html_pdf_bytes,
-        ("player", "legacy"): build_player_report_pdf_bytes,
         ("player", "html"): build_player_report_html_pdf_bytes,
     }
-    key_style = normalize_report_style(report_style) if normalize else report_style.strip().lower()
+    key_style = normalize_report_style(report_style)
     key = (report_kind.strip().lower(), key_style)
     if key not in builders:
         supported = sorted({kind for kind, _ in builders})
@@ -63,13 +53,7 @@ def generate_report(
     payload.update(kwargs)
     style = normalize_report_style(report_style)
     builder = _resolve_builder(report_kind, style)
-    try:
-        pdf_bytes = _call_builder(builder, payload)
-    except RuntimeError as exc:
-        if style != "html" or str(exc) != HTML_RUNTIME_UNAVAILABLE_MESSAGE:
-            raise
-        fallback_builder = _resolve_builder(report_kind, "legacy", normalize=False)
-        pdf_bytes = _call_builder(fallback_builder, payload)
+    pdf_bytes = _call_builder(builder, payload)
     if output_path is not None:
         Path(output_path).expanduser().resolve().write_bytes(pdf_bytes)
     return pdf_bytes

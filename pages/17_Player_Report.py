@@ -1177,7 +1177,7 @@ def main() -> None:
                 report_style,
             )
             st.download_button(
-                "Download PDF",
+                "Download HTML PDF",
                 data=pdf_bytes,
                 file_name=file_name,
                 mime="application/pdf",
@@ -1186,7 +1186,7 @@ def main() -> None:
             )
     with action_cols[2]:
         if pdf_error:
-            st.warning(f"PDF-export is nog niet beschikbaar: {pdf_error}")
+            st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 
