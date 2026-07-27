@@ -41,7 +41,7 @@ MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
-WEEK_REPORT_HTML_REVISION = "REV-20260727C"
+WEEK_REPORT_HTML_REVISION = "REV-20260727D"
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -475,7 +475,8 @@ def _week_pdf_filename(week_start: pd.Timestamp) -> str:
 
 def _report_file_name(base_name: str, report_style: str, report_revision: str | None = None) -> str:
     stem = base_name[:-4] if base_name.lower().endswith(".pdf") else base_name
-    style_slug = "html" if "nieuw" in report_style.lower() else "report"
+    normalized_style = str(report_style or "").strip().lower()
+    style_slug = "html" if normalized_style == "html" or "nieuw" in normalized_style else "report"
     revision_slug = (
         str(report_revision or "")
         .strip()

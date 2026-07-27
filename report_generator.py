@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import inspect
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
-
-from html_report_generator import build_player_report_html_pdf_bytes, build_week_report_html_pdf_bytes
 
 REPORT_STYLE_LABELS: dict[str, str] = {"html": "Rapport"}
 REPORT_STYLE_OPTIONS: tuple[str, ...] = tuple(REPORT_STYLE_LABELS.keys())
@@ -35,9 +34,11 @@ def _call_builder(builder: ReportBuilder, payload: Mapping[str, Any]) -> bytes:
 
 
 def _resolve_builder(report_kind: str, report_style: str) -> ReportBuilder:
+    html_report_module = importlib.import_module("html_report_generator")
+    html_report_module = importlib.reload(html_report_module)
     builders: dict[tuple[str, str], ReportBuilder] = {
-        ("week", "html"): build_week_report_html_pdf_bytes,
-        ("player", "html"): build_player_report_html_pdf_bytes,
+        ("week", "html"): html_report_module.build_week_report_html_pdf_bytes,
+        ("player", "html"): html_report_module.build_player_report_html_pdf_bytes,
     }
     key_style = normalize_report_style(report_style)
     key = (report_kind.strip().lower(), key_style)
