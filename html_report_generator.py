@@ -208,48 +208,71 @@ def _build_vertical_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 42, 44
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 54, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_values))
-    bar_width = max(14, min(34, slot_width * 0.5))
     label_font = 9 if len(clean_labels) > 8 else 10
     grid_lines = 4
-    gradient_id = _chart_id(title, "bar-grad")
-    area_id = _chart_id(title, "bar-area")
-    shadow_id = _chart_id(title, "bar-shadow")
-    panel_id = _chart_id(title, "bar-panel")
-    line_color = "#5C7697"
+    area_id = _chart_id(title, "area-fill")
+    line_shadow_id = _chart_id(title, "area-shadow")
+    point_shadow_id = _chart_id(title, "point-shadow")
+    panel_id = _chart_id(title, "area-panel")
+    accent_id = _chart_id(title, "area-accent")
     avg_value = sum(clean_values) / max(1, len(clean_values))
     peak_value = max(clean_values, default=0.0)
     peak_indices = {idx for idx, value in enumerate(clean_values) if value == peak_value}
-    line_points: list[tuple[float, float]] = []
+    last_value = clean_values[-1] if clean_values else 0.0
+    line_color = _blend_hex(color, "#20324B", 0.18)
+    line_points: list[tuple[float, float]] = [
+        (
+            margin_left + slot_width * index + slot_width / 2,
+            margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
+        )
+        for index, value in enumerate(clean_values)
+    ]
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
         f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
         '<stop offset="0%" stop-color="#FFFFFF" />',
-        f'<stop offset="100%" stop-color="{_blend_hex(color, "#FFFFFF", 0.92)}" />',
-        "</linearGradient>",
-        f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="0" y2="1">',
-        f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.30)}" />',
-        f'<stop offset="100%" stop-color="{color}" />',
+        f'<stop offset="100%" stop-color="{_blend_hex(color, "#EFF5FB", 0.92)}" />',
         "</linearGradient>",
         f'<linearGradient id="{area_id}" x1="0" y1="0" x2="0" y2="1">',
-        f'<stop offset="0%" stop-color="{_alpha_hex(line_color, 0.18)}" />',
-        f'<stop offset="100%" stop-color="{_alpha_hex(line_color, 0.02)}" />',
+        f'<stop offset="0%" stop-color="{_alpha_hex(color, 0.36)}" />',
+        f'<stop offset="55%" stop-color="{_alpha_hex(color, 0.18)}" />',
+        f'<stop offset="100%" stop-color="{_alpha_hex(color, 0.04)}" />',
         "</linearGradient>",
-        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
-        '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.14)" />',
+        f'<linearGradient id="{accent_id}" x1="0" y1="0" x2="1" y2="0">',
+        f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.08)}" />',
+        f'<stop offset="100%" stop-color="{color}" />',
+        "</linearGradient>",
+        f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
+        f'<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="{_alpha_hex(color, 0.18)}" />',
+        "</filter>",
+        f'<filter id="{point_shadow_id}" x="-20%" y="-20%" width="160%" height="160%">',
+        '<feDropShadow dx="0" dy="1.6" stdDeviation="2.2" flood-color="rgba(15,23,42,0.16)" />',
         "</filter>",
         "</defs>",
         f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
-        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="6" rx="14" fill="{_alpha_hex(color, 0.92)}" />',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="8" rx="14" fill="url(#{accent_id})" />',
         f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
-        f'<rect x="{width - 176:.1f}" y="8" width="166" height="24" rx="12" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.20)}" />',
-        f'<text x="{width - 166:.1f}" y="24" font-size="9.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))} | Peak {escape(formatter(peak_value))}</text>',
     ]
+
+    chip_specs = [
+        ("AVG", formatter(avg_value), _alpha_hex(color, 0.10), _alpha_hex(color, 0.24)),
+        ("PEAK", formatter(peak_value), _alpha_hex("#F59E0B", 0.14), _alpha_hex("#F59E0B", 0.36)),
+        ("LAST", formatter(last_value), _alpha_hex("#0F766E", 0.10), _alpha_hex("#0F766E", 0.22)),
+    ]
+    chip_x = width - 16
+    for label, value_text, fill_color, stroke_color in reversed(chip_specs):
+        chip_width = max(78, len(value_text) * 6.4 + 38)
+        chip_x -= chip_width
+        parts.append(f'<rect x="{chip_x:.1f}" y="10" width="{chip_width:.1f}" height="24" rx="12" fill="{fill_color}" stroke="{stroke_color}" />')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="20" font-size="7.4" font-weight="800" fill="#64748B">{escape(label)}</text>')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="30" font-size="9.2" font-weight="800" fill="#0F172A">{escape(value_text)}</text>')
+        chip_x -= 6
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -263,39 +286,28 @@ def _build_vertical_bar_chart_svg(
         parts.append(f'<line x1="{margin_left}" y1="{y:.1f}" x2="{width - margin_right}" y2="{y:.1f}" stroke="#E6EDF5" stroke-dasharray="3 5" />')
         parts.append(f'<text x="{margin_left - 10}" y="{y + 3:.1f}" text-anchor="end" font-size="9" fill="#64748B">{escape(_fmt_axis(axis_value))}</text>')
 
-    if len(line_points) == 0:
-        for index, value in enumerate(clean_values):
-            x_center = margin_left + slot_width * index + slot_width / 2
-            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
-            y = margin_top + plot_height - bar_height
-            line_points.append((x_center, y))
-
     if len(line_points) >= 2:
-        area_points = [(margin_left, margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
+        area_points = [(line_points[0][0], margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
         area_path = _series_path(area_points) + " Z"
         parts.append(f'<path d="{area_path}" fill="url(#{area_id})" />')
-        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />')
-        for x_center, y in line_points:
-            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="3.6" fill="#FFFFFF" stroke="{line_color}" stroke-width="1.8" />')
+        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" />')
+        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />')
 
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
         x_center = margin_left + slot_width * index + slot_width / 2
-        bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
-        x = x_center - bar_width / 2
-        y = margin_top + plot_height - bar_height
-        parts.append(f'<rect x="{x:.1f}" y="{margin_top + plot_height - 2:.1f}" width="{bar_width:.1f}" height="2" rx="6" fill="{_alpha_hex(color, 0.12)}" />')
-        bar_stroke = "#F59E0B" if index in peak_indices else _alpha_hex(color, 0.16)
-        bar_stroke_width = "2.0" if index in peak_indices else "0.4"
-        parts.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="url(#{gradient_id})" stroke="{bar_stroke}" stroke-width="{bar_stroke_width}" filter="url(#{shadow_id})" />'
-        )
-        parts.append(
-            f'<rect x="{x + 3:.1f}" y="{y + 3:.1f}" width="{max(4.0, bar_width - 6):.1f}" height="{max(6.0, bar_height * 0.24):.1f}" rx="4" fill="{_alpha_hex("#FFFFFF", 0.18)}" />'
-        )
+        y = line_points[index][1]
+        guide_y = margin_top + plot_height
+        parts.append(f'<line x1="{x_center:.1f}" y1="{guide_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="{_alpha_hex(color, 0.10)}" stroke-dasharray="2 5" />')
+        point_radius = 6.4 if index in peak_indices else 4.6
+        point_fill = "#FFFFFF" if index not in peak_indices else "#FEF3C7"
+        point_stroke = line_color if index not in peak_indices else "#F59E0B"
+        parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.2" filter="url(#{point_shadow_id})" />')
+        parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.4" fill="{line_color}" />')
         if value > 0:
-            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(value))}</text>')
+            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 10, margin_top + 12):.1f}" text-anchor="middle" font-size="9" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>')
             if index in peak_indices:
-                parts.append(f'<text x="{x_center:.1f}" y="{max(y - 18, margin_top + 9):.1f}" text-anchor="middle" font-size="8" font-weight="800" fill="#B45309">PEAK</text>')
+                parts.append(f'<rect x="{x_center - 18:.1f}" y="{max(y - 28, margin_top + 8):.1f}" width="36" height="14" rx="7" fill="{_alpha_hex("#F59E0B", 0.16)}" stroke="{_alpha_hex("#F59E0B", 0.38)}" />')
+                parts.append(f'<text x="{x_center:.1f}" y="{max(y - 18, margin_top + 18):.1f}" text-anchor="middle" font-size="7.6" font-weight="800" fill="#B45309">PEAK</text>')
         label_y = height - 12
         parts.append(
             f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
@@ -307,7 +319,7 @@ def _build_vertical_bar_chart_svg(
             f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex(line_color, 0.65)}" stroke-width="1.4" stroke-dasharray="6 5" />'
         )
         parts.append(
-            f'<text x="{width - margin_right - 2:.1f}" y="{avg_y - 5:.1f}" text-anchor="end" font-size="8.5" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
+            f'<text x="{width - margin_right - 2:.1f}" y="{avg_y - 5:.1f}" text-anchor="end" font-size="8.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
         )
 
     parts.append("</svg>")
@@ -465,42 +477,66 @@ def _build_error_bar_chart_svg(
 
     maxima = [mean + error for mean, error in zip(clean_means, clean_errors, strict=False)]
     chart_max = y_max if y_max is not None else _nice_max(max(maxima, default=max(clean_means, default=0)))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 42, 44
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 54, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_means))
-    bar_width = max(14, min(34, slot_width * 0.48))
     label_font = 9 if len(clean_labels) > 8 else 10
     grid_lines = 4
-    gradient_id = _chart_id(title, "err-grad")
-    shadow_id = _chart_id(title, "err-shadow")
-    panel_id = _chart_id(title, "err-panel")
-    line_color = "#5C7697"
+    band_id = _chart_id(title, "band-fill")
+    panel_id = _chart_id(title, "band-panel")
+    line_shadow_id = _chart_id(title, "band-shadow")
+    point_shadow_id = _chart_id(title, "band-point-shadow")
+    accent_id = _chart_id(title, "band-accent")
+    line_color = _blend_hex(color, "#20324B", 0.18)
     avg_value = sum(clean_means) / max(1, len(clean_means))
     peak_value = max(clean_means, default=0.0)
     peak_indices = {idx for idx, value in enumerate(clean_means) if value == peak_value}
+    avg_error = sum(clean_errors) / max(1, len(clean_errors))
     mean_points: list[tuple[float, float]] = []
+    upper_points: list[tuple[float, float]] = []
+    lower_points: list[tuple[float, float]] = []
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
         f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
         '<stop offset="0%" stop-color="#FFFFFF" />',
-        f'<stop offset="100%" stop-color="{_blend_hex(color, "#FFFFFF", 0.92)}" />',
+        f'<stop offset="100%" stop-color="{_blend_hex(color, "#EFF5FB", 0.92)}" />',
         "</linearGradient>",
-        f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="0" y2="1">',
-        f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.30)}" />',
+        f'<linearGradient id="{band_id}" x1="0" y1="0" x2="0" y2="1">',
+        f'<stop offset="0%" stop-color="{_alpha_hex(color, 0.24)}" />',
+        f'<stop offset="100%" stop-color="{_alpha_hex(color, 0.05)}" />',
+        "</linearGradient>",
+        f'<linearGradient id="{accent_id}" x1="0" y1="0" x2="1" y2="0">',
+        f'<stop offset="0%" stop-color="{_blend_hex(color, "#FFFFFF", 0.08)}" />',
         f'<stop offset="100%" stop-color="{color}" />',
         "</linearGradient>",
-        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
-        '<feDropShadow dx="0" dy="2" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
+        f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
+        f'<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="{_alpha_hex(color, 0.16)}" />',
+        "</filter>",
+        f'<filter id="{point_shadow_id}" x="-20%" y="-20%" width="160%" height="160%">',
+        '<feDropShadow dx="0" dy="1.5" stdDeviation="2.0" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
         "</defs>",
-        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
         f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
-        f'<rect x="{width - 176:.1f}" y="8" width="166" height="24" rx="12" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.20)}" />',
-        f'<text x="{width - 166:.1f}" y="24" font-size="9.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))} | Peak {escape(formatter(peak_value))}</text>',
+        f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="8" rx="14" fill="url(#{accent_id})" />',
+        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
     ]
+
+    chip_specs = [
+        ("AVG", formatter(avg_value), _alpha_hex(color, 0.10), _alpha_hex(color, 0.24)),
+        ("PEAK", formatter(peak_value), _alpha_hex("#F59E0B", 0.14), _alpha_hex("#F59E0B", 0.36)),
+        ("AVG SD", formatter(avg_error), _alpha_hex("#5C7697", 0.10), _alpha_hex("#5C7697", 0.22)),
+    ]
+    chip_x = width - 16
+    for label, value_text, fill_color, stroke_color in reversed(chip_specs):
+        chip_width = max(80, len(value_text) * 6.4 + 42)
+        chip_x -= chip_width
+        parts.append(f'<rect x="{chip_x:.1f}" y="10" width="{chip_width:.1f}" height="24" rx="12" fill="{fill_color}" stroke="{stroke_color}" />')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="20" font-size="7.4" font-weight="800" fill="#64748B">{escape(label)}</text>')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="30" font-size="9.2" font-weight="800" fill="#0F172A">{escape(value_text)}</text>')
+        chip_x -= 6
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -516,40 +552,44 @@ def _build_error_bar_chart_svg(
 
     for index, (label, mean_value, error_value) in enumerate(zip(clean_labels, clean_means, clean_errors, strict=False)):
         x_center = margin_left + slot_width * index + slot_width / 2
-        bar_height = 0 if chart_max <= 0 else (mean_value / chart_max) * plot_height
-        x = x_center - bar_width / 2
-        y = margin_top + plot_height - bar_height
-        mean_points.append((x_center, y))
-        bar_stroke = "#F59E0B" if index in peak_indices else _alpha_hex(color, 0.16)
-        bar_stroke_width = "2.0" if index in peak_indices else "0.4"
-        parts.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="url(#{gradient_id})" stroke="{bar_stroke}" stroke-width="{bar_stroke_width}" filter="url(#{shadow_id})" />'
-        )
-
-        error_top_value = min(chart_max, mean_value + error_value)
-        error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
-        cap_half = max(6, bar_width * 0.28)
-        parts.append(f'<line x1="{x_center:.1f}" y1="{error_top_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="{line_color}" stroke-width="1.5" />')
-        parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="{line_color}" stroke-width="1.5" />')
-
+        mean_y = margin_top + plot_height - (0 if chart_max <= 0 else (mean_value / chart_max) * plot_height)
+        upper_value = min(chart_max, mean_value + error_value)
+        lower_value = max(0.0, mean_value - error_value)
+        upper_y = margin_top + plot_height - (0 if chart_max <= 0 else (upper_value / chart_max) * plot_height)
+        lower_y = margin_top + plot_height - (0 if chart_max <= 0 else (lower_value / chart_max) * plot_height)
+        mean_points.append((x_center, mean_y))
+        upper_points.append((x_center, upper_y))
+        lower_points.append((x_center, lower_y))
         if mean_value > 0:
-            parts.append(f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 10):.1f}" text-anchor="middle" font-size="9" font-weight="700" fill="#0F172A">{escape(formatter(mean_value))}</text>')
-            if index in peak_indices:
-                parts.append(f'<text x="{x_center:.1f}" y="{max(y - 18, margin_top + 9):.1f}" text-anchor="middle" font-size="8" font-weight="800" fill="#B45309">PEAK</text>')
+            parts.append(f'<text x="{x_center:.1f}" y="{max(mean_y - 10, margin_top + 12):.1f}" text-anchor="middle" font-size="8.8" font-weight="800" fill="#0F172A">{escape(formatter(mean_value))}</text>')
         label_y = height - 12
         parts.append(
             f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
         )
 
-    if len(mean_points) >= 2:
-        parts.append(f'<path d="{_series_path(mean_points)}" fill="none" stroke="{line_color}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />')
-        for x_center, y in mean_points:
-            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="3.0" fill="#FFFFFF" stroke="{line_color}" stroke-width="1.5" />')
+    if len(mean_points) >= 2 and upper_points and lower_points:
+        band_points = upper_points + list(reversed(lower_points))
+        band_path = _series_path(band_points) + " Z"
+        parts.append(f'<path d="{band_path}" fill="url(#{band_id})" />')
+        parts.append(f'<path d="{_series_path(mean_points)}" fill="none" stroke="#FFFFFF" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.92" />')
+        parts.append(f'<path d="{_series_path(mean_points)}" fill="none" stroke="{line_color}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />')
+        for index, (x_center, mean_y) in enumerate(mean_points):
+            point_radius = 6.2 if index in peak_indices else 4.4
+            point_fill = "#FFFFFF" if index not in peak_indices else "#FEF3C7"
+            point_stroke = line_color if index not in peak_indices else "#F59E0B"
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{mean_y:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.1" filter="url(#{point_shadow_id})" />')
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{mean_y:.1f}" r="2.3" fill="{line_color}" />')
+            if index in peak_indices:
+                parts.append(f'<rect x="{x_center - 18:.1f}" y="{max(mean_y - 28, margin_top + 8):.1f}" width="36" height="14" rx="7" fill="{_alpha_hex("#F59E0B", 0.16)}" stroke="{_alpha_hex("#F59E0B", 0.38)}" />')
+                parts.append(f'<text x="{x_center:.1f}" y="{max(mean_y - 18, margin_top + 18):.1f}" text-anchor="middle" font-size="7.6" font-weight="800" fill="#B45309">PEAK</text>')
 
     if avg_value > 0:
         avg_y = margin_top + plot_height - ((avg_value / chart_max) * plot_height if chart_max > 0 else 0)
         parts.append(
             f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex(line_color, 0.65)}" stroke-width="1.2" stroke-dasharray="5 5" />'
+        )
+        parts.append(
+            f'<text x="{width - margin_right - 2:.1f}" y="{avg_y - 5:.1f}" text-anchor="end" font-size="8.5" font-weight="700" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
         )
 
     parts.append("</svg>")
@@ -587,22 +627,27 @@ def _build_grouped_error_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_maxima))
-    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 44, 44
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 56, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
-    series_width = slot_width * 0.72
-    bar_width = max(10, min(20, series_width / max(1, len(clean_series))))
     grid_lines = 4
     label_font = 9 if len(clean_labels) > 8 else 10
-    shadow_id = _chart_id(title, "gerr-shadow")
-    gradient_ids = [_chart_id(f"{title}-{item['label']}", "gerr-grad") for item in clean_series]
+    line_shadow_id = _chart_id(title, "multi-shadow")
+    point_shadow_id = _chart_id(title, "multi-point-shadow")
     panel_id = _chart_id(title, "gerr-panel")
+    accent_id = _chart_id(title, "gerr-accent")
     series_avg = [
         sum(item["values"]) / len(item["values"]) if item["values"] else 0.0
         for item in clean_series
     ]
+    series_error_avg = [
+        sum(item["errors"]) / len(item["errors"]) if item["errors"] else 0.0
+        for item in clean_series
+    ]
     series_points: list[list[tuple[float, float]]] = [[] for _ in clean_series]
+    series_upper_points: list[list[tuple[float, float]]] = [[] for _ in clean_series]
+    series_lower_points: list[list[tuple[float, float]]] = [[] for _ in clean_series]
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -611,33 +656,52 @@ def _build_grouped_error_bar_chart_svg(
         '<stop offset="0%" stop-color="#FFFFFF" />',
         '<stop offset="100%" stop-color="#F6FAFF" />',
         "</linearGradient>",
-        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
-        '<feDropShadow dx="0" dy="2" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
+        f'<linearGradient id="{accent_id}" x1="0" y1="0" x2="1" y2="0">',
+        '<stop offset="0%" stop-color="#F7CBD4" />',
+        '<stop offset="100%" stop-color="#C8102E" />',
+        "</linearGradient>",
+        f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="140%">',
+        '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(15,23,42,0.14)" />',
+        "</filter>",
+        f'<filter id="{point_shadow_id}" x="-20%" y="-20%" width="160%" height="160%">',
+        '<feDropShadow dx="0" dy="1.5" stdDeviation="2.0" flood-color="rgba(15,23,42,0.12)" />',
         "</filter>",
     ]
-    for gradient_id, item in zip(gradient_ids, clean_series, strict=False):
+    for item in clean_series:
+        band_id = _chart_id(f"{title}-{item['label']}", "multi-band")
         parts.extend(
             [
-                f'<linearGradient id="{gradient_id}" x1="0" y1="0" x2="0" y2="1">',
-                f'<stop offset="0%" stop-color="{_blend_hex(item["color"], "#FFFFFF", 0.30)}" />',
-                f'<stop offset="100%" stop-color="{item["color"]}" />',
+                f'<linearGradient id="{band_id}" x1="0" y1="0" x2="0" y2="1">',
+                f'<stop offset="0%" stop-color="{_alpha_hex(item["color"], 0.18)}" />',
+                f'<stop offset="100%" stop-color="{_alpha_hex(item["color"], 0.04)}" />',
                 "</linearGradient>",
             ]
         )
     parts.extend(
         [
             "</defs>",
-        f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
             f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="{plot_height + 16:.1f}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
+            f'<rect x="{margin_left - 10}" y="{margin_top - 8}" width="{plot_width + 20:.1f}" height="8" rx="14" fill="url(#{accent_id})" />',
+            f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
         ]
     )
 
     legend_x = 10
     for item in clean_series:
-        parts.append(f'<rect x="{legend_x}" y="28" width="30" height="12" rx="6" fill="{_alpha_hex(item["color"], 0.16)}" stroke="{_alpha_hex(item["color"], 0.28)}" />')
-        parts.append(f'<rect x="{legend_x + 4}" y="31" width="8" height="6" rx="3" fill="{item["color"]}" />')
-        parts.append(f'<text x="{legend_x + 18}" y="37" font-size="9" fill="#475569">{escape(item["label"])}</text>')
-        legend_x += max(92, len(item["label"]) * 7 + 30)
+        parts.append(f'<rect x="{legend_x}" y="28" width="72" height="16" rx="8" fill="{_alpha_hex(item["color"], 0.12)}" stroke="{_alpha_hex(item["color"], 0.26)}" />')
+        parts.append(f'<circle cx="{legend_x + 10}" cy="36" r="4.2" fill="{item["color"]}" />')
+        parts.append(f'<text x="{legend_x + 20}" y="39" font-size="8.8" font-weight="700" fill="#475569">{escape(item["label"])}</text>')
+        legend_x += 80
+
+    chip_x = width - 16
+    for item, avg_value, avg_error in reversed(list(zip(clean_series, series_avg, series_error_avg, strict=False))):
+        chip_text = f"{item['label']} {_fmt_axis(avg_value)}"
+        chip_width = max(90, len(chip_text) * 6.0 + 26)
+        chip_x -= chip_width
+        parts.append(f'<rect x="{chip_x:.1f}" y="10" width="{chip_width:.1f}" height="24" rx="12" fill="{_alpha_hex(item["color"], 0.10)}" stroke="{_alpha_hex(item["color"], 0.24)}" />')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="20" font-size="7.0" font-weight="800" fill="#64748B">AVG | SD {_fmt_axis(avg_error)}</text>')
+        parts.append(f'<text x="{chip_x + 10:.1f}" y="30" font-size="8.8" font-weight="800" fill="{_blend_hex(item['color'], '#20324B', 0.32)}">{escape(chip_text)}</text>')
+        chip_x -= 6
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -653,24 +717,18 @@ def _build_grouped_error_bar_chart_svg(
 
     for label_index, label in enumerate(clean_labels):
         x_slot = margin_left + slot_width * label_index
-        x_start = x_slot + (slot_width - series_width) / 2
         for series_index, item in enumerate(clean_series):
             value = item["values"][label_index] if label_index < len(item["values"]) else 0.0
             error = item["errors"][label_index] if label_index < len(item["errors"]) else 0.0
-            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
-            x = x_start + series_index * bar_width
-            y = margin_top + plot_height - bar_height
-            draw_width = max(6, bar_width - 2)
-            x_center = x + draw_width / 2
-            series_points[series_index].append((x_center, y))
-            parts.append(
-                f'<rect x="{x:.1f}" y="{y:.1f}" width="{draw_width:.1f}" height="{bar_height:.1f}" rx="4" fill="url(#{gradient_ids[series_index]})" filter="url(#{shadow_id})" />'
-            )
-            error_top_value = min(chart_max, value + error)
-            error_top_y = margin_top + plot_height - ((error_top_value / chart_max) * plot_height if chart_max > 0 else 0)
-            cap_half = max(4, draw_width * 0.28)
-            parts.append(f'<line x1="{x_center:.1f}" y1="{error_top_y:.1f}" x2="{x_center:.1f}" y2="{y:.1f}" stroke="{_blend_hex(item["color"], "#20324B", 0.34)}" stroke-width="1.2" />')
-            parts.append(f'<line x1="{x_center - cap_half:.1f}" y1="{error_top_y:.1f}" x2="{x_center + cap_half:.1f}" y2="{error_top_y:.1f}" stroke="{_blend_hex(item["color"], "#20324B", 0.34)}" stroke-width="1.2" />')
+            x_center = x_slot + slot_width * 0.5
+            mean_y = margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height)
+            upper_value = min(chart_max, value + error)
+            lower_value = max(0.0, value - error)
+            upper_y = margin_top + plot_height - (0 if chart_max <= 0 else (upper_value / chart_max) * plot_height)
+            lower_y = margin_top + plot_height - (0 if chart_max <= 0 else (lower_value / chart_max) * plot_height)
+            series_points[series_index].append((x_center, mean_y))
+            series_upper_points[series_index].append((x_center, upper_y))
+            series_lower_points[series_index].append((x_center, lower_y))
         label_x = x_slot + slot_width / 2
         label_y = height - 12
         parts.append(
@@ -680,20 +738,21 @@ def _build_grouped_error_bar_chart_svg(
     for series_index, item in enumerate(clean_series):
         if len(series_points[series_index]) < 2:
             continue
-        trend_color = _blend_hex(item["color"], "#274060", 0.45)
+        trend_color = _blend_hex(item["color"], "#274060", 0.34)
+        band_id = _chart_id(f"{title}-{item['label']}", "multi-band")
+        band_points = series_upper_points[series_index] + list(reversed(series_lower_points[series_index]))
+        parts.append(f'<path d="{_series_path(band_points)} Z" fill="url(#{band_id})" />')
         parts.append(
-            f'<path d="{_series_path(series_points[series_index])}" fill="none" stroke="{trend_color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />'
+            f'<path d="{_series_path(series_points[series_index])}" fill="none" stroke="#FFFFFF" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.82" />'
         )
+        parts.append(
+            f'<path d="{_series_path(series_points[series_index])}" fill="none" stroke="{trend_color}" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
+        )
+        last_point = series_points[series_index][-1]
+        last_value = item["values"][-1] if item["values"] else 0.0
         for x_center, y in series_points[series_index]:
-            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.8" fill="#FFFFFF" stroke="{trend_color}" stroke-width="1.4" />')
-
-    avg_chip_x = width - 14
-    for item, avg_value in reversed(list(zip(clean_series, series_avg, strict=False))):
-        chip_width = max(92, len(item["label"]) * 6.2 + 52)
-        avg_chip_x -= chip_width
-        parts.append(f'<rect x="{avg_chip_x:.1f}" y="10" width="{chip_width:.1f}" height="20" rx="10" fill="{_alpha_hex(item["color"], 0.10)}" stroke="{_alpha_hex(item["color"], 0.24)}" />')
-        parts.append(f'<text x="{avg_chip_x + 10:.1f}" y="23" font-size="8.8" font-weight="700" fill="{_blend_hex(item["color"], "#20324B", 0.34)}">{escape(item["label"])} avg {escape(_fmt_axis(avg_value))}</text>')
-        avg_chip_x -= 6
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="3.4" fill="#FFFFFF" stroke="{trend_color}" stroke-width="1.6" filter="url(#{point_shadow_id})" />')
+        parts.append(f'<text x="{last_point[0] + 8:.1f}" y="{max(last_point[1] - 6, margin_top + 14):.1f}" font-size="8.4" font-weight="800" fill="{trend_color}">{escape(_fmt_axis(last_value))}</text>')
 
     parts.append("</svg>")
     return "".join(parts)
@@ -827,44 +886,53 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 232,
+    height: int = 246,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
     if total <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
+    top_label, top_value, _ = max(described, key=lambda item: item[1])
+    top_share = (top_value / total) * 100 if total > 0 else 0.0
     donut_panel_x = 18
     donut_panel_y = 42
-    donut_panel_w = 308
-    donut_panel_h = 166
-    legend_panel_x = 344
+    donut_panel_w = 324
+    donut_panel_h = 176
+    legend_panel_x = 360
     legend_panel_y = 42
     legend_panel_w = width - legend_panel_x - 18
-    legend_panel_h = 166
+    legend_panel_h = 176
     pie_cx = donut_panel_x + 128
-    pie_cy = donut_panel_y + 84
-    radius = 64
-    inner_radius = 34
-    legend_top = legend_panel_y + 28
-    legend_row_height = 24
+    pie_cy = donut_panel_y + 88
+    radius = 68
+    inner_radius = 30
+    legend_top = legend_panel_y + 40
+    legend_row_height = 28
     ring_shadow = _chart_id(title, "donut-shadow")
     panel_id = _chart_id(title, "donut-panel")
+    accent_id = _chart_id(title, "donut-accent")
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
         "<defs>",
         f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
         '<stop offset="0%" stop-color="#FFFFFF" />',
-        '<stop offset="100%" stop-color="#F8FBFF" />',
+        '<stop offset="100%" stop-color="#F6FAFF" />',
+        "</linearGradient>",
+        f'<linearGradient id="{accent_id}" x1="0" y1="0" x2="1" y2="0">',
+        '<stop offset="0%" stop-color="#F7CBD4" />',
+        '<stop offset="100%" stop-color="#C8102E" />',
         "</linearGradient>",
         f'<filter id="{ring_shadow}" x="-20%" y="-20%" width="160%" height="160%">',
-        '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.14)" />',
+        '<feDropShadow dx="0" dy="3" stdDeviation="3.6" flood-color="rgba(15,23,42,0.16)" />',
         "</filter>",
         "</defs>",
         f'<text x="10" y="22" font-size="15" font-weight="800" fill="#0B1020">{escape(title)}</text>',
         f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="{donut_panel_h}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
+        f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="8" rx="14" fill="url(#{accent_id})" />',
         f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="{legend_panel_h}" rx="14" fill="#FFFFFF" stroke="#DCE6F2" />',
+        f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="8" rx="14" fill="{_alpha_hex("#5C7697", 0.78)}" />',
         f'<line x1="{legend_panel_x - 10:.1f}" y1="{legend_panel_y + 16:.1f}" x2="{legend_panel_x - 10:.1f}" y2="{legend_panel_y + legend_panel_h - 16:.1f}" stroke="#DCE6F2" />',
         f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{radius:.1f}" fill="none" stroke="#EEF3F9" stroke-width="{radius - inner_radius:.1f}" />',
     ]
@@ -890,25 +958,32 @@ def _build_pie_chart_svg(
             )
             start_angle = end_angle
 
-    top_share = max((value / total) * 100 for _, value, _ in described)
     parts.append(f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{inner_radius - 3:.1f}" fill="#FFFFFF" stroke="#E2E8F0" />')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy - 2:.1f}" text-anchor="middle" font-size="18" font-weight="800" fill="#0F172A">{escape(_fmt_dec(top_share, 0))}%</text>')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 16:.1f}" text-anchor="middle" font-size="9.5" fill="#64748B">zone share</text>')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 18:.1f}" text-anchor="middle" font-size="10" fill="#475569">Total {escape(_fmt_distance(total))}</text>')
-    parts.append(f'<text x="{legend_panel_x + 18:.1f}" y="{legend_panel_y + 18:.1f}" font-size="9.5" font-weight="800" fill="#64748B">VERDELING</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy - 4:.1f}" text-anchor="middle" font-size="24" font-weight="800" fill="#0F172A">{escape(_fmt_dec(top_share, 0))}%</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 14:.1f}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#64748B">{escape(top_label)}</text>')
+    parts.append(f'<rect x="{donut_panel_x + 42:.1f}" y="{donut_panel_y + donut_panel_h - 38:.1f}" width="{donut_panel_w - 84:.1f}" height="24" rx="12" fill="{_alpha_hex("#C8102E", 0.08)}" stroke="{_alpha_hex("#C8102E", 0.18)}" />')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 22:.1f}" text-anchor="middle" font-size="9.2" font-weight="800" fill="#334155">Total {escape(_fmt_distance_km(total))}</text>')
+    parts.append(f'<text x="{legend_panel_x + 18:.1f}" y="{legend_panel_y + 24:.1f}" font-size="9.5" font-weight="800" fill="#64748B">ZONE MIX</text>')
+    parts.append(f'<rect x="{legend_panel_x + legend_panel_w - 124:.1f}" y="{legend_panel_y + 14:.1f}" width="106" height="22" rx="11" fill="{_alpha_hex("#0F766E", 0.08)}" stroke="{_alpha_hex("#0F766E", 0.18)}" />')
+    parts.append(f'<text x="{legend_panel_x + legend_panel_w - 114:.1f}" y="{legend_panel_y + 28:.1f}" font-size="8.6" font-weight="800" fill="#0F766E">Top zone {escape(_fmt_dec(top_share, 1))}% </text>')
 
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
         row_y = legend_top + index * legend_row_height
-        row_box_y = row_y - 13
+        row_box_y = row_y - 15
+        progress_x = legend_panel_x + 42
+        progress_w = 120
         parts.append(
-            f'<rect x="{legend_panel_x + 14:.1f}" y="{row_box_y:.1f}" width="{legend_panel_w - 28:.1f}" height="18" rx="9" fill="{_alpha_hex(color, 0.06)}" />'
+            f'<rect x="{legend_panel_x + 14:.1f}" y="{row_box_y:.1f}" width="{legend_panel_w - 28:.1f}" height="22" rx="11" fill="{_alpha_hex(color, 0.06)}" />'
         )
         parts.append(f'<circle cx="{legend_panel_x + 28:.1f}" cy="{row_y - 4:.1f}" r="5.5" fill="{color}" />')
-        parts.append(f'<text x="{legend_panel_x + 42:.1f}" y="{row_y:.1f}" font-size="10.5" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<text x="{legend_panel_x + 42:.1f}" y="{row_y - 1:.1f}" font-size="10.4" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<rect x="{progress_x:.1f}" y="{row_y + 4.5:.1f}" width="{progress_w:.1f}" height="4.2" rx="2.1" fill="#E5EDF7" />')
+        parts.append(f'<rect x="{progress_x:.1f}" y="{row_y + 4.5:.1f}" width="{progress_w * (percentage / 100):.1f}" height="4.2" rx="2.1" fill="{color}" />')
         parts.append(
-            f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="10" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance(value))}</text>'
+            f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y - 1:.1f}" text-anchor="end" font-size="11.2" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}%</text>'
         )
+        parts.append(f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y + 10:.1f}" text-anchor="end" font-size="8.8" fill="#64748B">{escape(_fmt_distance_km(value))}</text>')
 
     parts.append("</svg>")
     return "".join(parts)
