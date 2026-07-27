@@ -24,7 +24,14 @@ def normalize_report_style(report_style: str | None = None) -> str:
 def _call_builder(builder: ReportBuilder, payload: Mapping[str, Any]) -> bytes:
     signature = inspect.signature(builder)
     compatible_kwargs = {key: value for key, value in payload.items() if key in signature.parameters}
-    return builder(**compatible_kwargs)
+    result = builder(**compatible_kwargs)
+    if isinstance(result, bytearray):
+        result = bytes(result)
+    if not isinstance(result, bytes):
+        raise RuntimeError("HTML/CSS PDF-export gaf geen PDF-bytes terug.")
+    if len(result) == 0:
+        raise RuntimeError("HTML/CSS PDF-export leverde een leeg PDF-bestand op.")
+    return result
 
 
 def _resolve_builder(report_kind: str, report_style: str) -> ReportBuilder:

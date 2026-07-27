@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from html import escape
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
@@ -64,9 +65,12 @@ def _render_html_pdf(template_name: str, context: dict[str, Any]) -> bytes:
     env = _template_environment()
     template = env.get_template(template_name)
     html = template.render(**context)
-    return html_cls(string=html, base_url=str(BASE_DIR)).write_pdf(
-        stylesheets=[css_cls(filename=str(CSS_PATH), base_url=str(BASE_DIR))]
+    buffer = BytesIO()
+    html_cls(string=html, base_url=str(BASE_DIR)).write_pdf(
+        target=buffer,
+        stylesheets=[css_cls(filename=str(CSS_PATH), base_url=str(BASE_DIR))],
     )
+    return buffer.getvalue()
 
 
 def _fmt_int(value: object) -> str:
