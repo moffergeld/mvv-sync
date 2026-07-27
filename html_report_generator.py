@@ -1326,7 +1326,10 @@ def build_week_report_html_pdf_bytes(
         "report_subtitle": f"{week_label} | {iso_label} | {revision_label}",
         "report_description": "",
         "logo_src": LOGO_SRC,
-        "report_header_meta": [],
+        "report_header_meta": [
+            {"label": "Revision", "value": revision_label, "foot": "Actieve HTML exportbuild"},
+            {"label": "Export", "value": export_stamp, "foot": "Gegenereerd op deze builder"},
+        ],
         "badges": [f"Export {revision_label}", export_stamp],
         "cards": [
             {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
