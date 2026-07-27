@@ -146,10 +146,10 @@ def _nice_max(value: float) -> float:
     return nice * magnitude
 
 
-def _empty_svg(title: str, message: str, *, width: int = 860, height: int = 220) -> str:
+def _empty_svg(title: str, message: str, *, width: int = 860, height: int = 190) -> str:
     return f"""
     <svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">
-      <text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>
+      <text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>
       <text x="{width/2:.0f}" y="{height/2:.0f}" text-anchor="middle" font-size="12" fill="#64748B">{escape(message)}</text>
     </svg>
     """.strip()
@@ -162,7 +162,7 @@ def _build_vertical_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 220,
+    height: int = 200,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -172,7 +172,7 @@ def _build_vertical_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 30, 48
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 28, 42
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_values))
@@ -182,7 +182,7 @@ def _build_vertical_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for step in range(grid_lines + 1):
@@ -215,7 +215,7 @@ def _build_grouped_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 230,
+    height: int = 210,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -235,7 +235,7 @@ def _build_grouped_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_values))
-    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 44, 48
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 40, 42
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
@@ -246,7 +246,7 @@ def _build_grouped_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     legend_x = 8
@@ -289,7 +289,7 @@ def _build_error_bar_chart_svg(
     *,
     color: str = "#C8102E",
     width: int = 860,
-    height: int = 230,
+    height: int = 210,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
@@ -301,7 +301,7 @@ def _build_error_bar_chart_svg(
 
     maxima = [mean + error for mean, error in zip(clean_means, clean_errors, strict=False)]
     chart_max = y_max if y_max is not None else _nice_max(max(maxima, default=max(clean_means, default=0)))
-    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 30, 48
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 28, 42
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_means))
@@ -311,7 +311,7 @@ def _build_error_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="22" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="20" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for step in range(grid_lines + 1):
@@ -351,7 +351,7 @@ def _build_grouped_error_bar_chart_svg(
     series: Sequence[dict[str, Any]],
     *,
     width: int = 860,
-    height: int = 240,
+    height: int = 220,
     y_max: float | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -376,7 +376,7 @@ def _build_grouped_error_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_maxima))
-    margin_left, margin_right, margin_top, margin_bottom = 52, 18, 44, 48
+    margin_left, margin_right, margin_top, margin_bottom = 48, 16, 40, 42
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_labels))
@@ -387,7 +387,7 @@ def _build_grouped_error_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     legend_x = 8
@@ -437,7 +437,7 @@ def _build_horizontal_bar_chart_svg(
     *,
     color: str = "#6E1222",
     width: int = 720,
-    height: int = 250,
+    height: int = 220,
     formatter: Callable[[object], str] = _fmt_int,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
@@ -446,7 +446,7 @@ def _build_horizontal_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = max(clean_values)
-    margin_left, margin_right, margin_top, margin_bottom = 126, 22, 44, 24
+    margin_left, margin_right, margin_top, margin_bottom = 120, 18, 38, 20
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     row_height = plot_height / max(1, len(clean_labels))
@@ -454,7 +454,7 @@ def _build_horizontal_bar_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     for index, (label, value) in enumerate(zip(clean_labels, clean_values)):
@@ -475,7 +475,7 @@ def _build_share_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 190,
+    height: int = 180,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
     clean_values = _clean_series(values)
@@ -485,7 +485,7 @@ def _build_share_chart_svg(
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
+        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     bar_x, bar_y, bar_width, bar_height = 28, 66, width - 56, 28
@@ -531,7 +531,7 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 860,
-    height: int = 280,
+    height: int = 240,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -539,17 +539,16 @@ def _build_pie_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     pie_cx = width / 2
-    pie_cy = 126
-    radius = 82
-    legend_top = 236
+    pie_cy = 102
+    radius = 66
+    legend_top = 176
     legend_cols = 2
     legend_col_width = (width - 92) / legend_cols
     legend_row_height = 24
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
-        f'<text x="8" y="20" font-size="16" font-weight="700" fill="#0B1020">{escape(title)}</text>',
-        f'<text x="{pie_cx:.1f}" y="{height - 22}" text-anchor="middle" font-size="11" fill="#64748B">Totale afstand: {escape(_fmt_distance(total))}</text>',
+        f'<text x="8" y="18" font-size="14" font-weight="700" fill="#0B1020">{escape(title)}</text>',
     ]
 
     if len(described) == 1:
@@ -858,7 +857,7 @@ def build_week_report_html_pdf_bytes(
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
         ],
         "focus_cards": [],
-        "day_cards": [],
+        "day_cards": _build_week_day_cards(day_table),
         "leader_cards": [],
         "monitoring_cards": [],
         "chart_sections": [

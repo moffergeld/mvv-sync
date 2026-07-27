@@ -60,6 +60,7 @@
 
   {% for section in chart_sections %}
     <section class="report-section{% if section.page_break %} report-section--page-break{% endif %}">
+      {% set columns = section.columns or section.panels|length %}
       <div class="section-heading">
         <div>
           <div class="section-kicker">{{ section.eyebrow }}</div>
@@ -67,13 +68,23 @@
         </div>
         <div class="section-meta">{{ section.subtitle }}</div>
       </div>
-      <div class="chart-grid chart-grid--{{ section.columns or section.panels|length }}">
-        {% for chart in section.panels %}
-          <article class="panel panel--chart">
-            {{ chart.svg | safe }}
-          </article>
-        {% endfor %}
-      </div>
+      <table class="chart-table chart-table--{{ columns }}">
+        <tbody>
+          {% for row in section.panels|batch(columns, none) %}
+            <tr class="chart-table__row">
+              {% for chart in row %}
+                <td class="chart-table__cell chart-table__cell--{{ columns }}">
+                  {% if chart %}
+                    <article class="panel panel--chart">
+                      {{ chart.svg | safe }}
+                    </article>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </section>
   {% endfor %}
 

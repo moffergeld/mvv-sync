@@ -197,7 +197,7 @@ body {
 }
 
 .report-section {
-  margin-bottom: 4mm;
+  margin-bottom: 3mm;
   break-inside: auto;
 }
 
@@ -213,7 +213,7 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 2.5mm;
+  margin-bottom: 1.8mm;
   break-after: avoid;
   page-break-after: avoid;
 }
@@ -233,18 +233,18 @@ body {
 .section-heading h2,
 .section-head h2,
 .panel-head h2 {
-  margin: 0.8mm 0 0;
+  margin: 0.5mm 0 0;
   color: var(--text-strong);
-  font-size: 15pt;
+  font-size: 13.6pt;
   line-height: 1.1;
 }
 
 .section-meta {
   margin: 0;
   color: var(--text-soft);
-  font-size: 8.8pt;
+  font-size: 8pt;
   text-align: right;
-  line-height: 1.45;
+  line-height: 1.35;
   width: 40%;
 }
 
@@ -261,7 +261,7 @@ body {
   justify-content: space-between;
   gap: 6mm;
   align-items: center;
-  margin: 3mm 0 2mm;
+  margin: 1.8mm 0 1.6mm;
   break-after: avoid;
   page-break-after: avoid;
 }
@@ -409,14 +409,14 @@ body {
 }
 
 .day-card-grid > .day-card {
-  width: 25%;
+  width: 33.333%;
   padding-left: 1.75mm;
   padding-right: 1.75mm;
-  margin-bottom: 3.5mm;
+  margin-bottom: 2.6mm;
 }
 
 .day-card {
-  padding: 3mm;
+  padding: 2.5mm;
   border-radius: 14px;
   border: 0.3mm solid var(--panel-border);
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
@@ -436,29 +436,29 @@ body {
 }
 
 .day-card__value {
-  margin-top: 1.2mm;
+  margin-top: 0.9mm;
   color: var(--text-strong);
-  font-size: 12.6pt;
+  font-size: 11.2pt;
   font-weight: 800;
 }
 
 .day-card__subvalue {
-  margin-top: 0.8mm;
+  margin-top: 0.6mm;
   color: var(--text-body);
-  font-size: 8.4pt;
+  font-size: 7.8pt;
   font-weight: 700;
 }
 
 .day-card__meta {
-  margin-top: 0.8mm;
+  margin-top: 0.5mm;
   color: var(--text-soft);
-  font-size: 8pt;
+  font-size: 7.6pt;
 }
 
 .day-card__stats {
   display: flex;
   flex-wrap: wrap;
-  margin-top: 1.8mm;
+  margin-top: 1.2mm;
 }
 
 .day-card__stat {
@@ -466,7 +466,7 @@ body {
   vertical-align: top;
   width: 50%;
   gap: 0.6mm;
-  margin-bottom: 1.8mm;
+  margin-bottom: 1.1mm;
 }
 
 .day-card__stat-label {
@@ -532,7 +532,6 @@ body {
   font-size: 8pt;
 }
 
-.chart-grid,
 .table-grid {
   display: block;
   font-size: 0;
@@ -540,7 +539,6 @@ body {
   margin-right: -2.2mm;
 }
 
-.chart-grid > .panel,
 .table-grid > .panel {
   display: inline-block;
   vertical-align: top;
@@ -549,18 +547,48 @@ body {
   margin-bottom: 4.2mm;
 }
 
-.chart-grid--1 > .panel,
 .table-grid--1 > .panel {
   width: 100%;
 }
 
-.chart-grid--2 > .panel,
 .table-grid--2 > .panel {
   width: 50%;
 }
 
-.chart-grid--3 > .panel,
 .table-grid--3 > .panel {
+  width: 33.333%;
+}
+
+.chart-table {
+  width: calc(100% + 4.4mm);
+  margin-left: -2.2mm;
+  margin-right: -2.2mm;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.chart-table__row {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.chart-table__cell {
+  vertical-align: top;
+  padding: 0 2.2mm 3.2mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.chart-table__cell--1 {
+  width: 100%;
+}
+
+.chart-table__cell--2 {
+  width: 50%;
+}
+
+.chart-table__cell--3 {
   width: 33.333%;
 }
 
@@ -573,7 +601,7 @@ body {
 }
 
 .panel--chart {
-  padding: 1.3mm;
+  padding: 1mm;
 }
 
 .panel-head {
