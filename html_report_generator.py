@@ -955,33 +955,23 @@ def _build_pie_chart_svg(
     labels: Sequence[object],
     values: Sequence[object],
     *,
-    width: int = 860,
-    height: int = 262,
+    width: int = 560,
+    height: int = 146,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
     if total <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
-    top_label, top_value, _ = max(described, key=lambda item: item[1])
-    top_share = (top_value / total) * 100 if total > 0 else 0.0
-    donut_panel_x = 18
-    donut_panel_y = 88
-    donut_panel_w = 330
-    donut_panel_h = 138
-    legend_panel_x = 360
-    legend_panel_y = 88
-    legend_panel_w = width - legend_panel_x - 18
-    legend_panel_h = 138
-    pie_cx = donut_panel_x + 122
-    pie_cy = donut_panel_y + 69
-    radius = 60
-    inner_radius = 28
-    legend_top = legend_panel_y + 36
-    legend_row_height = 24
-    ring_shadow = _chart_id(title, "donut-shadow")
-    panel_id = _chart_id(title, "donut-panel")
+    panel_id = _chart_id(title, "pie-panel")
+    pie_shadow = _chart_id(title, "pie-shadow")
     badge = _chart_badge(title)
+    pie_cx = 108
+    pie_cy = 96
+    radius = 43
+    legend_x = 202
+    legend_top = 74
+    legend_row_height = 13.4
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -990,70 +980,419 @@ def _build_pie_chart_svg(
         '<stop offset="0%" stop-color="#FFFFFF" />',
         '<stop offset="100%" stop-color="#F6FAFF" />',
         "</linearGradient>",
-        f'<filter id="{ring_shadow}" x="-20%" y="-20%" width="160%" height="160%">',
-        '<feDropShadow dx="0" dy="3" stdDeviation="3.6" flood-color="rgba(15,23,42,0.16)" />',
+        f'<filter id="{pie_shadow}" x="-20%" y="-20%" width="160%" height="160%">',
+        '<feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="#FFFFFF" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
-        f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.4" font-weight="800" fill="#C8102E" letter-spacing="0.06em">DONUT OVERVIEW MET ZONEVERDELING EN LEGENDA</text>',
-        f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
-        f'<rect x="{donut_panel_x}" y="{donut_panel_y}" width="{donut_panel_w}" height="{donut_panel_h}" rx="14" fill="url(#{panel_id})" stroke="#DCE6F2" />',
-        f'<rect x="{legend_panel_x}" y="{legend_panel_y}" width="{legend_panel_w}" height="{legend_panel_h}" rx="14" fill="#FFFFFF" stroke="#DCE6F2" />',
-        f'<line x1="{legend_panel_x - 10:.1f}" y1="{legend_panel_y + 16:.1f}" x2="{legend_panel_x - 10:.1f}" y2="{legend_panel_y + legend_panel_h - 16:.1f}" stroke="#DCE6F2" />',
-        f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{radius:.1f}" fill="none" stroke="#EEF3F9" stroke-width="{radius - inner_radius:.1f}" />',
+        f'<rect x="16" y="18" width="40" height="18" rx="3" fill="#C8102E" />',
+        f'<text x="36" y="31" text-anchor="middle" font-size="8.2" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
+        f'<text x="24" y="51" font-size="16.4" font-weight="800" fill="#0F172A">{escape(title)}</text>',
+        f'<text x="{width - 26}" y="31" text-anchor="end" font-size="7.6" font-weight="800" fill="#64748B" letter-spacing="0.08em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
+        f'<line x1="24" y1="58" x2="{width - 24}" y2="58" stroke="#E7EDF4" />',
+        f'<rect x="22" y="66" width="170" height="68" rx="15" fill="url(#{panel_id})" stroke="#DFE7F0" />',
+        f'<rect x="198" y="66" width="{width - 220}" height="68" rx="15" fill="#FFFFFF" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
 
-    if len(described) == 1:
-        _, _, color = described[0]
+    start_angle = -math.pi / 2
+    for label, value, color in described:
+        sweep = (value / total) * math.tau
+        end_angle = start_angle + sweep
+        x1 = pie_cx + radius * math.cos(start_angle)
+        y1 = pie_cy + radius * math.sin(start_angle)
+        x2 = pie_cx + radius * math.cos(end_angle)
+        y2 = pie_cy + radius * math.sin(end_angle)
+        large_arc = 1 if sweep > math.pi else 0
         parts.append(
-            f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{(radius + inner_radius) / 2:.1f}" fill="none" stroke="{color}" stroke-width="{radius - inner_radius:.1f}" stroke-linecap="round" filter="url(#{ring_shadow})" />'
+            f'<path d="M {pie_cx:.1f} {pie_cy:.1f} L {x1:.1f} {y1:.1f} A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {x2:.1f} {y2:.1f} Z" fill="{color}" stroke="#FFFFFF" stroke-width="1.8" filter="url(#{pie_shadow})" />'
         )
-    else:
-        start_angle = -math.pi / 2
-        for _, value, color in described:
-            sweep = (value / total) * math.tau
-            end_angle = start_angle + sweep
-            arc_radius = (radius + inner_radius) / 2
-            start_x = pie_cx + arc_radius * math.cos(start_angle)
-            start_y = pie_cy + arc_radius * math.sin(start_angle)
-            end_x = pie_cx + arc_radius * math.cos(end_angle)
-            end_y = pie_cy + arc_radius * math.sin(end_angle)
-            large_arc = 1 if sweep > math.pi else 0
-            parts.append(
-                f'<path d="M {start_x:.1f} {start_y:.1f} A {arc_radius:.1f} {arc_radius:.1f} 0 {large_arc} 1 {end_x:.1f} {end_y:.1f}" fill="none" stroke="{color}" stroke-width="{radius - inner_radius:.1f}" stroke-linecap="round" filter="url(#{ring_shadow})" />'
-            )
-            start_angle = end_angle
+        start_angle = end_angle
 
-    parts.append(f'<circle cx="{pie_cx:.1f}" cy="{pie_cy:.1f}" r="{inner_radius - 3:.1f}" fill="#FFFFFF" stroke="#E2E8F0" />')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy - 4:.1f}" text-anchor="middle" font-size="26" font-weight="800" fill="#0F172A">{escape(_fmt_dec(top_share, 0))}%</text>')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + 14:.1f}" text-anchor="middle" font-size="9.2" font-weight="700" fill="#64748B">{escape(top_label)}</text>')
-    parts.append(f'<rect x="{donut_panel_x + 34:.1f}" y="{donut_panel_y + donut_panel_h - 32:.1f}" width="{donut_panel_w - 68:.1f}" height="22" rx="8" fill="{_alpha_hex("#C8102E", 0.08)}" stroke="{_alpha_hex("#C8102E", 0.18)}" />')
-    parts.append(f'<text x="{pie_cx:.1f}" y="{donut_panel_y + donut_panel_h - 18:.1f}" text-anchor="middle" font-size="8.8" font-weight="800" fill="#334155">TOTAL {escape(_fmt_distance_km(total))}</text>')
-    parts.append(f'<text x="{legend_panel_x + 18:.1f}" y="{legend_panel_y + 22:.1f}" font-size="9.0" font-weight="800" fill="#64748B">LEGENDA</text>')
-    parts.append(f'<rect x="{legend_panel_x + legend_panel_w - 124:.1f}" y="{legend_panel_y + 12:.1f}" width="106" height="22" rx="8" fill="{_alpha_hex("#0F766E", 0.08)}" stroke="{_alpha_hex("#0F766E", 0.18)}" />')
-    parts.append(f'<text x="{legend_panel_x + legend_panel_w - 114:.1f}" y="{legend_panel_y + 26:.1f}" font-size="8.6" font-weight="800" fill="#0F766E">TOP {escape(_fmt_dec(top_share, 1))}%</text>')
-
+    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + radius + 18:.1f}" text-anchor="middle" font-size="8.0" font-weight="800" fill="#64748B" letter-spacing="0.08em">VERDELING</text>')
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
         row_y = legend_top + index * legend_row_height
-        row_box_y = row_y - 14
-        progress_x = legend_panel_x + 42
-        progress_w = 110
+        parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 7:.1f}" width="10" height="10" rx="2" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 16:.1f}" y="{row_y:.1f}" font-size="8.4" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<text x="{width - 24:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="8.4" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}%</text>')
+        parts.append(f'<text x="{width - 24:.1f}" y="{row_y + 9:.1f}" text-anchor="end" font-size="7.1" fill="#64748B">{escape(_fmt_distance_km(value))}</text>')
+
+    _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _event_fill_color(event_group: object, session_code: object) -> str:
+    group = str(event_group or "Training").strip().lower()
+    code = str(session_code or "").strip().upper()
+    index = 1
+    if code[-1:].isdigit():
+        index = int(code[-1])
+    if group == "match":
+        palette = ["#6E1222", "#9F2440", "#C8102E"]
+    else:
+        palette = ["#C8102E", "#EA3351", "#F59E0B"]
+    return palette[(index - 1) % len(palette)]
+
+
+def _build_session_metric_chart_svg(
+    title: str,
+    session_df: pd.DataFrame,
+    value_column: str,
+    *,
+    width: int = 860,
+    height: int = 248,
+    y_max: float | None = None,
+    formatter: Callable[[object], str] = _fmt_int,
+    footer_text: str = "Training en wedstrijd worden per dag gegroepeerd getoond.",
+) -> str:
+    if not isinstance(session_df, pd.DataFrame) or session_df.empty or value_column not in session_df.columns:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    events = session_df.copy()
+    events[value_column] = pd.to_numeric(events[value_column], errors="coerce").fillna(0.0)
+    events = events[events[value_column].gt(0)].copy()
+    if events.empty:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    day_groups = list(events.groupby("day_label", sort=False))
+    if not day_groups:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    clean_values = events[value_column].tolist()
+    chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
+    margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    cluster_width = plot_width / max(1, len(day_groups))
+    grid_lines = 4
+    label_font = 8.6 if len(day_groups) > 5 else 9.3
+    avg_value = sum(clean_values) / max(1, len(clean_values))
+    peak_value = max(clean_values)
+    panel_id = _chart_id(title, "session-panel")
+    plot_id = _chart_id(title, "session-plot")
+    shadow_id = _chart_id(title, "session-shadow")
+    badge = _chart_badge(title)
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F7FAFD" />',
+        "</linearGradient>",
+        f'<linearGradient id="{plot_id}" x1="0" y1="0" x2="0" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F6F8FC" />',
+        "</linearGradient>",
+        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
+        '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
+        "</filter>",
+        "</defs>",
+        f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
+        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
+        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
+        f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
+        f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
+    ]
+    _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
+    _append_stat_chip(parts, x=width - 314, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
+    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+    _append_stat_chip(parts, x=width - 126, y=18, label="EVENTS", value=_fmt_int(len(events)), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
+
+    legend_items = [("Training", "#C8102E"), ("Match", "#6E1222")]
+    legend_x = 24
+    for label, color in legend_items:
+        pill_w = 74
+        parts.append(f'<rect x="{legend_x:.1f}" y="84" width="{pill_w}" height="18" rx="9" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.24)}" />')
+        parts.append(f'<circle cx="{legend_x + 10:.1f}" cy="93" r="3.8" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 18:.1f}" y="96" font-size="8.0" font-weight="800" fill="#475569">{escape(label)}</text>')
+        legend_x += pill_w + 8
+    parts.append(f'<text x="{legend_x + 6:.1f}" y="96" font-size="7.4" font-weight="700" fill="#64748B">T/M tonen de events binnen dezelfde dag</text>')
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
+        parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
+
+    for cluster_index, (day_label, rows) in enumerate(day_groups):
+        rows = rows.reset_index(drop=True)
+        cluster_x = margin_left + cluster_width * cluster_index
+        if cluster_index % 2 == 0:
+            parts.append(
+                f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />'
+            )
+        count = len(rows.index)
+        gap = 8
+        usable_width = cluster_width * 0.74
+        bar_width = min(34, max(18, (usable_width - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * bar_width + gap * max(0, count - 1)
+        start_x = cluster_x + (cluster_width - total_width) / 2
+        for row_index, (_, row) in enumerate(rows.iterrows()):
+            value = float(row.get(value_column) or 0.0)
+            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            bar_x = start_x + row_index * (bar_width + gap)
+            bar_y = margin_top + plot_height - bar_height
+            bar_center = bar_x + bar_width / 2
+            color = _event_fill_color(row.get("event_group"), row.get("session_code"))
+            parts.append(
+                f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="7" fill="{color}" filter="url(#{shadow_id})" />'
+            )
+            parts.append(
+                f'<text x="{bar_center:.1f}" y="{max(bar_y - 8, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>'
+            )
+            parts.append(
+                f'<rect x="{bar_center - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />'
+            )
+            parts.append(
+                f'<text x="{bar_center:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>'
+            )
         parts.append(
-            f'<rect x="{legend_panel_x + 14:.1f}" y="{row_box_y:.1f}" width="{legend_panel_w - 28:.1f}" height="22" rx="11" fill="{_alpha_hex(color, 0.06)}" />'
+            f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="{label_font}" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>'
         )
-        parts.append(f'<circle cx="{legend_panel_x + 28:.1f}" cy="{row_y - 4:.1f}" r="5.5" fill="{color}" />')
-        parts.append(f'<text x="{legend_panel_x + 42:.1f}" y="{row_y - 1:.1f}" font-size="10.4" font-weight="700" fill="#334155">{escape(label)}</text>')
-        parts.append(f'<rect x="{progress_x:.1f}" y="{row_y + 4.5:.1f}" width="{progress_w:.1f}" height="4.2" rx="2.1" fill="#E5EDF7" />')
-        parts.append(f'<rect x="{progress_x:.1f}" y="{row_y + 4.5:.1f}" width="{progress_w * (percentage / 100):.1f}" height="4.2" rx="2.1" fill="{color}" />')
-        parts.append(
-            f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y - 1:.1f}" text-anchor="end" font-size="11.2" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}%</text>'
-        )
-        parts.append(f'<text x="{legend_panel_x + legend_panel_w - 18:.1f}" y="{row_y + 10:.1f}" text-anchor="end" font-size="8.8" fill="#64748B">{escape(_fmt_distance_km(value))}</text>')
+
+    _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_session_metric_error_chart_svg(
+    title: str,
+    session_stats: pd.DataFrame,
+    mean_column: str,
+    error_column: str,
+    *,
+    width: int = 860,
+    height: int = 248,
+    y_max: float | None = None,
+    formatter: Callable[[object], str] = _fmt_int,
+    footer_text: str = "Gemiddelde per speler met standaarddeviatie per sessie-event.",
+) -> str:
+    if (
+        not isinstance(session_stats, pd.DataFrame)
+        or session_stats.empty
+        or mean_column not in session_stats.columns
+        or error_column not in session_stats.columns
+    ):
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    events = session_stats.copy()
+    events[mean_column] = pd.to_numeric(events[mean_column], errors="coerce").fillna(0.0)
+    events[error_column] = pd.to_numeric(events[error_column], errors="coerce").fillna(0.0)
+    events = events[events[mean_column].gt(0)].copy()
+    if events.empty:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    maxima = (events[mean_column] + events[error_column]).tolist()
+    chart_max = y_max if y_max is not None else _nice_max(max(maxima))
+    margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    day_groups = list(events.groupby("day_label", sort=False))
+    cluster_width = plot_width / max(1, len(day_groups))
+    grid_lines = 4
+    avg_value = float(events[mean_column].mean())
+    avg_sd = float(events[error_column].mean())
+    panel_id = _chart_id(title, "session-sd-panel")
+    plot_id = _chart_id(title, "session-sd-plot")
+    shadow_id = _chart_id(title, "session-sd-shadow")
+    badge = _chart_badge(title)
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F7FAFD" />',
+        "</linearGradient>",
+        f'<linearGradient id="{plot_id}" x1="0" y1="0" x2="0" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F6F8FC" />',
+        "</linearGradient>",
+        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
+        '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
+        "</filter>",
+        "</defs>",
+        f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
+        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
+        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
+        f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
+        f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
+    ]
+    _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
+    _append_stat_chip(parts, x=width - 314, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
+    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK", value=formatter(events[mean_column].max()), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+    _append_stat_chip(parts, x=width - 126, y=18, label="AVG SD", value=formatter(avg_sd), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
+
+    legend_x = 24
+    for label, color in [("Training", "#C8102E"), ("Match", "#6E1222")]:
+        parts.append(f'<rect x="{legend_x:.1f}" y="84" width="74" height="18" rx="9" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.24)}" />')
+        parts.append(f'<circle cx="{legend_x + 10:.1f}" cy="93" r="3.8" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 18:.1f}" y="96" font-size="8.0" font-weight="800" fill="#475569">{escape(label)}</text>')
+        legend_x += 82
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
+        parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
+
+    for cluster_index, (day_label, rows) in enumerate(day_groups):
+        rows = rows.reset_index(drop=True)
+        cluster_x = margin_left + cluster_width * cluster_index
+        if cluster_index % 2 == 0:
+            parts.append(
+                f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />'
+            )
+        count = len(rows.index)
+        gap = 8
+        usable_width = cluster_width * 0.74
+        bar_width = min(34, max(18, (usable_width - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * bar_width + gap * max(0, count - 1)
+        start_x = cluster_x + (cluster_width - total_width) / 2
+        for row_index, (_, row) in enumerate(rows.iterrows()):
+            value = float(row.get(mean_column) or 0.0)
+            error = float(row.get(error_column) or 0.0)
+            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            bar_x = start_x + row_index * (bar_width + gap)
+            bar_y = margin_top + plot_height - bar_height
+            bar_center = bar_x + bar_width / 2
+            color = _event_fill_color(row.get("event_group"), row.get("session_code"))
+            upper_y = margin_top + plot_height - (min(chart_max, value + error) / chart_max) * plot_height
+            lower_y = margin_top + plot_height - (max(0.0, value - error) / chart_max) * plot_height
+            parts.append(f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="7" fill="{color}" filter="url(#{shadow_id})" />')
+            parts.append(f'<line x1="{bar_center:.1f}" y1="{upper_y:.1f}" x2="{bar_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
+            parts.append(f'<line x1="{bar_center - 5:.1f}" y1="{upper_y:.1f}" x2="{bar_center + 5:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
+            parts.append(f'<line x1="{bar_center - 5:.1f}" y1="{lower_y:.1f}" x2="{bar_center + 5:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
+            parts.append(f'<text x="{bar_center:.1f}" y="{max(bar_y - 8, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>')
+            parts.append(f'<rect x="{bar_center - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />')
+            parts.append(f'<text x="{bar_center:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
+        parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
+
+    _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _build_session_dual_metric_error_chart_svg(
+    title: str,
+    session_stats: pd.DataFrame,
+    left_spec: dict[str, Any],
+    right_spec: dict[str, Any],
+    *,
+    width: int = 860,
+    height: int = 248,
+    y_max: float | None = None,
+    footer_text: str = "Twee outputmaten per sessie-event met standaarddeviatie per speler.",
+) -> str:
+    if not isinstance(session_stats, pd.DataFrame) or session_stats.empty:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    events = session_stats.copy()
+    specs = [left_spec, right_spec]
+    for spec in specs:
+        events[spec["mean"]] = pd.to_numeric(events[spec["mean"]], errors="coerce").fillna(0.0)
+        events[spec["std"]] = pd.to_numeric(events[spec["std"]], errors="coerce").fillna(0.0)
+    if events[[left_spec["mean"], right_spec["mean"]]].max().max() <= 0:
+        return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
+
+    maxima: list[float] = []
+    for spec in specs:
+        maxima.extend((events[spec["mean"]] + events[spec["std"]]).tolist())
+    chart_max = y_max if y_max is not None else _nice_max(max(maxima))
+    margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
+    plot_width = width - margin_left - margin_right
+    plot_height = height - margin_top - margin_bottom
+    day_groups = list(events.groupby("day_label", sort=False))
+    cluster_width = plot_width / max(1, len(day_groups))
+    grid_lines = 4
+    panel_id = _chart_id(title, "dual-panel")
+    plot_id = _chart_id(title, "dual-plot")
+    shadow_id = _chart_id(title, "dual-shadow")
+    badge = _chart_badge(title)
+
+    parts: list[str] = [
+        f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
+        "<defs>",
+        f'<linearGradient id="{panel_id}" x1="0" y1="0" x2="1" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F7FAFD" />',
+        "</linearGradient>",
+        f'<linearGradient id="{plot_id}" x1="0" y1="0" x2="0" y2="1">',
+        '<stop offset="0%" stop-color="#FFFFFF" />',
+        '<stop offset="100%" stop-color="#F6F8FC" />',
+        "</linearGradient>",
+        f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
+        '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
+        "</filter>",
+        "</defs>",
+        f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
+        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
+        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
+        f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
+        f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
+    ]
+    _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
+
+    legend_x = 24
+    for spec in specs:
+        color = str(spec["color"])
+        label = str(spec["label"])
+        pill_w = max(86, len(label) * 7 + 22)
+        parts.append(f'<rect x="{legend_x:.1f}" y="84" width="{pill_w:.1f}" height="18" rx="9" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.24)}" />')
+        parts.append(f'<circle cx="{legend_x + 10:.1f}" cy="93" r="3.8" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 18:.1f}" y="96" font-size="8.0" font-weight="800" fill="#475569">{escape(label)}</text>')
+        legend_x += pill_w + 8
+
+    for step in range(grid_lines + 1):
+        ratio = step / grid_lines
+        y = margin_top + plot_height - ratio * plot_height
+        axis_value = chart_max * ratio
+        parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
+        parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
+
+    for cluster_index, (day_label, rows) in enumerate(day_groups):
+        rows = rows.reset_index(drop=True)
+        cluster_x = margin_left + cluster_width * cluster_index
+        if cluster_index % 2 == 0:
+            parts.append(f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />')
+        count = len(rows.index)
+        gap = 10
+        event_width = min(56, max(28, (cluster_width * 0.74 - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * event_width + gap * max(0, count - 1)
+        start_x = cluster_x + (cluster_width - total_width) / 2
+        bar_gap = 4
+        inner_bar_width = max(10, (event_width - bar_gap) / 2)
+        for row_index, (_, row) in enumerate(rows.iterrows()):
+            event_x = start_x + row_index * (event_width + gap)
+            event_color = _event_fill_color(row.get("event_group"), row.get("session_code"))
+            for spec_index, spec in enumerate(specs):
+                mean_value = float(row.get(spec["mean"]) or 0.0)
+                error_value = float(row.get(spec["std"]) or 0.0)
+                bar_height = 0 if chart_max <= 0 else (mean_value / chart_max) * plot_height
+                bar_x = event_x + spec_index * (inner_bar_width + bar_gap)
+                bar_y = margin_top + plot_height - bar_height
+                bar_center = bar_x + inner_bar_width / 2
+                color = str(spec["color"])
+                upper_y = margin_top + plot_height - (min(chart_max, mean_value + error_value) / chart_max) * plot_height
+                lower_y = margin_top + plot_height - (max(0.0, mean_value - error_value) / chart_max) * plot_height
+                parts.append(f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{inner_bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="{color}" filter="url(#{shadow_id})" />')
+                parts.append(f'<line x1="{bar_center:.1f}" y1="{upper_y:.1f}" x2="{bar_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+                parts.append(f'<line x1="{bar_center - 4:.1f}" y1="{upper_y:.1f}" x2="{bar_center + 4:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+                parts.append(f'<line x1="{bar_center - 4:.1f}" y1="{lower_y:.1f}" x2="{bar_center + 4:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+            parts.append(f'<rect x="{event_x + event_width / 2 - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(event_color, 0.12)}" stroke="{_alpha_hex(event_color, 0.26)}" />')
+            parts.append(f'<text x="{event_x + event_width / 2:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{event_color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
+        parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
@@ -1203,7 +1542,8 @@ def _build_zone_share_panels(zone_df: pd.DataFrame | None, zone_day_table: pd.Da
         )
 
     if not zone_days.empty:
-        for _, row in zone_days.sort_values("datum").iterrows():
+        zone_days = zone_days.sort_values("datum").reset_index(drop=True)
+        for _, row in zone_days.iterrows():
             labels: list[str] = []
             values: list[float] = []
             for label, column, _ in ZONE_SPECS:
@@ -1214,8 +1554,6 @@ def _build_zone_share_panels(zone_df: pd.DataFrame | None, zone_day_table: pd.Da
             if not values:
                 continue
             panel_title = _fmt_text(row.get("label"))
-            if panel_title == "--":
-                panel_title = _weekday_label(row.get("datum"))
             panels.append({"svg": _build_pie_chart_svg(panel_title, labels, values)})
 
     if panels:
@@ -1259,13 +1597,16 @@ def build_week_report_html_pdf_bytes(
     summary: dict[str, object],
     monitoring_summary: dict[str, object],
     day_table: pd.DataFrame,
+    session_table: pd.DataFrame | None = None,
     type_table: pd.DataFrame,
     player_table: pd.DataFrame,
     monitoring_day_table: pd.DataFrame,
     notes: Iterable[str],
     day_stats: pd.DataFrame | None = None,
+    session_stats: pd.DataFrame | None = None,
     zone_df: pd.DataFrame | None = None,
     zone_day_table: pd.DataFrame | None = None,
+    zone_session_table: pd.DataFrame | None = None,
     rpe_session_day_table: pd.DataFrame | None = None,
     monitoring_player_table: pd.DataFrame | None = None,
     report_revision: str | None = None,
@@ -1295,12 +1636,21 @@ def build_week_report_html_pdf_bytes(
         monitoring_timeline["readiness_score"] = pd.NA
     rpe_session_timeline = rpe_session_day_table.copy() if isinstance(rpe_session_day_table, pd.DataFrame) else pd.DataFrame()
     if not rpe_session_timeline.empty:
+        rpe_session_timeline["day_label"] = rpe_session_timeline.get("label", pd.Series(dtype=str)).fillna("").astype(str)
+        rpe_session_timeline["session_code"] = rpe_session_timeline.get("session_index", pd.Series(dtype=int)).apply(lambda value: f"R{int(value)}")
+        rpe_session_timeline["event_group"] = "Training"
+        rpe_session_timeline["events_in_day"] = rpe_session_timeline.groupby("day_label")["day_label"].transform("size")
+        rpe_session_timeline["session_code_display"] = rpe_session_timeline.apply(
+            lambda row: f"R{int(row.get('session_index', 1) or 1)}" if int(row.get("events_in_day", 1) or 1) > 1 else "R",
+            axis=1,
+        )
         rpe_session_timeline["axis_label"] = rpe_session_timeline.apply(
             lambda row: f"{_fmt_text(row.get('label'))} S{_fmt_int(row.get('session_index'))}",
             axis=1,
         )
     squad_spread = day_stats.copy() if isinstance(day_stats, pd.DataFrame) else pd.DataFrame()
-    zone_day_distribution = zone_day_table.copy() if isinstance(zone_day_table, pd.DataFrame) else pd.DataFrame()
+    session_flow = session_table.copy() if isinstance(session_table, pd.DataFrame) else pd.DataFrame()
+    session_spread = session_stats.copy() if isinstance(session_stats, pd.DataFrame) else pd.DataFrame()
     monitoring_watchlist = monitoring_player_table.copy() if isinstance(monitoring_player_table, pd.DataFrame) else pd.DataFrame()
     if not monitoring_watchlist.empty:
         monitoring_watchlist = monitoring_watchlist.sort_values(
@@ -1337,7 +1687,7 @@ def build_week_report_html_pdf_bytes(
             {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": "Teamload gedeeld door actieve spelers"},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totale sprintacties in deze week"},
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
-            {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Sessies op 90% van seizoenstop"},
+            {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Spelersessies >= 90% van individuele seizoensmax"},
         ],
         "focus_cards": [],
         "day_cards": _build_week_day_cards(day_table),
@@ -1351,21 +1701,21 @@ def build_week_report_html_pdf_bytes(
                 "columns": 2,
                 "panels": [
                     {
-                        "svg": _build_vertical_bar_chart_svg(
+                        "svg": _build_session_metric_chart_svg(
                             "Daily Team Distance",
-                            day_table.get("label", pd.Series(dtype=str)).tolist(),
-                            day_table.get("total_distance", pd.Series(dtype=float)).tolist(),
-                            color="#6E1222",
+                            session_flow,
+                            "total_distance",
                             formatter=_fmt_distance,
+                            footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
                         )
                     },
                     {
-                        "svg": _build_vertical_bar_chart_svg(
+                        "svg": _build_session_metric_chart_svg(
                             "Daily Team HSR / HSD",
-                            day_table.get("label", pd.Series(dtype=str)).tolist(),
-                            day_table.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
-                            color="#EA3351",
+                            session_flow,
+                            "hsr_hsd",
                             formatter=_fmt_distance,
+                            footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
                         )
                     },
                 ],
@@ -1377,23 +1727,23 @@ def build_week_report_html_pdf_bytes(
                 "columns": 2,
                 "panels": [
                     {
-                        "svg": _build_error_bar_chart_svg(
+                        "svg": _build_session_metric_error_chart_svg(
                             "Player Avg Total Distance +/- SD",
-                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
-                            squad_spread.get("total_distance_mean", pd.Series(dtype=float)).tolist(),
-                            squad_spread.get("total_distance_std", pd.Series(dtype=float)).tolist(),
-                            color="#6E1222",
+                            session_spread,
+                            "total_distance_mean",
+                            "total_distance_std",
                             formatter=_fmt_distance,
+                            footer_text="Per sessie-event: gemiddelde afstand per speler met standaarddeviatie.",
                         )
                     },
                     {
-                        "svg": _build_error_bar_chart_svg(
+                        "svg": _build_session_metric_error_chart_svg(
                             "Player Avg HSR / HSD +/- SD",
-                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
-                            squad_spread.get("hsr_hsd_mean", pd.Series(dtype=float)).tolist(),
-                            squad_spread.get("hsr_hsd_std", pd.Series(dtype=float)).tolist(),
-                            color="#EA3351",
+                            session_spread,
+                            "hsr_hsd_mean",
+                            "hsr_hsd_std",
                             formatter=_fmt_distance,
+                            footer_text="Per sessie-event: gemiddelde HSR/HSD per speler met standaarddeviatie.",
                         )
                     },
                 ],
@@ -1405,33 +1755,22 @@ def build_week_report_html_pdf_bytes(
                 "columns": 2,
                 "panels": [
                     {
-                        "svg": _build_grouped_error_bar_chart_svg(
+                        "svg": _build_session_dual_metric_error_chart_svg(
                             "Player Avg Accel / Decel +/- SD",
-                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
-                            [
-                                {
-                                    "label": "Accelerations",
-                                    "color": "#6E1222",
-                                    "values": squad_spread.get("total_accelerations_mean", pd.Series(dtype=float)).tolist(),
-                                    "errors": squad_spread.get("total_accelerations_std", pd.Series(dtype=float)).tolist(),
-                                },
-                                {
-                                    "label": "Decelerations",
-                                    "color": "#EA3351",
-                                    "values": squad_spread.get("total_decelerations_mean", pd.Series(dtype=float)).tolist(),
-                                    "errors": squad_spread.get("total_decelerations_std", pd.Series(dtype=float)).tolist(),
-                                },
-                            ],
+                            session_spread,
+                            {"label": "Accelerations", "color": "#6E1222", "mean": "total_accelerations_mean", "std": "total_accelerations_std"},
+                            {"label": "Decelerations", "color": "#EA3351", "mean": "total_decelerations_mean", "std": "total_decelerations_std"},
+                            footer_text="Explosieve output per sessie-event, inclusief spreiding per speler.",
                         )
                     },
                     {
-                        "svg": _build_error_bar_chart_svg(
+                        "svg": _build_session_metric_error_chart_svg(
                             "Player Avg Sprints +/- SD",
-                            squad_spread.get("label", pd.Series(dtype=str)).tolist(),
-                            squad_spread.get("sprints_mean", pd.Series(dtype=float)).tolist(),
-                            squad_spread.get("sprints_std", pd.Series(dtype=float)).tolist(),
-                            color="#C8102E",
+                            session_spread,
+                            "sprints_mean",
+                            "sprints_std",
                             formatter=lambda value: _fmt_dec(value, 1),
+                            footer_text="Sprintgemiddelden per speler, los getoond voor elke training of wedstrijd op dezelfde dag.",
                         )
                     },
                 ],
@@ -1439,16 +1778,16 @@ def build_week_report_html_pdf_bytes(
             {
                 "eyebrow": "Speed profile",
                 "title": "Daily speed exposures",
-                "subtitle": "Sessies per dag op of boven 90% van de individuele seizoensmax.",
+                "subtitle": "Aantal spelersessies per event op of boven 90% van de individuele seizoensmax.",
                 "columns": 1,
                 "panels": [
                     {
-                        "svg": _build_vertical_bar_chart_svg(
+                        "svg": _build_session_metric_chart_svg(
                             "Daily Speed Exposures",
-                            day_table.get("label", pd.Series(dtype=str)).tolist(),
-                            day_table.get("speed_exposures", pd.Series(dtype=float)).tolist(),
-                            color="#C8102E",
+                            session_flow,
+                            "speed_exposures",
                             formatter=_fmt_int,
+                            footer_text="Speed exposure wordt per training of wedstrijd getoond, niet meer verstopt in een dagtotaal.",
                         )
                     },
                 ],
@@ -1456,9 +1795,10 @@ def build_week_report_html_pdf_bytes(
             {
                 "eyebrow": "Locomotion zones",
                 "title": "Distance zone share",
-                "subtitle": "Verdeling van walking, jogging, running, sprint en high sprint voor de hele week en per actieve dag.",
-                "columns": 2,
-                "panels": _build_zone_share_panels(zone_df, zone_day_distribution),
+                "subtitle": "Normale cirkeldiagrammen voor de hele week en voor elke actieve dag binnen dezelfde week.",
+                "columns": 3,
+                "page_break": True,
+                "panels": _build_zone_share_panels(zone_df, zone_day_table),
             },
             {
                 "eyebrow": "Monitoring",
@@ -1554,17 +1894,17 @@ def build_week_report_html_pdf_bytes(
             {
                 "eyebrow": "Leaders",
                 "title": "Session RPE overview",
-                "subtitle": "Sessie-RPE overzicht voor dagen met enkele of dubbele sessies.",
+                "subtitle": "Sessie-RPE per dag, met aparte balken wanneer twee sessies op dezelfde dag plaatsvinden.",
                 "columns": 1,
                 "panels": [
                     {
-                        "svg": _build_error_bar_chart_svg(
+                        "svg": _build_session_metric_error_chart_svg(
                             "Session RPE +/- SD",
-                            rpe_session_timeline.get("axis_label", pd.Series(dtype=str)).tolist(),
-                            rpe_session_timeline.get("avg_rpe", pd.Series(dtype=float)).tolist(),
-                            rpe_session_timeline.get("avg_rpe_std", pd.Series(dtype=float)).tolist(),
-                            color="#EA3351",
+                            rpe_session_timeline,
+                            "avg_rpe",
+                            "avg_rpe_std",
                             formatter=lambda value: _fmt_dec(value, 1),
+                            footer_text="RPE per sessie binnen de dag gegroepeerd, zodat dubbele trainingsmomenten naast elkaar zichtbaar blijven.",
                             y_max=10,
                         )
                     },
@@ -1578,13 +1918,13 @@ def build_week_report_html_pdf_bytes(
                 "subtitle": "Dagritme en sessieverdeling voor de volledige teamweek.",
                 "tables": [
                     _table_payload(
-                        "Week at a glance",
-                        "Dagoverzicht met spelers, sessies en externe load.",
-                        day_table,
+                        "Session flow",
+                        "Per event binnen de dag: training(en) en wedstrijd(en) naast elkaar.",
+                        session_flow,
                         [
-                            ("label", "Dag", None),
-                            ("active_players", "Players", _fmt_int),
-                            ("player_sessions", "Sessions", _fmt_int),
+                            ("day_label", "Dag", None),
+                            ("session_code_display", "Event", None),
+                            ("session_display", "Type", None),
                             ("total_distance", "TD", _fmt_distance),
                             ("distance_per_player", "Dist / Player", _fmt_distance),
                             ("hsr_hsd", "HSR / HSD", _fmt_distance),
@@ -1592,7 +1932,7 @@ def build_week_report_html_pdf_bytes(
                             ("speed_exposures", "Exposures", _fmt_int),
                             ("max_speed", "Top Speed", _fmt_speed),
                         ],
-                        empty_message="Geen weekoverzicht beschikbaar.",
+                        empty_message="Geen sessie-overzicht beschikbaar.",
                     ),
                     _table_payload(
                         "Training vs Match",
@@ -1613,8 +1953,8 @@ def build_week_report_html_pdf_bytes(
             },
             {
                 "eyebrow": "Squad output",
-                "title": "Leaders and spread",
-                "subtitle": "Volumeleiders en spreiding per dag als basis voor staffbespreking.",
+                "title": "Top players",
+                "subtitle": "Volumeleiders voor de staffbespreking van deze microcycle.",
                 "tables": [
                     _table_payload(
                         "Top Players",
@@ -1630,23 +1970,6 @@ def build_week_report_html_pdf_bytes(
                             ("max_speed", "Top Speed", _fmt_speed),
                         ],
                         empty_message="Geen spelerssamenvatting beschikbaar.",
-                    ),
-                    _table_payload(
-                        "Squad Spread by Day",
-                        "Gemiddelde en spreiding per speler op dagniveau.",
-                        squad_spread,
-                        [
-                            ("label", "Dag", None),
-                            ("player_count", "Players", _fmt_int),
-                            ("total_distance_mean", "TD mean", _fmt_distance),
-                            ("total_distance_std", "TD SD", _fmt_distance),
-                            ("hsr_hsd_mean", "HSR mean", _fmt_distance),
-                            ("hsr_hsd_std", "HSR SD", _fmt_distance),
-                            ("sprints_mean", "Sprint mean", lambda value: _fmt_dec(value, 1)),
-                            ("sprints_std", "Sprint SD", lambda value: _fmt_dec(value, 1)),
-                            ("distance_per_min_mean", "m/min", lambda value: _fmt_dec(value, 1)),
-                        ],
-                        empty_message="Geen squad-spread beschikbaar.",
                     ),
                 ],
             },
@@ -1670,24 +1993,6 @@ def build_week_report_html_pdf_bytes(
                             ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
                         ],
                         empty_message="Geen monitoringdata beschikbaar.",
-                    ),
-                    _table_payload(
-                        "Monitoring Watchlist",
-                        "Spelers met de laagste readiness en hoogste interne load binnen de week.",
-                        monitoring_watchlist,
-                        [
-                            ("player_name", "Speler", None),
-                            ("wellness_days", "Wellness Days", _fmt_int),
-                            ("rpe_days", "RPE Days", _fmt_int),
-                            ("muscle_soreness", "Muscle", lambda value: _fmt_dec(value, 1)),
-                            ("fatigue", "Fatigue", lambda value: _fmt_dec(value, 1)),
-                            ("sleep_quality", "Sleep", lambda value: _fmt_dec(value, 1)),
-                            ("stress", "Stress", lambda value: _fmt_dec(value, 1)),
-                            ("mood", "Mood", lambda value: _fmt_dec(value, 1)),
-                            ("readiness_score", "Readiness", lambda value: _fmt_dec(value, 1)),
-                            ("avg_rpe", "Avg RPE", lambda value: _fmt_dec(value, 1)),
-                        ],
-                        empty_message="Geen monitoringwatchlist beschikbaar.",
                     ),
                 ],
             },
