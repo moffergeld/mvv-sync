@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+import re
 from typing import Callable
 
 import pandas as pd
@@ -41,7 +42,7 @@ MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
-WEEK_REPORT_HTML_REVISION = "REV-20260727H"
+WEEK_REPORT_HTML_REVISION = "REV-20260728A"
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -438,6 +439,45 @@ def _session_category(type_value: object) -> str:
     return "Training"
 
 
+SESSION_INDEX_PATTERN = re.compile(r"\((\d+)\)")
+
+
+def _session_display(type_value: object) -> str:
+    value = str(type_value or "").strip()
+    return value or "Onbekende sessie"
+
+
+def _session_index(type_value: object) -> int:
+    value = _session_display(type_value)
+    match = SESSION_INDEX_PATTERN.search(value)
+    if match:
+        return int(match.group(1))
+    return 1
+
+
+def _session_sort_value(type_value: object) -> tuple[int, int, str]:
+    label = _session_display(type_value)
+    category_rank = 1 if _session_category(label) == "Match" else 0
+    return (category_rank, _session_index(label), label.lower())
+
+
+def _session_short_code(type_value: object) -> str:
+    label = _session_display(type_value)
+    category = _session_category(label)
+    index = _session_index(label)
+    if category == "Match":
+        return f"M{index}"
+    return f"T{index}"
+
+
+def _weekday_label(value: object) -> str:
+    ts = pd.to_datetime(value, errors="coerce")
+    if pd.isna(ts):
+        return "--"
+    weekdays = ["Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo"]
+    return f"{weekdays[int(ts.weekday())]} {ts:%d/%m}"
+
+
 def _format_int(value: object) -> str:
     if pd.isna(value):
         return "--"
@@ -599,6 +639,42 @@ def build_week_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
+def build_week_session_table(week_df: pd.DataFrame) -> pd.DataFrame:
+    if week_df.empty:
+        return pd.DataFrame()
+    grouped = (
+        week_df.groupby(["datum", "type", "session_category"], dropna=False)
+        .agg(
+            active_players=("player_name", "nunique"),
+            player_sessions=("datum", "size"),
+            total_distance=("total_distance", "sum"),
+            hsr_hsd=("hsr_hsd", "sum"),
+            sprints=("number_of_sprints", "sum"),
+            speed_exposures=("speed_exposure_flag", "sum"),
+            total_accelerations=("total_accelerations", "sum"),
+            total_decelerations=("total_decelerations", "sum"),
+            max_speed=("max_speed", "max"),
+            duration=("duration", "sum"),
+        )
+        .reset_index()
+    )
+    grouped["session_display"] = grouped["type"].apply(_session_display)
+    grouped["session_sort"] = grouped["type"].apply(_session_sort_value)
+    grouped = grouped.sort_values(["datum", "session_sort", "session_display"]).reset_index(drop=True)
+    grouped["event_index"] = grouped.groupby("datum").cumcount() + 1
+    grouped["label"] = grouped["datum"].dt.strftime("%d/%m")
+    grouped["day_label"] = grouped["datum"].apply(_weekday_label)
+    grouped["session_code"] = grouped["type"].apply(_session_short_code)
+    grouped["event_group"] = grouped["session_category"].fillna("Training").astype(str)
+    grouped["events_in_day"] = grouped.groupby("datum")["datum"].transform("size")
+    grouped["session_code_display"] = grouped.apply(
+        lambda row: row["session_code"] if int(row.get("events_in_day", 1) or 1) > 1 else ("M" if row["event_group"] == "Match" else "T"),
+        axis=1,
+    )
+    grouped["distance_per_player"] = _safe_divide(grouped["total_distance"], grouped["active_players"])
+    return grouped
+
+
 def build_week_zone_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
     if week_df.empty:
         return pd.DataFrame()
@@ -618,6 +694,35 @@ def build_week_zone_day_table(week_df: pd.DataFrame) -> pd.DataFrame:
     )
     grouped["label"] = grouped["datum"].apply(
         lambda value: f"{weekdays[int(value.weekday())]} {value:%d/%m}" if pd.notna(value) else "--"
+    )
+    return grouped
+
+
+def build_week_zone_session_table(week_df: pd.DataFrame) -> pd.DataFrame:
+    if week_df.empty:
+        return pd.DataFrame()
+    grouped = (
+        week_df.groupby(["datum", "type", "session_category"], dropna=False)
+        .agg(
+            walking=("walking", "sum"),
+            jogging=("jogging", "sum"),
+            running=("running", "sum"),
+            sprint=("sprint", "sum"),
+            high_sprint=("high_sprint", "sum"),
+        )
+        .reset_index()
+    )
+    grouped["session_display"] = grouped["type"].apply(_session_display)
+    grouped["session_sort"] = grouped["type"].apply(_session_sort_value)
+    grouped = grouped.sort_values(["datum", "session_sort", "session_display"]).reset_index(drop=True)
+    grouped["event_index"] = grouped.groupby("datum").cumcount() + 1
+    grouped["label"] = grouped["datum"].apply(_weekday_label)
+    grouped["session_code"] = grouped["type"].apply(_session_short_code)
+    grouped["event_group"] = grouped["session_category"].fillna("Training").astype(str)
+    grouped["events_in_day"] = grouped.groupby("datum")["datum"].transform("size")
+    grouped["session_code_display"] = grouped.apply(
+        lambda row: row["session_code"] if int(row.get("events_in_day", 1) or 1) > 1 else ("M" if row["event_group"] == "Match" else "T"),
+        axis=1,
     )
     return grouped
 
@@ -653,6 +758,63 @@ def build_week_day_stats(week_df: pd.DataFrame) -> pd.DataFrame:
 
     grouped["label"] = grouped["datum"].dt.strftime("%d/%m")
     return grouped.sort_values("datum").reset_index(drop=True)
+
+
+def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
+    if week_df.empty:
+        return pd.DataFrame()
+    player_session = (
+        week_df.groupby(["datum", "type", "session_category", "player_name"], dropna=False)
+        .agg(
+            total_distance=("total_distance", "sum"),
+            hsr_hsd=("hsr_hsd", "sum"),
+            sprints=("number_of_sprints", "sum"),
+            total_accelerations=("total_accelerations", "sum"),
+            total_decelerations=("total_decelerations", "sum"),
+            duration=("duration", "sum"),
+        )
+        .reset_index()
+    )
+    player_session["distance_per_min"] = _safe_divide(player_session["total_distance"], player_session["duration"])
+    metric_columns = [
+        "total_distance",
+        "hsr_hsd",
+        "sprints",
+        "total_accelerations",
+        "total_decelerations",
+        "distance_per_min",
+    ]
+    for metric in metric_columns:
+        player_session[metric] = pd.to_numeric(player_session[metric], errors="coerce").astype(float)
+
+    grouped = (
+        player_session.groupby(["datum", "type", "session_category"], dropna=False)
+        .agg(player_count=("player_name", "nunique"))
+        .reset_index()
+    )
+    for metric in metric_columns:
+        stats = (
+            player_session.groupby(["datum", "type", "session_category"], dropna=False)[metric]
+            .agg(["mean", "std"])
+            .reset_index()
+            .rename(columns={"mean": f"{metric}_mean", "std": f"{metric}_std"})
+        )
+        grouped = grouped.merge(stats, on=["datum", "type", "session_category"], how="left")
+
+    grouped["session_display"] = grouped["type"].apply(_session_display)
+    grouped["session_sort"] = grouped["type"].apply(_session_sort_value)
+    grouped = grouped.sort_values(["datum", "session_sort", "session_display"]).reset_index(drop=True)
+    grouped["event_index"] = grouped.groupby("datum").cumcount() + 1
+    grouped["label"] = grouped["datum"].dt.strftime("%d/%m")
+    grouped["day_label"] = grouped["datum"].apply(_weekday_label)
+    grouped["session_code"] = grouped["type"].apply(_session_short_code)
+    grouped["event_group"] = grouped["session_category"].fillna("Training").astype(str)
+    grouped["events_in_day"] = grouped.groupby("datum")["datum"].transform("size")
+    grouped["session_code_display"] = grouped.apply(
+        lambda row: row["session_code"] if int(row.get("events_in_day", 1) or 1) > 1 else ("M" if row["event_group"] == "Match" else "T"),
+        axis=1,
+    )
+    return grouped
 
 
 def build_week_type_table(week_df: pd.DataFrame) -> pd.DataFrame:
@@ -710,7 +872,7 @@ def build_week_notes(summary: dict[str, object], day_table: pd.DataFrame, player
         )
     if not pd.isna(summary["speed_exposures"]):
         notes.append(
-            f"Speed exposure: {_format_int(summary['speed_exposures'])} sessies bereikten >=90% van de individuele seizoensmax."
+            f"Speed exposure: {_format_int(summary['speed_exposures'])} spelersessies bereikten >=90% van de individuele seizoensmax."
         )
     return notes
 
@@ -1132,11 +1294,14 @@ def main() -> None:
         rpe_session_day_table = pd.DataFrame()
 
     day_table = build_week_day_table(week_df)
+    session_table = build_week_session_table(week_df)
     day_stats = build_week_day_stats(week_df)
+    session_stats = build_week_session_stats(week_df)
     player_table = build_week_player_table(week_df)
     type_table = build_week_type_table(week_df)
     zone_df = build_zone_totals(week_df)
     zone_day_table = build_week_zone_day_table(week_df)
+    zone_session_table = build_week_zone_session_table(week_df)
     history_row = history_df.loc[history_df["week_start"] == selected_week]
     summary = build_week_summary(all_df, week_df, history_row.iloc[0] if not history_row.empty else None)
     notes = build_week_notes(summary, day_table, player_table)
@@ -1145,13 +1310,9 @@ def main() -> None:
             f"{label.lower()} {_format_decimal(monitoring_summary[column], 1)}"
             for column, label in WELLNESS_PARAMETER_SPECS
         )
-        notes.append(
-            f"Wellness gemiddeld: {wellness_note} op basis van {_format_int(monitoring_summary['wellness_entries'])} entries."
-        )
+        notes.append(f"Wellness gemiddeld: {wellness_note}.")
     if monitoring_summary["rpe_entries"]:
-        notes.append(
-            f"RPE gemiddeld: {_format_decimal(monitoring_summary['avg_rpe'], 1)} op basis van {_format_int(monitoring_summary['rpe_entries'])} entries."
-        )
+        notes.append(f"RPE gemiddeld: {_format_decimal(monitoring_summary['avg_rpe'], 1)}.")
 
     badges = [
         f"{summary['active_days']} actieve dagen",
@@ -1181,11 +1342,14 @@ def main() -> None:
             summary=summary,
             monitoring_summary=monitoring_summary,
             day_table=day_table,
+            session_table=session_table,
             day_stats=day_stats,
+            session_stats=session_stats,
             type_table=type_table,
             player_table=player_table,
             zone_df=zone_df,
             zone_day_table=zone_day_table,
+            zone_session_table=zone_session_table,
             monitoring_day_table=monitoring_day_table,
             rpe_session_day_table=rpe_session_day_table,
             monitoring_player_table=monitoring_player_table,
