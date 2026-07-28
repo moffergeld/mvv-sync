@@ -238,11 +238,7 @@ def _append_chart_footer(parts: list[str], *, width: int, height: int, accent: s
 
 
 def _append_brand_tile(parts: list[str], *, width: int, y: float = 18, accent: str = "#C8102E") -> None:
-    tile_x = width - 58
-    parts.append(f'<rect x="{tile_x:.1f}" y="{y:.1f}" width="36" height="44" rx="7" fill="{accent}" />')
-    parts.append(f'<rect x="{tile_x + 5:.1f}" y="{y + 5:.1f}" width="26" height="16" rx="4" fill="{_alpha_hex("#FFFFFF", 0.18)}" stroke="{_alpha_hex("#FFFFFF", 0.38)}" />')
-    parts.append(f'<text x="{tile_x + 18:.1f}" y="{y + 31:.1f}" text-anchor="middle" font-size="10" font-weight="800" fill="#FFFFFF">MVV</text>')
-    parts.append(f'<text x="{tile_x + 18:.1f}" y="{y + 39:.1f}" text-anchor="middle" font-size="4.6" font-weight="700" fill="#FFFFFF" letter-spacing="0.08em">REPORT</text>')
+    return None
 
 
 def _build_vertical_bar_chart_svg(
@@ -966,12 +962,12 @@ def _build_pie_chart_svg(
     panel_id = _chart_id(title, "pie-panel")
     pie_shadow = _chart_id(title, "pie-shadow")
     badge = _chart_badge(title)
-    pie_cx = 108
-    pie_cy = 96
-    radius = 43
-    legend_x = 202
-    legend_top = 74
-    legend_row_height = 13.4
+    pie_cx = 83
+    pie_cy = 95
+    radius = 28
+    legend_x = 148
+    legend_top = 77
+    legend_row_height = 10.6
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -988,10 +984,10 @@ def _build_pie_chart_svg(
         f'<rect x="16" y="18" width="40" height="18" rx="3" fill="#C8102E" />',
         f'<text x="36" y="31" text-anchor="middle" font-size="8.2" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="51" font-size="16.4" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="{width - 26}" y="31" text-anchor="end" font-size="7.6" font-weight="800" fill="#64748B" letter-spacing="0.08em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
+        f'<text x="{width - 32}" y="31" text-anchor="end" font-size="7.1" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
         f'<line x1="24" y1="58" x2="{width - 24}" y2="58" stroke="#E7EDF4" />',
-        f'<rect x="22" y="66" width="170" height="68" rx="15" fill="url(#{panel_id})" stroke="#DFE7F0" />',
-        f'<rect x="198" y="66" width="{width - 220}" height="68" rx="15" fill="#FFFFFF" stroke="#DFE7F0" />',
+        f'<rect x="22" y="66" width="120" height="68" rx="15" fill="url(#{panel_id})" stroke="#DFE7F0" />',
+        f'<rect x="146" y="66" width="{width - 168}" height="68" rx="15" fill="#FFFFFF" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
 
@@ -1009,14 +1005,15 @@ def _build_pie_chart_svg(
         )
         start_angle = end_angle
 
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + radius + 18:.1f}" text-anchor="middle" font-size="8.0" font-weight="800" fill="#64748B" letter-spacing="0.08em">VERDELING</text>')
+    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + radius + 14:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="#64748B" letter-spacing="0.08em">VERDELING</text>')
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
         row_y = legend_top + index * legend_row_height
-        parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 7:.1f}" width="10" height="10" rx="2" fill="{color}" />')
-        parts.append(f'<text x="{legend_x + 16:.1f}" y="{row_y:.1f}" font-size="8.4" font-weight="700" fill="#334155">{escape(label)}</text>')
-        parts.append(f'<text x="{width - 24:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="8.4" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}%</text>')
-        parts.append(f'<text x="{width - 24:.1f}" y="{row_y + 9:.1f}" text-anchor="end" font-size="7.1" fill="#64748B">{escape(_fmt_distance_km(value))}</text>')
+        parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 6:.2f}" width="8" height="8" rx="2" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 13:.1f}" y="{row_y:.1f}" font-size="7.0" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(
+            f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="7.0" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
+        )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")

@@ -41,7 +41,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "MAIN-20260728D"
+APP_BUILD_STAMP = "MAIN-20260728E"
 
 
 def _fallback_consume_login_notice() -> Optional[str]:
