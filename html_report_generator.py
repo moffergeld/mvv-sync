@@ -231,10 +231,6 @@ def _append_stat_chip(
 def _append_chart_footer(parts: list[str], *, width: int, height: int, accent: str) -> None:
     footer_y = height - 24
     parts.append(f'<line x1="12" y1="{footer_y:.1f}" x2="{width - 12}" y2="{footer_y:.1f}" stroke="#E4EAF1" />')
-    parts.append(f'<text x="24" y="{height - 8:.1f}" font-size="8.4" font-weight="800" fill="{accent}" letter-spacing="0.08em">MVV MAASTRICHT</text>')
-    stripe_x = width - 64
-    parts.append(f'<polygon points="{stripe_x}, {height - 18} {stripe_x + 14}, {height - 18} {stripe_x + 28}, {height - 6} {stripe_x + 14}, {height - 6}" fill="{accent}" />')
-    parts.append(f'<polygon points="{stripe_x + 18}, {height - 18} {stripe_x + 32}, {height - 18} {stripe_x + 46}, {height - 6} {stripe_x + 32}, {height - 6}" fill="{_blend_hex(accent, "#FFFFFF", 0.24)}" />')
 
 
 def _append_brand_tile(parts: list[str], *, width: int, y: float = 18, accent: str = "#C8102E") -> None:
@@ -308,8 +304,6 @@ def _build_vertical_bar_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="{color}" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="21" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.5" font-weight="800" fill="{color}" letter-spacing="0.06em">{escape(subtitle.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
@@ -574,8 +568,6 @@ def _build_error_bar_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="{color}" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="21" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.5" font-weight="800" fill="{color}" letter-spacing="0.06em">{escape(subtitle.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
@@ -739,8 +731,6 @@ def _build_grouped_error_bar_chart_svg(
         [
             "</defs>",
             f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-            f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
-            f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
             f'<text x="24" y="58" font-size="21" font-weight="800" fill="#0F172A">{escape(title)}</text>',
             f'<text x="24" y="74" font-size="8.5" font-weight="800" fill="#C8102E" letter-spacing="0.06em">{escape(subtitle.upper())}</text>',
             f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
@@ -860,8 +850,6 @@ def _build_horizontal_bar_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="{color}" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.4" font-weight="800" fill="{color}" letter-spacing="0.06em">{escape(subtitle.upper())}</text>',
         f'<rect x="{width - 208:.1f}" y="18" width="184" height="30" rx="8" fill="{_alpha_hex(color, 0.10)}" stroke="{_alpha_hex(color, 0.24)}" />',
@@ -981,8 +969,6 @@ def _build_pie_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="#FFFFFF" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="18" rx="3" fill="#C8102E" />',
-        f'<text x="36" y="31" text-anchor="middle" font-size="8.2" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="51" font-size="16.4" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="{width - 32}" y="31" text-anchor="end" font-size="7.1" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
         f'<line x1="24" y1="58" x2="{width - 24}" y2="58" stroke="#E7EDF4" />',
@@ -1100,8 +1086,6 @@ def _build_session_metric_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">AREA + EVENT LINE + DOTS | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
@@ -1111,16 +1095,6 @@ def _build_session_metric_chart_svg(
     _append_stat_chip(parts, x=width - 314, y=18, label="AVG EVENT", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
     _append_stat_chip(parts, x=width - 220, y=18, label="PEAK EVENT", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
     _append_stat_chip(parts, x=width - 126, y=18, label="LAST EVENT", value=formatter(last_value), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
-
-    legend_items = [("Training", "#C8102E"), ("Match", "#6E1222")]
-    legend_x = 24
-    for label, color in legend_items:
-        pill_w = 74
-        parts.append(f'<rect x="{legend_x:.1f}" y="84" width="{pill_w}" height="18" rx="9" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.24)}" />')
-        parts.append(f'<circle cx="{legend_x + 10:.1f}" cy="93" r="3.8" fill="{color}" />')
-        parts.append(f'<text x="{legend_x + 18:.1f}" y="96" font-size="8.0" font-weight="800" fill="#475569">{escape(label)}</text>')
-        legend_x += pill_w + 8
-    parts.append(f'<text x="{legend_x + 6:.1f}" y="96" font-size="7.4" font-weight="700" fill="#64748B">T/M tonen de events binnen dezelfde dag</text>')
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -1278,8 +1252,6 @@ def _build_session_metric_error_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">EVENT LINE + DOTS + SD | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
@@ -1289,13 +1261,6 @@ def _build_session_metric_error_chart_svg(
     _append_stat_chip(parts, x=width - 314, y=18, label="AVG EVENT", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
     _append_stat_chip(parts, x=width - 220, y=18, label="PEAK EVENT", value=formatter(float(events[mean_column].max())), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
     _append_stat_chip(parts, x=width - 126, y=18, label="AVG SD", value=formatter(avg_sd), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
-
-    legend_x = 24
-    for label, color in [("Training", "#C8102E"), ("Match", "#6E1222")]:
-        parts.append(f'<rect x="{legend_x:.1f}" y="84" width="74" height="18" rx="9" fill="{_alpha_hex(color, 0.08)}" stroke="{_alpha_hex(color, 0.24)}" />')
-        parts.append(f'<circle cx="{legend_x + 10:.1f}" cy="93" r="3.8" fill="{color}" />')
-        parts.append(f'<text x="{legend_x + 18:.1f}" y="96" font-size="8.0" font-weight="800" fill="#475569">{escape(label)}</text>')
-        legend_x += 82
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -1459,8 +1424,6 @@ def _build_session_dual_metric_error_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="url(#{panel_id})" stroke="#D8E1EC" />',
-        f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
-        f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">DUAL EVENT LINES + SD | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
