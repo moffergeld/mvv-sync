@@ -1,7 +1,7 @@
 {% extends "report_base.html" %}
 
 {% block content %}
-  <section class="report-section">
+  <section class="report-section report-section--summary">
     <div class="section-heading">
       <div>
         <div class="section-kicker">Executive summary</div>
@@ -20,20 +20,8 @@
       {% endfor %}
     </div>
 
-    {% if focus_cards %}
-      <div class="focus-grid">
-        {% for card in focus_cards %}
-          <article class="focus-card focus-card--{{ card.tone }}">
-            <div class="focus-card__eyebrow">{{ card.eyebrow }}</div>
-            <div class="focus-card__title">{{ card.title }}</div>
-            <div class="focus-card__body">{{ card.body }}</div>
-          </article>
-        {% endfor %}
-      </div>
-    {% endif %}
-
     {% if day_cards %}
-      <div class="section-subheading">
+      <div class="section-subheading section-subheading--compact">
         <div class="section-subheading__title">Week rhythm</div>
         <div class="section-subheading__meta">Actieve dagen in volgorde van de microcycle</div>
       </div>
@@ -52,6 +40,36 @@
                 </div>
               {% endfor %}
             </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if summary_chart_section %}
+      <div class="section-subheading section-subheading--compact">
+        <div class="section-subheading__title">{{ summary_chart_section.title }}</div>
+        {% if summary_chart_section.subtitle %}
+          <div class="section-subheading__meta">{{ summary_chart_section.subtitle }}</div>
+        {% endif %}
+      </div>
+      <div class="chart-grid chart-grid--{{ summary_chart_section.columns or 2 }}">
+        {% for chart in summary_chart_section.panels %}
+          {% if chart %}
+            <article class="panel panel--chart">
+              {{ chart.svg | safe }}
+            </article>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if focus_cards %}
+      <div class="focus-grid">
+        {% for card in focus_cards %}
+          <article class="focus-card focus-card--{{ card.tone }}">
+            <div class="focus-card__eyebrow">{{ card.eyebrow }}</div>
+            <div class="focus-card__title">{{ card.title }}</div>
+            <div class="focus-card__body">{{ card.body }}</div>
           </article>
         {% endfor %}
       </div>
@@ -77,6 +95,17 @@
           {% endif %}
         {% endfor %}
       </div>
+      {% if section.full_width_panels %}
+        <div class="chart-grid chart-grid--1">
+          {% for chart in section.full_width_panels %}
+            {% if chart %}
+              <article class="panel panel--chart">
+                {{ chart.svg | safe }}
+              </article>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
     </section>
   {% endfor %}
 

@@ -940,7 +940,7 @@ def _build_pie_chart_svg(
     values: Sequence[object],
     *,
     width: int = 560,
-    height: int = 146,
+    height: int = 138,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -950,12 +950,13 @@ def _build_pie_chart_svg(
     panel_id = _chart_id(title, "pie-panel")
     pie_shadow = _chart_id(title, "pie-shadow")
     badge = _chart_badge(title)
-    pie_cx = 83
-    pie_cy = 95
-    radius = 28
-    legend_x = 148
-    legend_top = 77
-    legend_row_height = 10.6
+    pie_cx = 98
+    pie_cy = 93
+    radius = 38
+    legend_x = 174
+    legend_top = 73
+    legend_row_height = 9.3
+    title_font = 10.8 if len(str(title)) > 7 else 11.4
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -969,11 +970,11 @@ def _build_pie_chart_svg(
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="#FFFFFF" stroke="#D8E1EC" />',
-        f'<text x="24" y="51" font-size="16.4" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="{width - 32}" y="31" text-anchor="end" font-size="7.1" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
-        f'<line x1="24" y1="58" x2="{width - 24}" y2="58" stroke="#E7EDF4" />',
-        f'<rect x="22" y="66" width="120" height="68" rx="15" fill="url(#{panel_id})" stroke="#DFE7F0" />',
-        f'<rect x="146" y="66" width="{width - 168}" height="68" rx="15" fill="#FFFFFF" stroke="#DFE7F0" />',
+        f'<text x="24" y="45" font-size="{title_font}" font-weight="800" fill="#0F172A">{escape(title)}</text>',
+        f'<text x="{width - 32}" y="27" text-anchor="end" font-size="6.2" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
+        f'<line x1="24" y1="52" x2="{width - 24}" y2="52" stroke="#E7EDF4" />',
+        f'<rect x="18" y="54" width="150" height="78" rx="16" fill="url(#{panel_id})" stroke="#DFE7F0" />',
+        f'<rect x="170" y="54" width="{width - 192}" height="78" rx="16" fill="#FFFFFF" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
 
@@ -991,14 +992,13 @@ def _build_pie_chart_svg(
         )
         start_angle = end_angle
 
-    parts.append(f'<text x="{pie_cx:.1f}" y="{pie_cy + radius + 14:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="#64748B" letter-spacing="0.08em">VERDELING</text>')
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
         row_y = legend_top + index * legend_row_height
         parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 6:.2f}" width="8" height="8" rx="2" fill="{color}" />')
-        parts.append(f'<text x="{legend_x + 13:.1f}" y="{row_y:.1f}" font-size="7.0" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<text x="{legend_x + 13:.1f}" y="{row_y:.1f}" font-size="6.7" font-weight="700" fill="#334155">{escape(label)}</text>')
         parts.append(
-            f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="7.0" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
+            f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="6.7" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
         )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
@@ -1651,9 +1651,9 @@ def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
                 "meta": f"{_fmt_int(row.get('active_players'))} spelers | {_fmt_int(row.get('player_sessions'))} sessies",
                 "stats": [
                     {"label": "HSR / HSD", "value": _fmt_distance(row.get("hsr_hsd"))},
-                    {"label": "Sprints", "value": _fmt_int(row.get("sprints"))},
-                    {"label": "Exposures", "value": _fmt_int(row.get("speed_exposures"))},
-                    {"label": "Max speed", "value": _fmt_speed(row.get("max_speed"))},
+                    {"label": "Spr", "value": _fmt_int(row.get("sprints"))},
+                    {"label": "Exp", "value": _fmt_int(row.get("speed_exposures"))},
+                    {"label": "Top", "value": _fmt_speed(row.get("max_speed"))},
                 ],
                 "tone": tone,
             }
@@ -1730,6 +1730,8 @@ def build_week_report_html_pdf_bytes(
     *,
     week_label: str,
     iso_label: str,
+    hero_week_title: str | None = None,
+    hero_week_range: str | None = None,
     summary: dict[str, object],
     monitoring_summary: dict[str, object],
     day_table: pd.DataFrame,
@@ -1802,21 +1804,25 @@ def build_week_report_html_pdf_bytes(
         {"label": "RPE Entries", "value": _fmt_int(monitoring_summary.get("rpe_entries")), "foot": f"{_fmt_int(monitoring_summary.get('rpe_players'))} spelers met input"},
     ]
 
-    revision_label = _fmt_text(report_revision) if report_revision else "REV-HTML"
-    export_stamp = pd.Timestamp.now().strftime("%d-%m-%Y %H:%M")
+    week_parts = [part.strip() for part in str(week_label).split("|") if str(part).strip()]
+    derived_week_title = hero_week_title or (week_parts[0] if week_parts else week_label)
+    if not hero_week_title and "-W" in str(derived_week_title):
+        year_part, week_part = str(derived_week_title).split("-W", 1)
+        if week_part.isdigit():
+            derived_week_title = f"Week {int(week_part)} {year_part}"
+    derived_week_range = hero_week_range or (week_parts[1] if len(week_parts) > 1 else iso_label)
 
     context = {
         "document_title": f"Week Report | {week_label}",
         "report_title": "Week Report",
         "report_kicker": "MVV Maastricht | Reports | Team Week Overview",
-        "report_subtitle": f"{week_label} | {iso_label} | {revision_label}",
+        "report_subtitle": "",
+        "report_period_title": derived_week_title,
+        "report_period_range": derived_week_range,
         "report_description": "",
         "logo_src": LOGO_SRC,
-        "report_header_meta": [
-            {"label": "Revision", "value": revision_label, "foot": "Actieve HTML exportbuild"},
-            {"label": "Export", "value": export_stamp, "foot": "Gegenereerd op deze builder"},
-        ],
-        "badges": [f"Export {revision_label}", export_stamp],
+        "report_header_meta": [],
+        "badges": [],
         "cards": [
             {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
             {"label": "HSR / HSD", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
@@ -1825,37 +1831,38 @@ def build_week_report_html_pdf_bytes(
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Spelersessies >= 90% van individuele seizoensmax"},
         ],
+        "summary_chart_section": {
+            "title": "Weekly load rhythm",
+            "subtitle": "",
+            "columns": 2,
+            "panels": [
+                {
+                    "svg": _build_session_metric_chart_svg(
+                        "Daily Team Distance",
+                        session_flow,
+                        "total_distance",
+                        height=176,
+                        formatter=_fmt_distance,
+                        footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
+                    )
+                },
+                {
+                    "svg": _build_session_metric_chart_svg(
+                        "Daily Team HSR / HSD",
+                        session_flow,
+                        "hsr_hsd",
+                        height=176,
+                        formatter=_fmt_distance,
+                        footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
+                    )
+                },
+            ],
+        },
         "focus_cards": [],
         "day_cards": _build_week_day_cards(day_table),
         "leader_cards": [],
         "monitoring_cards": [],
         "chart_sections": [
-            {
-                "eyebrow": "Load profile",
-                "title": "Weekly load rhythm",
-                "subtitle": "Dagelijkse teambelasting en high-speed output binnen de geselecteerde microcycle.",
-                "columns": 2,
-                "panels": [
-                    {
-                        "svg": _build_session_metric_chart_svg(
-                            "Daily Team Distance",
-                            session_flow,
-                            "total_distance",
-                            formatter=_fmt_distance,
-                            footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
-                        )
-                    },
-                    {
-                        "svg": _build_session_metric_chart_svg(
-                            "Daily Team HSR / HSD",
-                            session_flow,
-                            "hsr_hsd",
-                            formatter=_fmt_distance,
-                            footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
-                        )
-                    },
-                ],
-            },
             {
                 "eyebrow": "Squad spread",
                 "title": "Average player load +/- SD",
@@ -1933,8 +1940,8 @@ def build_week_report_html_pdf_bytes(
                 "title": "Distance zone share",
                 "subtitle": "Normale cirkeldiagrammen voor de hele week en voor elke actieve dag binnen dezelfde week.",
                 "columns": 3,
-                "page_break": True,
                 "panels": _build_zone_share_panels(zone_df, zone_day_table),
+                "page_break": True,
             },
             {
                 "eyebrow": "Monitoring",
@@ -1991,6 +1998,19 @@ def build_week_report_html_pdf_bytes(
                         )
                     },
                 ],
+                "full_width_panels": [
+                    {
+                        "svg": _build_session_metric_error_chart_svg(
+                            "Session RPE +/- SD",
+                            rpe_session_timeline,
+                            "avg_rpe",
+                            "avg_rpe_std",
+                            formatter=lambda value: _fmt_dec(value, 1),
+                            footer_text="RPE per sessie binnen de dag gegroepeerd, zodat dubbele trainingsmomenten naast elkaar zichtbaar blijven.",
+                            y_max=10,
+                        )
+                    },
+                ],
             },
             {
                 "eyebrow": "Player leaders",
@@ -2023,25 +2043,6 @@ def build_week_report_html_pdf_bytes(
                             sprint_leaders.get("sprints", pd.Series(dtype=float)).tolist(),
                             color="#EA3351",
                             formatter=_fmt_int,
-                        )
-                    },
-                ],
-            },
-            {
-                "eyebrow": "Leaders",
-                "title": "Session RPE overview",
-                "subtitle": "Sessie-RPE per dag, met aparte balken wanneer twee sessies op dezelfde dag plaatsvinden.",
-                "columns": 1,
-                "panels": [
-                    {
-                        "svg": _build_session_metric_error_chart_svg(
-                            "Session RPE +/- SD",
-                            rpe_session_timeline,
-                            "avg_rpe",
-                            "avg_rpe_std",
-                            formatter=lambda value: _fmt_dec(value, 1),
-                            footer_text="RPE per sessie binnen de dag gegroepeerd, zodat dubbele trainingsmomenten naast elkaar zichtbaar blijven.",
-                            y_max=10,
                         )
                     },
                 ],

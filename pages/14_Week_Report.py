@@ -42,7 +42,7 @@ MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
-WEEK_REPORT_HTML_REVISION = "REV-20260728G"
+WEEK_REPORT_HTML_REVISION = "REV-20260728J"
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -1339,6 +1339,8 @@ def main() -> None:
             report_revision=WEEK_REPORT_HTML_REVISION,
             week_label=_week_label(selected_week),
             iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
+            hero_week_title=f"Week {int(selected_iso.week)} {selected_iso.year}",
+            hero_week_range=f"{selected_week:%d/%m/%Y} - {week_end:%d/%m/%Y}",
             summary=summary,
             monitoring_summary=monitoring_summary,
             day_table=day_table,
@@ -1366,7 +1368,7 @@ def main() -> None:
             st.switch_page("pages/03_Reports_Page.py")
     with action_cols[1]:
         st.download_button(
-            f"Download HTML PDF ({WEEK_REPORT_HTML_REVISION})",
+            "Download Week Report PDF",
             data=pdf_bytes or b"HTML PDF unavailable",
             file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
             mime="application/pdf",
@@ -1377,8 +1379,6 @@ def main() -> None:
     with action_cols[2]:
         if pdf_error:
             st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
-        else:
-            st.caption(f"Actieve exportrevisie: {WEEK_REPORT_HTML_REVISION}")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 
