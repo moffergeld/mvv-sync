@@ -1061,7 +1061,8 @@ def _build_session_metric_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     clean_values = events[value_column].tolist()
-    chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
+    day_totals = [float(rows[value_column].sum()) for _, rows in day_groups]
+    chart_max = y_max if y_max is not None else _nice_max(max(clean_values + day_totals))
     margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
@@ -1069,9 +1070,12 @@ def _build_session_metric_chart_svg(
     grid_lines = 4
     label_font = 8.6 if len(day_groups) > 5 else 9.3
     avg_value = sum(clean_values) / max(1, len(clean_values))
-    peak_value = max(clean_values)
+    peak_value = max(day_totals)
+    last_value = day_totals[-1]
     panel_id = _chart_id(title, "session-panel")
     plot_id = _chart_id(title, "session-plot")
+    area_id = _chart_id(title, "session-area")
+    line_shadow_id = _chart_id(title, "session-line-shadow")
     shadow_id = _chart_id(title, "session-shadow")
     badge = _chart_badge(title)
 
@@ -1086,6 +1090,14 @@ def _build_session_metric_chart_svg(
         '<stop offset="0%" stop-color="#FFFFFF" />',
         '<stop offset="100%" stop-color="#F6F8FC" />',
         "</linearGradient>",
+        f'<linearGradient id="{area_id}" x1="0" y1="0" x2="0" y2="1">',
+        '<stop offset="0%" stop-color="rgba(200,16,46,0.34)" />',
+        '<stop offset="50%" stop-color="rgba(200,16,46,0.12)" />',
+        '<stop offset="100%" stop-color="rgba(200,16,46,0.02)" />',
+        "</linearGradient>",
+        f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="150%">',
+        '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(110,18,34,0.18)" />',
+        "</filter>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
@@ -1094,14 +1106,14 @@ def _build_session_metric_chart_svg(
         f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
         f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">AREA + EVENT BARS | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
-    _append_stat_chip(parts, x=width - 314, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
-    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
-    _append_stat_chip(parts, x=width - 126, y=18, label="EVENTS", value=_fmt_int(len(events)), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
+    _append_stat_chip(parts, x=width - 314, y=18, label="AVG EVENT", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
+    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK DAY", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+    _append_stat_chip(parts, x=width - 126, y=18, label="LAST DAY", value=formatter(last_value), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
 
     legend_items = [("Training", "#C8102E"), ("Match", "#6E1222")]
     legend_x = 24
@@ -1119,6 +1131,22 @@ def _build_session_metric_chart_svg(
         axis_value = chart_max * ratio
         parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
         parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
+
+    line_points = [
+        (
+            margin_left + cluster_width * index + cluster_width / 2,
+            margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
+        )
+        for index, value in enumerate(day_totals)
+    ]
+    peak_index = max(range(len(day_totals)), key=lambda idx: day_totals[idx]) if day_totals else 0
+    if len(line_points) >= 2:
+        peak_center = line_points[peak_index][0]
+        parts.append(
+            f'<rect x="{peak_center - cluster_width * 0.42:.1f}" y="{margin_top + 6:.1f}" width="{cluster_width * 0.84:.1f}" height="{plot_height - 6:.1f}" rx="14" fill="{_alpha_hex("#C8102E", 0.05)}" />'
+        )
+        area_points = [(line_points[0][0], margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
+        parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
 
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
@@ -1155,6 +1183,37 @@ def _build_session_metric_chart_svg(
         parts.append(
             f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="{label_font}" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>'
         )
+
+    if avg_value > 0 and chart_max > 0:
+        avg_y = margin_top + plot_height - (avg_value / chart_max) * plot_height
+        parts.append(
+            f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex("#6E1222", 0.72)}" stroke-width="1.6" stroke-dasharray="8 6" />'
+        )
+        parts.append(
+            f'<text x="{width - margin_right - 4:.1f}" y="{avg_y - 6:.1f}" text-anchor="end" font-size="8.5" font-weight="800" fill="#6E1222">Avg event {escape(formatter(avg_value))}</text>'
+        )
+
+    if len(line_points) >= 2:
+        parts.append(
+            f'<path d="{_series_path(line_points)}" fill="none" stroke="#FFFFFF" stroke-width="7.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />'
+        )
+        parts.append(
+            f'<path d="{_series_path(line_points)}" fill="none" stroke="#6E1222" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
+        )
+        for index, (x_center, y_value) in enumerate(line_points):
+            highlight = index == peak_index
+            point_fill = "#FFF7ED" if highlight else "#FFFFFF"
+            point_stroke = "#D97706" if highlight else "#6E1222"
+            point_radius = 6.8 if highlight else 5.4
+            parts.append(
+                f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.1" />'
+            )
+            parts.append(
+                f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.5" fill="{point_stroke}" />'
+            )
+            parts.append(
+                f'<text x="{x_center:.1f}" y="{max(y_value - 12, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(day_totals[index]))}</text>'
+            )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
@@ -1198,8 +1257,11 @@ def _build_session_metric_error_chart_svg(
     grid_lines = 4
     avg_value = float(events[mean_column].mean())
     avg_sd = float(events[error_column].mean())
+    day_mean_values = [float(rows[mean_column].mean()) for _, rows in day_groups]
     panel_id = _chart_id(title, "session-sd-panel")
     plot_id = _chart_id(title, "session-sd-plot")
+    area_id = _chart_id(title, "session-sd-area")
+    line_shadow_id = _chart_id(title, "session-sd-line-shadow")
     shadow_id = _chart_id(title, "session-sd-shadow")
     badge = _chart_badge(title)
 
@@ -1214,6 +1276,14 @@ def _build_session_metric_error_chart_svg(
         '<stop offset="0%" stop-color="#FFFFFF" />',
         '<stop offset="100%" stop-color="#F6F8FC" />',
         "</linearGradient>",
+        f'<linearGradient id="{area_id}" x1="0" y1="0" x2="0" y2="1">',
+        '<stop offset="0%" stop-color="rgba(110,18,34,0.26)" />',
+        '<stop offset="54%" stop-color="rgba(110,18,34,0.10)" />',
+        '<stop offset="100%" stop-color="rgba(110,18,34,0.02)" />',
+        "</linearGradient>",
+        f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="150%">',
+        '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(110,18,34,0.18)" />',
+        "</filter>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
@@ -1222,7 +1292,7 @@ def _build_session_metric_error_chart_svg(
         f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
         f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">TREND + SPREAD | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
     ]
@@ -1244,6 +1314,22 @@ def _build_session_metric_error_chart_svg(
         axis_value = chart_max * ratio
         parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
         parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
+
+    trend_points = [
+        (
+            margin_left + cluster_width * index + cluster_width / 2,
+            margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
+        )
+        for index, value in enumerate(day_mean_values)
+    ]
+    peak_index = max(range(len(day_mean_values)), key=lambda idx: day_mean_values[idx]) if day_mean_values else 0
+    if len(trend_points) >= 2:
+        peak_center = trend_points[peak_index][0]
+        parts.append(
+            f'<rect x="{peak_center - cluster_width * 0.42:.1f}" y="{margin_top + 6:.1f}" width="{cluster_width * 0.84:.1f}" height="{plot_height - 6:.1f}" rx="14" fill="{_alpha_hex("#6E1222", 0.05)}" />'
+        )
+        area_points = [(trend_points[0][0], margin_top + plot_height)] + trend_points + [(trend_points[-1][0], margin_top + plot_height)]
+        parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
 
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
@@ -1276,6 +1362,25 @@ def _build_session_metric_error_chart_svg(
             parts.append(f'<rect x="{bar_center - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />')
             parts.append(f'<text x="{bar_center:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
         parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
+
+    if avg_value > 0 and chart_max > 0:
+        avg_y = margin_top + plot_height - (avg_value / chart_max) * plot_height
+        parts.append(
+            f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex("#6E1222", 0.70)}" stroke-width="1.5" stroke-dasharray="8 6" />'
+        )
+        parts.append(
+            f'<text x="{width - margin_right - 4:.1f}" y="{avg_y - 6:.1f}" text-anchor="end" font-size="8.5" font-weight="800" fill="#6E1222">Avg {_fmt_text(formatter(avg_value))}</text>'
+        )
+
+    if len(trend_points) >= 2:
+        parts.append(f'<path d="{_series_path(trend_points)}" fill="none" stroke="#FFFFFF" stroke-width="6.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />')
+        parts.append(f'<path d="{_series_path(trend_points)}" fill="none" stroke="#6E1222" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />')
+        for index, (x_center, y_value) in enumerate(trend_points):
+            highlight = index == peak_index
+            point_fill = "#FFF7ED" if highlight else "#FFFFFF"
+            point_stroke = "#D97706" if highlight else "#6E1222"
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="{5.6 if highlight else 5.0:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="1.9" />')
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.2" fill="{point_stroke}" />')
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
@@ -1314,8 +1419,12 @@ def _build_session_dual_metric_error_chart_svg(
     day_groups = list(events.groupby("day_label", sort=False))
     cluster_width = plot_width / max(1, len(day_groups))
     grid_lines = 4
+    left_day_means = [float(rows[left_spec["mean"]].mean()) for _, rows in day_groups]
+    right_day_means = [float(rows[right_spec["mean"]].mean()) for _, rows in day_groups]
     panel_id = _chart_id(title, "dual-panel")
     plot_id = _chart_id(title, "dual-plot")
+    left_line_shadow = _chart_id(title, "dual-left-line-shadow")
+    right_line_shadow = _chart_id(title, "dual-right-line-shadow")
     shadow_id = _chart_id(title, "dual-shadow")
     badge = _chart_badge(title)
 
@@ -1330,6 +1439,12 @@ def _build_session_dual_metric_error_chart_svg(
         '<stop offset="0%" stop-color="#FFFFFF" />',
         '<stop offset="100%" stop-color="#F6F8FC" />',
         "</linearGradient>",
+        f'<filter id="{left_line_shadow}" x="-10%" y="-10%" width="140%" height="150%">',
+        '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(110,18,34,0.16)" />',
+        "</filter>",
+        f'<filter id="{right_line_shadow}" x="-10%" y="-10%" width="140%" height="150%">',
+        '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(234,51,81,0.14)" />',
+        "</filter>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
@@ -1338,11 +1453,14 @@ def _build_session_dual_metric_error_chart_svg(
         f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
         f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">{escape(footer_text.upper())}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">DUAL TREND + SPREAD | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
+    _append_stat_chip(parts, x=width - 314, y=18, label="AVG A", value=_fmt_dec(sum(left_day_means) / max(1, len(left_day_means)), 1), fill=_alpha_hex(str(left_spec["color"]), 0.10), stroke=_alpha_hex(str(left_spec["color"]), 0.24))
+    _append_stat_chip(parts, x=width - 220, y=18, label="AVG B", value=_fmt_dec(sum(right_day_means) / max(1, len(right_day_means)), 1), fill=_alpha_hex(str(right_spec["color"]), 0.10), stroke=_alpha_hex(str(right_spec["color"]), 0.24))
+    _append_stat_chip(parts, x=width - 126, y=18, label="PEAK MIX", value=_fmt_dec(max(max(left_day_means, default=0.0), max(right_day_means, default=0.0)), 1), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
 
     legend_x = 24
     for spec in specs:
@@ -1361,6 +1479,20 @@ def _build_session_dual_metric_error_chart_svg(
         parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
         parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
 
+    left_points = [
+        (
+            margin_left + cluster_width * index + cluster_width / 2,
+            margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
+        )
+        for index, value in enumerate(left_day_means)
+    ]
+    right_points = [
+        (
+            margin_left + cluster_width * index + cluster_width / 2,
+            margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
+        )
+        for index, value in enumerate(right_day_means)
+    ]
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
         cluster_x = margin_left + cluster_width * cluster_index
@@ -1393,6 +1525,19 @@ def _build_session_dual_metric_error_chart_svg(
             parts.append(f'<rect x="{event_x + event_width / 2 - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(event_color, 0.12)}" stroke="{_alpha_hex(event_color, 0.26)}" />')
             parts.append(f'<text x="{event_x + event_width / 2:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{event_color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
         parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
+
+    if len(left_points) >= 2:
+        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.90" />')
+        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="{str(left_spec["color"])}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{left_line_shadow})" opacity="0.88" />')
+        for x_center, y_value in left_points:
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.4" fill="#FFFFFF" stroke="{str(left_spec["color"])}" stroke-width="1.7" />')
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.0" fill="{str(left_spec["color"])}" />')
+    if len(right_points) >= 2:
+        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82" />')
+        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="{str(right_spec["color"])}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{right_line_shadow})" opacity="0.88" />')
+        for x_center, y_value in right_points:
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.4" fill="#FFFFFF" stroke="{str(right_spec["color"])}" stroke-width="1.7" />')
+            parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.0" fill="{str(right_spec["color"])}" />')
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
