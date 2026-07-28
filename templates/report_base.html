@@ -16,7 +16,12 @@
             <div class="report-header__copy">
               <div class="report-header__kicker">{{ report_kicker }}</div>
               <h1 class="report-header__title">{{ report_title }}</h1>
-              {% if report_subtitle %}
+              {% if report_period_title %}
+                <p class="report-header__subtitle report-header__subtitle--primary">{{ report_period_title }}</p>
+              {% endif %}
+              {% if report_period_range %}
+                <p class="report-header__subtitle report-header__subtitle--secondary">{{ report_period_range }}</p>
+              {% elif report_subtitle %}
                 <p class="report-header__subtitle">{{ report_subtitle }}</p>
               {% endif %}
             </div>

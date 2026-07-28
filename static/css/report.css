@@ -65,8 +65,8 @@ body {
 }
 
 .report-header {
-  margin-bottom: 5mm;
-  padding: 6mm;
+  margin-bottom: 3.2mm;
+  padding: 3.6mm 4.8mm;
   border: 0.35mm solid var(--panel-border);
   border-top: 1mm solid var(--brand-red);
   border-radius: 18px;
@@ -86,12 +86,12 @@ body {
 .report-header__brand {
   display: flex;
   align-items: center;
-  gap: 7mm;
+  gap: 5.8mm;
 }
 
 .report-header__logo {
-  width: 24mm;
-  height: 24mm;
+  width: 17mm;
+  height: 17mm;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -99,7 +99,7 @@ body {
 .report-header__copy {
   display: flex;
   flex-direction: column;
-  gap: 1.4mm;
+  gap: 0.2mm;
 }
 
 .report-header__kicker {
@@ -113,7 +113,7 @@ body {
 .report-header__title {
   margin: 0;
   color: var(--text-strong);
-  font-size: 27pt;
+  font-size: 20.4pt;
   line-height: 1.02;
 }
 
@@ -122,6 +122,18 @@ body {
   color: var(--text-soft);
   font-size: 12pt;
   font-weight: 700;
+}
+
+.report-header__subtitle--primary {
+  font-size: 10.6pt;
+  font-weight: 800;
+  color: #475569;
+}
+
+.report-header__subtitle--secondary {
+  font-size: 9.4pt;
+  font-weight: 700;
+  color: #64748b;
 }
 
 .report-header__meta-grid {
@@ -199,12 +211,17 @@ body {
 .report-section {
   margin-bottom: 3mm;
   break-inside: auto;
-  padding: 2.8mm 3.2mm 3mm;
+  padding: 2.6mm 3.2mm 2.8mm;
   border: 0.28mm solid #dee7f1;
   border-top: 1.05mm solid rgba(200, 16, 46, 0.96);
   border-radius: 20px;
   background: linear-gradient(180deg, #f5f8fc 0%, #eef3f8 100%);
   box-shadow: 0 2mm 5mm rgba(15, 23, 42, 0.04);
+}
+
+.report-section--summary {
+  padding-top: 1.8mm;
+  padding-bottom: 1.8mm;
 }
 
 .report-section--page-break {
@@ -219,8 +236,8 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: 2mm;
-  padding-bottom: 1.4mm;
+  margin-bottom: 1.1mm;
+  padding-bottom: 0.9mm;
   border-bottom: 0.26mm solid rgba(148, 163, 184, 0.22);
   break-after: avoid;
   page-break-after: avoid;
@@ -241,16 +258,16 @@ body {
 .section-heading h2,
 .section-head h2,
 .panel-head h2 {
-  margin: 0.5mm 0 0;
+  margin: 0.35mm 0 0;
   color: var(--text-strong);
-  font-size: 13.6pt;
+  font-size: 13.1pt;
   line-height: 1.1;
 }
 
 .section-meta {
   margin: 0;
   color: var(--text-soft);
-  font-size: 8pt;
+  font-size: 7.6pt;
   text-align: right;
   line-height: 1.35;
   width: 40%;
@@ -269,20 +286,25 @@ body {
   justify-content: space-between;
   gap: 6mm;
   align-items: center;
-  margin: 1.8mm 0 1.6mm;
+  margin: 1mm 0 0.9mm;
   break-after: avoid;
   page-break-after: avoid;
 }
 
+.section-subheading--compact {
+  margin-top: 0.4mm;
+  margin-bottom: 0.55mm;
+}
+
 .section-subheading__title {
   color: var(--text-strong);
-  font-size: 10.6pt;
+  font-size: 10pt;
   font-weight: 800;
 }
 
 .section-subheading__meta {
   color: var(--text-soft);
-  font-size: 8.5pt;
+  font-size: 8pt;
 }
 
 .metric-grid {
@@ -295,7 +317,7 @@ body {
 .metric-grid > .metric-card {
   padding-left: 1.8mm;
   padding-right: 1.8mm;
-  margin-bottom: var(--gap-md);
+  margin-bottom: 2.4mm;
 }
 
 .metric-grid--compact > .metric-card {
@@ -311,7 +333,7 @@ body {
 }
 
 .metric-card {
-  padding: 3.2mm;
+  padding: 1.95mm;
   border-radius: var(--radius-md);
   border: 0.32mm solid var(--panel-border);
   background: var(--panel-bg);
@@ -332,17 +354,17 @@ body {
 }
 
 .metric-card__value {
-  margin-top: 1.3mm;
+  margin-top: 0.5mm;
   color: var(--text-strong);
-  font-size: 16.5pt;
+  font-size: 13.3pt;
   font-weight: 800;
   line-height: 1.06;
 }
 
 .metric-card__foot {
-  margin-top: 1.4mm;
+  margin-top: 0.45mm;
   color: var(--text-soft);
-  font-size: 8pt;
+  font-size: 6.8pt;
 }
 
 .focus-grid {
@@ -414,17 +436,18 @@ body {
   flex-wrap: wrap;
   margin-left: -1.75mm;
   margin-right: -1.75mm;
+  margin-bottom: 0.5mm;
 }
 
 .day-card-grid > .day-card {
   width: 33.333%;
   padding-left: 1.75mm;
   padding-right: 1.75mm;
-  margin-bottom: 2.6mm;
+  margin-bottom: 1.8mm;
 }
 
 .day-card {
-  padding: 2.5mm;
+  padding: 1.9mm;
   border-radius: 14px;
   border: 0.3mm solid var(--panel-border);
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
@@ -437,56 +460,56 @@ body {
 
 .day-card__label {
   color: var(--brand-red);
-  font-size: 8pt;
+  font-size: 7.2pt;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .day-card__value {
-  margin-top: 0.9mm;
+  margin-top: 0.55mm;
   color: var(--text-strong);
-  font-size: 11.2pt;
+  font-size: 10pt;
   font-weight: 800;
 }
 
 .day-card__subvalue {
-  margin-top: 0.6mm;
+  margin-top: 0.35mm;
   color: var(--text-body);
-  font-size: 7.8pt;
+  font-size: 7.3pt;
   font-weight: 700;
 }
 
 .day-card__meta {
-  margin-top: 0.5mm;
+  margin-top: 0.35mm;
   color: var(--text-soft);
-  font-size: 7.6pt;
+  font-size: 7pt;
 }
 
 .day-card__stats {
   display: flex;
   flex-wrap: wrap;
-  margin-top: 1.2mm;
+  margin-top: 0.8mm;
 }
 
 .day-card__stat {
   display: inline-block;
   vertical-align: top;
-  width: 50%;
+  width: 25%;
   gap: 0.6mm;
-  margin-bottom: 1.1mm;
+  margin-bottom: 0.2mm;
 }
 
 .day-card__stat-label {
   color: var(--text-soft);
-  font-size: 7pt;
+  font-size: 6.3pt;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .day-card__stat-value {
   color: var(--text-strong);
-  font-size: 8.2pt;
+  font-size: 7.3pt;
   font-weight: 800;
 }
 
@@ -579,7 +602,7 @@ body {
   vertical-align: top;
   padding-left: 1.8mm;
   padding-right: 1.8mm;
-  margin-bottom: 3mm;
+  margin-bottom: 1.5mm;
   break-inside: avoid;
   page-break-inside: avoid;
 }
