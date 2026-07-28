@@ -1106,7 +1106,7 @@ def _build_session_metric_chart_svg(
         f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
         f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">AREA + EVENT BARS | {escape(footer_text.upper())}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">AREA + DAY LINE + EVENT DOTS | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
     ]
@@ -1132,7 +1132,7 @@ def _build_session_metric_chart_svg(
         parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
         parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.6" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
 
-    line_points = [
+    day_line_points = [
         (
             margin_left + cluster_width * index + cluster_width / 2,
             margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
@@ -1140,14 +1140,15 @@ def _build_session_metric_chart_svg(
         for index, value in enumerate(day_totals)
     ]
     peak_index = max(range(len(day_totals)), key=lambda idx: day_totals[idx]) if day_totals else 0
-    if len(line_points) >= 2:
-        peak_center = line_points[peak_index][0]
+    if len(day_line_points) >= 2:
+        peak_center = day_line_points[peak_index][0]
         parts.append(
             f'<rect x="{peak_center - cluster_width * 0.42:.1f}" y="{margin_top + 6:.1f}" width="{cluster_width * 0.84:.1f}" height="{plot_height - 6:.1f}" rx="14" fill="{_alpha_hex("#C8102E", 0.05)}" />'
         )
-        area_points = [(line_points[0][0], margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
+        area_points = [(day_line_points[0][0], margin_top + plot_height)] + day_line_points + [(day_line_points[-1][0], margin_top + plot_height)]
         parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
 
+    event_points: list[dict[str, Any]] = []
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
         cluster_x = margin_left + cluster_width * cluster_index
@@ -1156,29 +1157,30 @@ def _build_session_metric_chart_svg(
                 f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />'
             )
         count = len(rows.index)
-        gap = 8
-        usable_width = cluster_width * 0.74
-        bar_width = min(34, max(18, (usable_width - gap * max(0, count - 1)) / max(1, count)))
-        total_width = count * bar_width + gap * max(0, count - 1)
+        gap = 14
+        usable_width = cluster_width * 0.70
+        slot_width = min(40, max(22, (usable_width - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * slot_width + gap * max(0, count - 1)
         start_x = cluster_x + (cluster_width - total_width) / 2
         for row_index, (_, row) in enumerate(rows.iterrows()):
             value = float(row.get(value_column) or 0.0)
-            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
-            bar_x = start_x + row_index * (bar_width + gap)
-            bar_y = margin_top + plot_height - bar_height
-            bar_center = bar_x + bar_width / 2
+            point_x = start_x + row_index * (slot_width + gap) + slot_width / 2
+            point_y = margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height)
             color = _event_fill_color(row.get("event_group"), row.get("session_code"))
-            parts.append(
-                f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="7" fill="{color}" filter="url(#{shadow_id})" />'
+            event_points.append(
+                {
+                    "x": point_x,
+                    "y": point_y,
+                    "value": value,
+                    "color": color,
+                    "code": _fmt_text(row.get("session_code_display")),
+                }
             )
             parts.append(
-                f'<text x="{bar_center:.1f}" y="{max(bar_y - 8, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>'
+                f'<rect x="{point_x - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />'
             )
             parts.append(
-                f'<rect x="{bar_center - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />'
-            )
-            parts.append(
-                f'<text x="{bar_center:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>'
+                f'<text x="{point_x:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>'
             )
         parts.append(
             f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="{label_font}" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>'
@@ -1193,26 +1195,47 @@ def _build_session_metric_chart_svg(
             f'<text x="{width - margin_right - 4:.1f}" y="{avg_y - 6:.1f}" text-anchor="end" font-size="8.5" font-weight="800" fill="#6E1222">Avg event {escape(formatter(avg_value))}</text>'
         )
 
-    if len(line_points) >= 2:
+    if len(day_line_points) >= 2:
         parts.append(
-            f'<path d="{_series_path(line_points)}" fill="none" stroke="#FFFFFF" stroke-width="7.6" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />'
+            f'<path d="{_series_path(day_line_points)}" fill="none" stroke="#FFFFFF" stroke-width="8.0" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />'
         )
         parts.append(
-            f'<path d="{_series_path(line_points)}" fill="none" stroke="#6E1222" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
+            f'<path d="{_series_path(day_line_points)}" fill="none" stroke="#6E1222" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
         )
-        for index, (x_center, y_value) in enumerate(line_points):
+        for index, (x_center, y_value) in enumerate(day_line_points):
             highlight = index == peak_index
             point_fill = "#FFF7ED" if highlight else "#FFFFFF"
             point_stroke = "#D97706" if highlight else "#6E1222"
-            point_radius = 6.8 if highlight else 5.4
+            point_radius = 7.0 if highlight else 5.6
             parts.append(
                 f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.1" />'
             )
             parts.append(
                 f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.5" fill="{point_stroke}" />'
             )
+
+    if len(event_points) >= 2:
+        event_line = [(float(point["x"]), float(point["y"])) for point in event_points]
+        parts.append(
+            f'<path d="{_series_path(event_line)}" fill="none" stroke="{_alpha_hex("#EA3351", 0.72)}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />'
+        )
+    show_event_labels = len(event_points) <= 10
+    for point in event_points:
+        x_center = float(point["x"])
+        y_value = float(point["y"])
+        color = str(point["color"])
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="6.0" fill="{_alpha_hex(color, 0.18)}" />'
+        )
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.1" fill="#FFFFFF" stroke="{color}" stroke-width="2.0" />'
+        )
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="1.9" fill="{color}" />'
+        )
+        if show_event_labels:
             parts.append(
-                f'<text x="{x_center:.1f}" y="{max(y_value - 12, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(day_totals[index]))}</text>'
+                f'<text x="{x_center:.1f}" y="{max(y_value - 10, margin_top + 10):.1f}" text-anchor="middle" font-size="7.9" font-weight="800" fill="{color}">{escape(formatter(point["value"]))}</text>'
             )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
@@ -1247,17 +1270,18 @@ def _build_session_metric_error_chart_svg(
     if events.empty:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
+    day_groups = list(events.groupby("day_label", sort=False))
+    day_mean_values = [float(rows[mean_column].mean()) for _, rows in day_groups]
     maxima = (events[mean_column] + events[error_column]).tolist()
+    maxima.extend(day_mean_values)
     chart_max = y_max if y_max is not None else _nice_max(max(maxima))
     margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
-    day_groups = list(events.groupby("day_label", sort=False))
     cluster_width = plot_width / max(1, len(day_groups))
     grid_lines = 4
     avg_value = float(events[mean_column].mean())
     avg_sd = float(events[error_column].mean())
-    day_mean_values = [float(rows[mean_column].mean()) for _, rows in day_groups]
     panel_id = _chart_id(title, "session-sd-panel")
     plot_id = _chart_id(title, "session-sd-plot")
     area_id = _chart_id(title, "session-sd-area")
@@ -1292,13 +1316,13 @@ def _build_session_metric_error_chart_svg(
         f'<rect x="16" y="18" width="40" height="20" rx="3" fill="#C8102E" />',
         f'<text x="36" y="32" text-anchor="middle" font-size="8.8" font-weight="800" fill="#FFFFFF">{escape(badge)}</text>',
         f'<text x="24" y="58" font-size="20" font-weight="800" fill="#0F172A">{escape(title)}</text>',
-        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">TREND + SPREAD | {escape(footer_text.upper())}</text>',
+        f'<text x="24" y="74" font-size="8.3" font-weight="800" fill="#C8102E" letter-spacing="0.05em">DAY TREND + EVENT DOTS | {escape(footer_text.upper())}</text>',
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
     _append_stat_chip(parts, x=width - 314, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex("#C8102E", 0.08), stroke=_alpha_hex("#C8102E", 0.20))
-    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK", value=formatter(events[mean_column].max()), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+    _append_stat_chip(parts, x=width - 220, y=18, label="PEAK DAY", value=formatter(max(day_mean_values) if day_mean_values else 0.0), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
     _append_stat_chip(parts, x=width - 126, y=18, label="AVG SD", value=formatter(avg_sd), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
 
     legend_x = 24
@@ -1331,6 +1355,7 @@ def _build_session_metric_error_chart_svg(
         area_points = [(trend_points[0][0], margin_top + plot_height)] + trend_points + [(trend_points[-1][0], margin_top + plot_height)]
         parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
 
+    event_points: list[dict[str, Any]] = []
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
         cluster_x = margin_left + cluster_width * cluster_index
@@ -1339,28 +1364,33 @@ def _build_session_metric_error_chart_svg(
                 f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />'
             )
         count = len(rows.index)
-        gap = 8
-        usable_width = cluster_width * 0.74
-        bar_width = min(34, max(18, (usable_width - gap * max(0, count - 1)) / max(1, count)))
-        total_width = count * bar_width + gap * max(0, count - 1)
+        gap = 14
+        usable_width = cluster_width * 0.70
+        slot_width = min(40, max(22, (usable_width - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * slot_width + gap * max(0, count - 1)
         start_x = cluster_x + (cluster_width - total_width) / 2
         for row_index, (_, row) in enumerate(rows.iterrows()):
             value = float(row.get(mean_column) or 0.0)
             error = float(row.get(error_column) or 0.0)
-            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
-            bar_x = start_x + row_index * (bar_width + gap)
-            bar_y = margin_top + plot_height - bar_height
-            bar_center = bar_x + bar_width / 2
+            point_x = start_x + row_index * (slot_width + gap) + slot_width / 2
+            point_y = margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height)
             color = _event_fill_color(row.get("event_group"), row.get("session_code"))
-            upper_y = margin_top + plot_height - (min(chart_max, value + error) / chart_max) * plot_height
-            lower_y = margin_top + plot_height - (max(0.0, value - error) / chart_max) * plot_height
-            parts.append(f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{bar_width:.1f}" height="{bar_height:.1f}" rx="7" fill="{color}" filter="url(#{shadow_id})" />')
-            parts.append(f'<line x1="{bar_center:.1f}" y1="{upper_y:.1f}" x2="{bar_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
-            parts.append(f'<line x1="{bar_center - 5:.1f}" y1="{upper_y:.1f}" x2="{bar_center + 5:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
-            parts.append(f'<line x1="{bar_center - 5:.1f}" y1="{lower_y:.1f}" x2="{bar_center + 5:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.5" />')
-            parts.append(f'<text x="{bar_center:.1f}" y="{max(bar_y - 8, margin_top + 10):.1f}" text-anchor="middle" font-size="8.5" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>')
-            parts.append(f'<rect x="{bar_center - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />')
-            parts.append(f'<text x="{bar_center:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
+            event_points.append(
+                {
+                    "x": point_x,
+                    "y": point_y,
+                    "value": value,
+                    "error": error,
+                    "color": color,
+                    "code": _fmt_text(row.get("session_code_display")),
+                }
+            )
+            parts.append(
+                f'<rect x="{point_x - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(color, 0.12)}" stroke="{_alpha_hex(color, 0.26)}" />'
+            )
+            parts.append(
+                f'<text x="{point_x:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{color}">{escape(_fmt_text(row.get("session_code_display")))}</text>'
+            )
         parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
 
     if avg_value > 0 and chart_max > 0:
@@ -1381,6 +1411,43 @@ def _build_session_metric_error_chart_svg(
             point_stroke = "#D97706" if highlight else "#6E1222"
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="{5.6 if highlight else 5.0:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="1.9" />')
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.2" fill="{point_stroke}" />')
+
+    if len(event_points) >= 2:
+        event_line = [(float(point["x"]), float(point["y"])) for point in event_points]
+        parts.append(
+            f'<path d="{_series_path(event_line)}" fill="none" stroke="{_alpha_hex("#EA3351", 0.68)}" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />'
+        )
+
+    show_event_labels = len(event_points) <= 12
+    for point in event_points:
+        x_center = float(point["x"])
+        y_value = float(point["y"])
+        error_value = float(point["error"])
+        color = str(point["color"])
+        upper_y = margin_top + plot_height - (min(chart_max, point["value"] + error_value) / chart_max) * plot_height
+        lower_y = margin_top + plot_height - (max(0.0, point["value"] - error_value) / chart_max) * plot_height
+        parts.append(
+            f'<line x1="{x_center:.1f}" y1="{upper_y:.1f}" x2="{x_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.62)}" stroke-width="1.5" />'
+        )
+        parts.append(
+            f'<line x1="{x_center - 4:.1f}" y1="{upper_y:.1f}" x2="{x_center + 4:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.62)}" stroke-width="1.5" />'
+        )
+        parts.append(
+            f'<line x1="{x_center - 4:.1f}" y1="{lower_y:.1f}" x2="{x_center + 4:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.62)}" stroke-width="1.5" />'
+        )
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="6.0" fill="{_alpha_hex(color, 0.16)}" />'
+        )
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.2" fill="#FFFFFF" stroke="{color}" stroke-width="2.0" />'
+        )
+        parts.append(
+            f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="1.9" fill="{color}" />'
+        )
+        if show_event_labels:
+            parts.append(
+                f'<text x="{x_center:.1f}" y="{max(y_value - 10, margin_top + 10):.1f}" text-anchor="middle" font-size="7.9" font-weight="800" fill="{color}">{escape(formatter(point["value"]))}</text>'
+            )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
@@ -1409,22 +1476,26 @@ def _build_session_dual_metric_error_chart_svg(
     if events[[left_spec["mean"], right_spec["mean"]]].max().max() <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
+    day_groups = list(events.groupby("day_label", sort=False))
+    left_day_means = [float(rows[left_spec["mean"]].mean()) for _, rows in day_groups]
+    right_day_means = [float(rows[right_spec["mean"]].mean()) for _, rows in day_groups]
     maxima: list[float] = []
     for spec in specs:
         maxima.extend((events[spec["mean"]] + events[spec["std"]]).tolist())
+    maxima.extend(left_day_means)
+    maxima.extend(right_day_means)
     chart_max = y_max if y_max is not None else _nice_max(max(maxima))
     margin_left, margin_right, margin_top, margin_bottom = 56, 24, 92, 52
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
-    day_groups = list(events.groupby("day_label", sort=False))
     cluster_width = plot_width / max(1, len(day_groups))
     grid_lines = 4
-    left_day_means = [float(rows[left_spec["mean"]].mean()) for _, rows in day_groups]
-    right_day_means = [float(rows[right_spec["mean"]].mean()) for _, rows in day_groups]
     panel_id = _chart_id(title, "dual-panel")
     plot_id = _chart_id(title, "dual-plot")
     left_line_shadow = _chart_id(title, "dual-left-line-shadow")
     right_line_shadow = _chart_id(title, "dual-right-line-shadow")
+    left_area_id = _chart_id(title, "dual-left-area")
+    right_area_id = _chart_id(title, "dual-right-area")
     shadow_id = _chart_id(title, "dual-shadow")
     badge = _chart_badge(title)
 
@@ -1445,6 +1516,14 @@ def _build_session_dual_metric_error_chart_svg(
         f'<filter id="{right_line_shadow}" x="-10%" y="-10%" width="140%" height="150%">',
         '<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="rgba(234,51,81,0.14)" />',
         "</filter>",
+        f'<linearGradient id="{left_area_id}" x1="0" y1="0" x2="0" y2="1">',
+        f'<stop offset="0%" stop-color="{_alpha_hex(str(left_spec["color"]), 0.20)}" />',
+        f'<stop offset="100%" stop-color="{_alpha_hex(str(left_spec["color"]), 0.01)}" />',
+        "</linearGradient>",
+        f'<linearGradient id="{right_area_id}" x1="0" y1="0" x2="0" y2="1">',
+        f'<stop offset="0%" stop-color="{_alpha_hex(str(right_spec["color"]), 0.16)}" />',
+        f'<stop offset="100%" stop-color="{_alpha_hex(str(right_spec["color"]), 0.01)}" />',
+        "</linearGradient>",
         f'<filter id="{shadow_id}" x="-10%" y="-10%" width="140%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.14)" />',
         "</filter>",
@@ -1493,51 +1572,98 @@ def _build_session_dual_metric_error_chart_svg(
         )
         for index, value in enumerate(right_day_means)
     ]
+    if len(left_points) >= 2:
+        left_area = [(left_points[0][0], margin_top + plot_height)] + left_points + [(left_points[-1][0], margin_top + plot_height)]
+        parts.append(f'<path d="{_series_path(left_area)} Z" fill="url(#{left_area_id})" />')
+    if len(right_points) >= 2:
+        right_area = [(right_points[0][0], margin_top + plot_height)] + right_points + [(right_points[-1][0], margin_top + plot_height)]
+        parts.append(f'<path d="{_series_path(right_area)} Z" fill="url(#{right_area_id})" />')
+
+    left_event_points: list[dict[str, Any]] = []
+    right_event_points: list[dict[str, Any]] = []
     for cluster_index, (day_label, rows) in enumerate(day_groups):
         rows = rows.reset_index(drop=True)
         cluster_x = margin_left + cluster_width * cluster_index
         if cluster_index % 2 == 0:
             parts.append(f'<rect x="{cluster_x + 4:.1f}" y="{margin_top + 4:.1f}" width="{cluster_width - 8:.1f}" height="{plot_height - 8:.1f}" rx="14" fill="{_alpha_hex("#E2E8F0", 0.24)}" />')
         count = len(rows.index)
-        gap = 10
-        event_width = min(56, max(28, (cluster_width * 0.74 - gap * max(0, count - 1)) / max(1, count)))
-        total_width = count * event_width + gap * max(0, count - 1)
+        gap = 14
+        usable_width = cluster_width * 0.70
+        slot_width = min(40, max(22, (usable_width - gap * max(0, count - 1)) / max(1, count)))
+        total_width = count * slot_width + gap * max(0, count - 1)
         start_x = cluster_x + (cluster_width - total_width) / 2
-        bar_gap = 4
-        inner_bar_width = max(10, (event_width - bar_gap) / 2)
         for row_index, (_, row) in enumerate(rows.iterrows()):
-            event_x = start_x + row_index * (event_width + gap)
+            base_x = start_x + row_index * (slot_width + gap) + slot_width / 2
             event_color = _event_fill_color(row.get("event_group"), row.get("session_code"))
-            for spec_index, spec in enumerate(specs):
-                mean_value = float(row.get(spec["mean"]) or 0.0)
-                error_value = float(row.get(spec["std"]) or 0.0)
-                bar_height = 0 if chart_max <= 0 else (mean_value / chart_max) * plot_height
-                bar_x = event_x + spec_index * (inner_bar_width + bar_gap)
-                bar_y = margin_top + plot_height - bar_height
-                bar_center = bar_x + inner_bar_width / 2
-                color = str(spec["color"])
-                upper_y = margin_top + plot_height - (min(chart_max, mean_value + error_value) / chart_max) * plot_height
-                lower_y = margin_top + plot_height - (max(0.0, mean_value - error_value) / chart_max) * plot_height
-                parts.append(f'<rect x="{bar_x:.1f}" y="{bar_y:.1f}" width="{inner_bar_width:.1f}" height="{bar_height:.1f}" rx="6" fill="{color}" filter="url(#{shadow_id})" />')
-                parts.append(f'<line x1="{bar_center:.1f}" y1="{upper_y:.1f}" x2="{bar_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
-                parts.append(f'<line x1="{bar_center - 4:.1f}" y1="{upper_y:.1f}" x2="{bar_center + 4:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
-                parts.append(f'<line x1="{bar_center - 4:.1f}" y1="{lower_y:.1f}" x2="{bar_center + 4:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
-            parts.append(f'<rect x="{event_x + event_width / 2 - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(event_color, 0.12)}" stroke="{_alpha_hex(event_color, 0.26)}" />')
-            parts.append(f'<text x="{event_x + event_width / 2:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{event_color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
+            left_value = float(row.get(left_spec["mean"]) or 0.0)
+            left_error = float(row.get(left_spec["std"]) or 0.0)
+            right_value = float(row.get(right_spec["mean"]) or 0.0)
+            right_error = float(row.get(right_spec["std"]) or 0.0)
+            left_event_points.append(
+                {
+                    "x": base_x - 5.0,
+                    "y": margin_top + plot_height - (0 if chart_max <= 0 else (left_value / chart_max) * plot_height),
+                    "value": left_value,
+                    "error": left_error,
+                    "color": str(left_spec["color"]),
+                }
+            )
+            right_event_points.append(
+                {
+                    "x": base_x + 5.0,
+                    "y": margin_top + plot_height - (0 if chart_max <= 0 else (right_value / chart_max) * plot_height),
+                    "value": right_value,
+                    "error": right_error,
+                    "color": str(right_spec["color"]),
+                }
+            )
+            parts.append(f'<rect x="{base_x - 11:.1f}" y="{height - 38:.1f}" width="22" height="12" rx="6" fill="{_alpha_hex(event_color, 0.12)}" stroke="{_alpha_hex(event_color, 0.26)}" />')
+            parts.append(f'<text x="{base_x:.1f}" y="{height - 29:.1f}" text-anchor="middle" font-size="7.2" font-weight="800" fill="{event_color}">{escape(_fmt_text(row.get("session_code_display")))}</text>')
         parts.append(f'<text x="{cluster_x + cluster_width / 2:.1f}" y="{height - 14:.1f}" text-anchor="middle" font-size="8.9" font-weight="700" fill="#55657E">{escape(_fmt_text(day_label))}</text>')
 
     if len(left_points) >= 2:
-        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.90" />')
-        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="{str(left_spec["color"])}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{left_line_shadow})" opacity="0.88" />')
+        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="#FFFFFF" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.90" />')
+        parts.append(f'<path d="{_series_path(left_points)}" fill="none" stroke="{str(left_spec["color"])}" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" filter="url(#{left_line_shadow})" opacity="0.90" />')
         for x_center, y_value in left_points:
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.4" fill="#FFFFFF" stroke="{str(left_spec["color"])}" stroke-width="1.7" />')
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.0" fill="{str(left_spec["color"])}" />')
     if len(right_points) >= 2:
-        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="#FFFFFF" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.82" />')
-        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="{str(right_spec["color"])}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" filter="url(#{right_line_shadow})" opacity="0.88" />')
+        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="#FFFFFF" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.82" />')
+        parts.append(f'<path d="{_series_path(right_points)}" fill="none" stroke="{str(right_spec["color"])}" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" filter="url(#{right_line_shadow})" opacity="0.88" />')
         for x_center, y_value in right_points:
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="4.4" fill="#FFFFFF" stroke="{str(right_spec["color"])}" stroke-width="1.7" />')
             parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="2.0" fill="{str(right_spec["color"])}" />')
+
+    if len(left_event_points) >= 2:
+        left_event_line = [(float(point["x"]), float(point["y"])) for point in left_event_points]
+        parts.append(
+            f'<path d="{_series_path(left_event_line)}" fill="none" stroke="{_alpha_hex(str(left_spec["color"]), 0.52)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />'
+        )
+    if len(right_event_points) >= 2:
+        right_event_line = [(float(point["x"]), float(point["y"])) for point in right_event_points]
+        parts.append(
+            f'<path d="{_series_path(right_event_line)}" fill="none" stroke="{_alpha_hex(str(right_spec["color"]), 0.52)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />'
+        )
+
+    show_event_labels = len(left_event_points) <= 14 and len(right_event_points) <= 14
+    for point in left_event_points + right_event_points:
+        x_center = float(point["x"])
+        y_value = float(point["y"])
+        error_value = float(point["error"])
+        value = float(point["value"])
+        color = str(point["color"])
+        upper_y = margin_top + plot_height - (min(chart_max, value + error_value) / chart_max) * plot_height
+        lower_y = margin_top + plot_height - (max(0.0, value - error_value) / chart_max) * plot_height
+        parts.append(f'<line x1="{x_center:.1f}" y1="{upper_y:.1f}" x2="{x_center:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+        parts.append(f'<line x1="{x_center - 4:.1f}" y1="{upper_y:.1f}" x2="{x_center + 4:.1f}" y2="{upper_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+        parts.append(f'<line x1="{x_center - 4:.1f}" y1="{lower_y:.1f}" x2="{x_center + 4:.1f}" y2="{lower_y:.1f}" stroke="{_alpha_hex(color, 0.58)}" stroke-width="1.4" />')
+        parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="5.2" fill="{_alpha_hex(color, 0.14)}" />')
+        parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="3.8" fill="#FFFFFF" stroke="{color}" stroke-width="1.8" />')
+        parts.append(f'<circle cx="{x_center:.1f}" cy="{y_value:.1f}" r="1.7" fill="{color}" />')
+        if show_event_labels:
+            parts.append(
+                f'<text x="{x_center:.1f}" y="{max(y_value - 10, margin_top + 10):.1f}" text-anchor="middle" font-size="7.6" font-weight="800" fill="{color}">{escape(_fmt_dec(value, 1))}</text>'
+            )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
