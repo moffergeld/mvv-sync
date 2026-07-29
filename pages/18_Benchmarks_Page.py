@@ -2372,7 +2372,7 @@ def render_compare_tab(sb) -> None:
         <div class="bench-sheet-card">
           <div class="bench-sheet-kicker">Benchmark Report</div>
           <div class="bench-sheet-title">Spelers vs KKD en Eredivisie</div>
-          <div class="bench-sheet-note">Vergelijk de wedstrijdbelasting per speler direct met de benchmarkniveaus van KKD en Eredivisie. De overview gebruikt het gemiddelde van de gekozen wedstrijdscope; onderaan zie je alle individuele matchloads van de geselecteerde speler.</div>
+          <div class="bench-sheet-note">Vergelijk de wedstrijdbelasting per speler direct met de benchmarkniveaus van KKD en Eredivisie, zonder extra KPI-ruis.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2437,49 +2437,6 @@ def render_compare_tab(sb) -> None:
     player_compare_df = player_compare_df.copy()
     player_compare_df["focus_level"] = player_compare_df.apply(lambda row: classify_focus_level(row, focus_metric), axis=1)
 
-    players_in_scope = int(player_compare_df["player_name"].nunique())
-    matches_in_scope = int(player_compare_df["match_count"].sum())
-    kkd_ready = int(player_compare_df["focus_level"].isin(["KKD-niveau", "Eredivisie-niveau"]).sum())
-    eredivisie_ready = int((player_compare_df["focus_level"] == "Eredivisie-niveau").sum())
-    attention_players = int((player_compare_df["focus_level"] == "Onder KKD").sum())
-
-    st.markdown(
-        f"""
-        <div class="bench-compare-strip">
-          <div class="bench-compare-cell">
-            <div class="bench-compare-key">Scope</div>
-            <div class="bench-compare-main">{scope_label}</div>
-            <div class="bench-compare-sub">Gemiddelde matchload per speler binnen deze wedstrijdselectie.</div>
-          </div>
-          <div class="bench-compare-cell">
-            <div class="bench-compare-key">Minimum minuten</div>
-            <div class="bench-compare-main">{int(min_minutes)} min</div>
-            <div class="bench-compare-sub">Matches onder deze duur tellen niet mee in de benchmarkvergelijking.</div>
-          </div>
-          <div class="bench-compare-cell">
-            <div class="bench-compare-key">Vergelijking</div>
-            <div class="bench-compare-main">KKD + Eredivisie</div>
-            <div class="bench-compare-sub">Per speler zie je direct beide benchmarkniveaus naast de eigen wedstrijdbelasting.</div>
-          </div>
-          <div class="bench-compare-cell">
-            <div class="bench-compare-key">Focus metric</div>
-            <div class="bench-compare-main">{METRIC_SPECS[focus_metric]['label']}</div>
-            <div class="bench-compare-sub">De charts en rangschikking hieronder volgen deze metric.</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    compare_cards = [
-        ("Spelers in scope", str(players_in_scope), "Actieve MVV-spelers met bruikbare matchload en positiekoppeling"),
-        ("Matches in sample", str(matches_in_scope), "Aantal spelersmatches dat in de huidige vergelijking is meegenomen"),
-        ("Op KKD-niveau", str(kkd_ready), "Spelers die op of boven KKD-benchmark zitten voor de focus metric"),
-        ("Op Eredivisie-niveau", str(eredivisie_ready), "Spelers die de Eredivisie-benchmark halen of benaderen"),
-        ("Onder KKD", str(attention_players), "Spelers die op de focus metric nog onder KKD-referentie blijven"),
-    ]
-    render_stat_cards(compare_cards, columns_per_row=5)
-
     filtered_player_df = player_compare_df.copy()
     if selected_position_filter != "Alle posities":
         filtered_player_df = filtered_player_df.loc[filtered_player_df["Positie"] == selected_position_filter].copy()
@@ -2519,96 +2476,21 @@ def render_compare_tab(sb) -> None:
             config={"displayModeBar": False, "responsive": True},
         )
 
-    st.markdown(
-        """
-        <div class="bench-sheet-card">
-          <div class="bench-sheet-kicker">Speleroverzicht</div>
-          <div class="bench-sheet-title">Matchload per speler vs benchmark</div>
-          <div class="bench-sheet-note">Huidige waarde = gemiddelde matchload binnen de gekozen scope. Daarachter zie je direct de gap naar KKD en Eredivisie.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.dataframe(build_compare_overview_table(filtered_player_df, focus_metric), width="stretch", hide_index=True)
-
-    detail_cols = st.columns([0.34, 0.66], gap="large")
     player_options = filtered_player_df["player_name"].dropna().astype(str).tolist()
-    with detail_cols[0]:
-        selected_player = st.selectbox("Speler detail", options=player_options)
-        selected_player_row = filtered_player_df.loc[filtered_player_df["player_name"] == selected_player].iloc[0]
-        st.markdown(
-            build_stat_card(
-                "Huidig scope-gemiddelde",
-                _format_metric(focus_metric, selected_player_row.get(f"{focus_metric}_current")),
-                f"{selected_player_row['Positie']} | {int(selected_player_row.get('match_count', 0))} matches in sample",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            build_stat_card(
-                "Gap naar KKD",
-                _format_gap(focus_metric, selected_player_row.get(f"{focus_metric}_gap_kkd")),
-                f"Benchmark: {_format_metric(focus_metric, selected_player_row.get(f'{focus_metric}_kkd_benchmark'))}",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            build_stat_card(
-                "Gap naar Eredivisie",
-                _format_gap(focus_metric, selected_player_row.get(f"{focus_metric}_gap_eredivisie")),
-                f"Benchmark: {_format_metric(focus_metric, selected_player_row.get(f'{focus_metric}_eredivisie_benchmark'))}",
-            ),
-            unsafe_allow_html=True,
-        )
-
+    selected_player = st.selectbox("Speler detailgrafiek", options=player_options)
+    selected_player_row = filtered_player_df.loc[filtered_player_df["player_name"] == selected_player].iloc[0]
     selected_player_matches = match_totals_df.loc[match_totals_df["player_name"] == selected_player].copy()
-    with detail_cols[1]:
-        st.plotly_chart(
-            build_player_match_timeline(
-                selected_player_matches,
-                focus_metric,
-                selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
-                selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
-                selected_player,
-            ),
-            width="stretch",
-            config={"displayModeBar": False, "responsive": True},
-        )
-
-    detail_table_cols = st.columns([0.42, 0.58], gap="large")
-    with detail_table_cols[0]:
-        st.markdown(
-            """
-            <div class="bench-sheet-card">
-              <div class="bench-sheet-kicker">Metric detail</div>
-              <div class="bench-sheet-title">Alle benchmarkmetrics voor deze speler</div>
-              <div class="bench-sheet-note">Links staat de speleroutput, daarnaast steeds KKD en Eredivisie met de netto gap.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.dataframe(build_player_metric_detail_table(selected_player_row), width="stretch", hide_index=True)
-    with detail_table_cols[1]:
-        st.markdown(
-            """
-            <div class="bench-sheet-card">
-              <div class="bench-sheet-kicker">Match detail</div>
-              <div class="bench-sheet-title">Individuele wedstrijden van de geselecteerde speler</div>
-              <div class="bench-sheet-note">Zo zie je per match exact welke load de speler draaide en hoe ver die van de benchmarks aflag.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.dataframe(
-            build_player_matches_table(
-                selected_player_matches,
-                focus_metric,
-                selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
-                selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
-            ),
-            width="stretch",
-            hide_index=True,
-        )
+    st.plotly_chart(
+        build_player_match_timeline(
+            selected_player_matches,
+            focus_metric,
+            selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
+            selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
+            selected_player,
+        ),
+        width="stretch",
+        config={"displayModeBar": False, "responsive": True},
+    )
 
 
 def main() -> None:
