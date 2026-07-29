@@ -35,6 +35,7 @@ TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
 
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY = st.secrets.get("SUPABASE_ANON_KEY", "").strip()
+BENCH_TEMP_SUBPOSITION_KEY = "bench_temp_sub_positions"
 
 MVV_RED = "#EA3351"
 MVV_RED_DEEP = "#8F1230"
@@ -223,6 +224,7 @@ NUMERIC_GPS_COLS = [
 ]
 
 POSITION_EXACT_CODES = {"AM", "CB", "CF", "CM", "DEF", "DM", "FOR", "GK", "LB", "LW", "MID", "RB", "RW"}
+SUBPOSITION_OPTIONS = [""] + sorted(POSITION_EXACT_CODES)
 
 
 def parse_metric_value(value: object) -> float:
@@ -435,46 +437,120 @@ def rest_get_paged(
 def fetch_active_players_cached(_sb, cache_scope: str = "benchmarks") -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     select_variants = [
-        "player_id,full_name,is_active,position",
-        'player_id,full_name,is_active,"Position"',
-        "player_id,full_name,is_active",
+        {"select": "player_id,full_name,is_active,position,sub_position", "filter_active": True},
+        {"select": 'player_id,full_name,is_active,"Position",sub_position', "filter_active": True},
+        {"select": 'player_id,full_name,is_active,"Position"', "filter_active": True},
+        {"select": "player_id,full_name,is_active,position", "filter_active": True},
+        {"select": "player_id,full_name,is_active", "filter_active": True},
+        {"select": "player_id,display_name,position,sub_position", "filter_active": False},
+        {"select": 'player_id,display_name,"Position",sub_position', "filter_active": False},
+        {"select": "player_id,display_name,position", "filter_active": False},
+        {"select": "player_id,display_name", "filter_active": False},
     ]
 
-    for select_clause in select_variants:
+    for variant in select_variants:
         try:
-            rows = (
-                _sb.table("players")
-                .select(select_clause)
-                .eq("is_active", True)
-                .order("full_name")
-                .execute()
-                .data
-                or []
-            )
+            query = _sb.table("players").select(variant["select"])
+            if variant["filter_active"]:
+                query = query.eq("is_active", True)
+            order_column = "full_name" if "full_name" in variant["select"] else "display_name"
+            rows = query.order(order_column).execute().data or []
             break
         except Exception:
             rows = []
 
     if not rows:
-        return pd.DataFrame(columns=["player_id", "full_name", "position"])
+        return pd.DataFrame(columns=["player_id", "full_name", "position", "sub_position"])
 
     records = []
     for row in rows:
         player_id = row.get("player_id")
-        full_name = str(row.get("full_name") or "").strip()
+        full_name = str(row.get("full_name") or row.get("display_name") or "").strip()
         position_value = row.get("Position")
         if position_value is None:
             position_value = row.get("position")
+        sub_position_value = row.get("sub_position")
         if player_id and full_name:
             records.append(
                 {
                     "player_id": str(player_id),
                     "full_name": full_name,
                     "position": str(position_value or "").strip(),
+                    "sub_position": str(sub_position_value or "").strip().upper(),
                 }
             )
 
     return pd.DataFrame(records)
+
+
+def get_temp_subposition_overrides() -> dict[str, str]:
+    raw = st.session_state.get(BENCH_TEMP_SUBPOSITION_KEY)
+    if not isinstance(raw, dict):
+        raw = {}
+        st.session_state[BENCH_TEMP_SUBPOSITION_KEY] = raw
+    return {str(key): str(value or "").strip().upper() for key, value in raw.items() if str(key).strip()}
+
+
+def set_temp_subposition_override(player_id: str, sub_position: str) -> None:
+    overrides = dict(get_temp_subposition_overrides())
+    normalized_player_id = str(player_id or "").strip()
+    normalized_value = str(sub_position or "").strip().upper()
+    if not normalized_player_id:
+        return
+    if normalized_value:
+        overrides[normalized_player_id] = normalized_value
+    else:
+        overrides.pop(normalized_player_id, None)
+    st.session_state[BENCH_TEMP_SUBPOSITION_KEY] = overrides
+
+
+def resolve_benchmark_source_position(position_value: object, sub_position_value: object, temp_override: object) -> str:
+    for candidate in (temp_override, sub_position_value, position_value):
+        normalized = str(candidate or "").strip().upper()
+        if normalized:
+            return normalized
+    return ""
+
+
+def apply_benchmark_position_overrides(players_df: pd.DataFrame) -> pd.DataFrame:
+    if players_df.empty:
+        return players_df
+
+    working_df = players_df.copy()
+    if "sub_position" not in working_df.columns:
+        working_df["sub_position"] = ""
+
+    temp_overrides = get_temp_subposition_overrides()
+    working_df["temp_sub_position"] = working_df["player_id"].astype(str).map(temp_overrides).fillna("")
+    working_df["benchmark_position_source"] = working_df.apply(
+        lambda row: resolve_benchmark_source_position(
+            row.get("position"),
+            row.get("sub_position"),
+            row.get("temp_sub_position"),
+        ),
+        axis=1,
+    )
+    return working_df
+
+
+def save_player_sub_position(sb, player_id: str, sub_position: str) -> tuple[bool, str]:
+    normalized_player_id = str(player_id or "").strip()
+    normalized_value = str(sub_position or "").strip().upper()
+    if not normalized_player_id:
+        return False, "Geen speler geselecteerd."
+
+    payload = {"sub_position": normalized_value or None}
+    try:
+        (
+            sb.table("players")
+            .update(payload)
+            .eq("player_id", normalized_player_id)
+            .execute()
+        )
+        fetch_active_players_cached.clear()
+        return True, "Subpositie permanent opgeslagen."
+    except Exception as exc:
+        return False, f"Permanent opslaan faalde: {exc}"
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -586,22 +662,23 @@ def build_position_snapshot(
     if window_df.empty:
         return pd.DataFrame()
 
-    player_map = players_df[["player_id", "full_name", "position"]].copy()
+    players_df = apply_benchmark_position_overrides(players_df)
+    player_map = players_df[["player_id", "full_name", "position", "benchmark_position_source"]].copy()
     player_map["player_id"] = player_map["player_id"].astype(str)
     player_map["full_name_key"] = player_map["full_name"].map(_canonical_player_name)
 
     name_position_map = (
         player_map.sort_values("full_name")
         .drop_duplicates("full_name_key")
-        .set_index("full_name_key")["position"]
+        .set_index("full_name_key")["benchmark_position_source"]
         .to_dict()
     )
 
     window_df["player_id"] = window_df["player_id"].astype(str)
     window_df["player_name_key"] = window_df["player_name"].map(_canonical_player_name)
-    window_df = window_df.merge(player_map[["player_id", "position"]], on="player_id", how="left")
-    window_df["position"] = window_df["position"].fillna(window_df["player_name_key"].map(name_position_map))
-    window_df["Positie"] = window_df["position"].apply(lambda value: map_position(value, source_key))
+    window_df = window_df.merge(player_map[["player_id", "benchmark_position_source"]], on="player_id", how="left")
+    window_df["benchmark_position_source"] = window_df["benchmark_position_source"].fillna(window_df["player_name_key"].map(name_position_map))
+    window_df["Positie"] = window_df["benchmark_position_source"].apply(lambda value: map_position(value, source_key))
     window_df = window_df.loc[window_df["Positie"].notna()].copy()
     if window_df.empty:
         return pd.DataFrame()
@@ -661,22 +738,23 @@ def build_player_snapshot(
     if window_df.empty:
         return pd.DataFrame()
 
-    player_map = players_df[["player_id", "full_name", "position"]].copy()
+    players_df = apply_benchmark_position_overrides(players_df)
+    player_map = players_df[["player_id", "full_name", "position", "benchmark_position_source"]].copy()
     player_map["player_id"] = player_map["player_id"].astype(str)
     player_map["full_name_key"] = player_map["full_name"].map(_canonical_player_name)
 
     name_position_map = (
         player_map.sort_values("full_name")
         .drop_duplicates("full_name_key")
-        .set_index("full_name_key")["position"]
+        .set_index("full_name_key")["benchmark_position_source"]
         .to_dict()
     )
 
     window_df["player_id"] = window_df["player_id"].astype(str)
     window_df["player_name_key"] = window_df["player_name"].map(_canonical_player_name)
-    window_df = window_df.merge(player_map[["player_id", "position"]], on="player_id", how="left")
-    window_df["position"] = window_df["position"].fillna(window_df["player_name_key"].map(name_position_map))
-    window_df["Positie"] = window_df["position"].apply(lambda value: map_position(value, source_key))
+    window_df = window_df.merge(player_map[["player_id", "benchmark_position_source"]], on="player_id", how="left")
+    window_df["benchmark_position_source"] = window_df["benchmark_position_source"].fillna(window_df["player_name_key"].map(name_position_map))
+    window_df["Positie"] = window_df["benchmark_position_source"].apply(lambda value: map_position(value, source_key))
     window_df = window_df.loc[window_df["Positie"].notna()].copy()
     if window_df.empty:
         return pd.DataFrame()
@@ -1480,22 +1558,29 @@ def prepare_match_totals_for_compare(
     if working_df.empty:
         return pd.DataFrame()
 
-    player_map = players_df[["player_id", "full_name", "position"]].copy()
+    players_df = apply_benchmark_position_overrides(players_df)
+    player_map = players_df[["player_id", "full_name", "position", "benchmark_position_source", "sub_position", "temp_sub_position"]].copy()
     player_map["player_id"] = player_map["player_id"].astype(str)
     player_map["full_name_key"] = player_map["full_name"].map(_canonical_player_name)
 
     name_position_map = (
         player_map.sort_values("full_name")
         .drop_duplicates("full_name_key")
-        .set_index("full_name_key")["position"]
+        .set_index("full_name_key")["benchmark_position_source"]
         .to_dict()
     )
 
     working_df["player_id"] = working_df["player_id"].astype(str)
     working_df["player_name_key"] = working_df["player_name"].map(_canonical_player_name)
-    working_df = working_df.merge(player_map[["player_id", "position"]], on="player_id", how="left")
-    working_df["position"] = working_df["position"].fillna(working_df["player_name_key"].map(name_position_map))
-    working_df["Positie"] = working_df["position"].apply(map_compare_position)
+    working_df = working_df.merge(
+        player_map[["player_id", "position", "sub_position", "temp_sub_position", "benchmark_position_source"]],
+        on="player_id",
+        how="left",
+    )
+    working_df["benchmark_position_source"] = working_df["benchmark_position_source"].fillna(
+        working_df["player_name_key"].map(name_position_map)
+    )
+    working_df["Positie"] = working_df["benchmark_position_source"].apply(map_compare_position)
     working_df = working_df.loc[working_df["Positie"].notna()].copy()
     if working_df.empty:
         return pd.DataFrame()
@@ -2399,6 +2484,76 @@ def render_compare_tab(sb) -> None:
             unsafe_allow_html=True,
         )
         return
+
+    players_df = apply_benchmark_position_overrides(players_df)
+    player_manager_df = players_df.sort_values("full_name").copy()
+    if not player_manager_df.empty:
+        st.markdown(
+            """
+            <div class="bench-sheet-card" style="margin-top:0.65rem; margin-bottom:1rem;">
+              <div class="bench-sheet-kicker">Subpositie beheer</div>
+              <div class="bench-sheet-title">Benchmarkpositie per speler instellen</div>
+              <div class="bench-sheet-note">Pas de benchmarkvergelijking tijdelijk aan voor deze sessie of sla de subpositie permanent op in Supabase op zodra de kolom beschikbaar is.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        manager_cols = st.columns([1.2, 0.7, 0.9, 0.9], gap="small")
+        player_lookup = {
+            str(row["player_id"]): str(row["full_name"])
+            for _, row in player_manager_df.iterrows()
+            if str(row.get("player_id") or "").strip() and str(row.get("full_name") or "").strip()
+        }
+        player_ids = list(player_lookup.keys())
+        selected_player_id = manager_cols[0].selectbox(
+            "Speler",
+            options=player_ids,
+            format_func=lambda player_id: player_lookup.get(player_id, player_id),
+            key="bench_compare_player_selector",
+        )
+        selected_player_row = player_manager_df.loc[
+            player_manager_df["player_id"].astype(str) == str(selected_player_id)
+        ].iloc[0]
+        base_position = str(selected_player_row.get("position") or "--").strip() or "--"
+        permanent_sub_position = str(selected_player_row.get("sub_position") or "").strip().upper()
+        temp_sub_position = str(selected_player_row.get("temp_sub_position") or "").strip().upper()
+        active_benchmark_position = (
+            str(selected_player_row.get("benchmark_position_source") or "").strip()
+            or permanent_sub_position
+            or base_position
+        )
+        active_source_label = "Tijdelijk" if temp_sub_position else ("Permanent" if permanent_sub_position else "Hoofdpositie")
+
+        manager_cols[1].text_input("Hoofdpositie", value=base_position, disabled=True)
+        permanent_choice = manager_cols[2].selectbox(
+            "Permanente subpositie",
+            options=SUBPOSITION_OPTIONS,
+            index=SUBPOSITION_OPTIONS.index(permanent_sub_position) if permanent_sub_position in SUBPOSITION_OPTIONS else 0,
+            key=f"bench_perm_sub_position_{selected_player_id}",
+        )
+        temp_choice = manager_cols[3].selectbox(
+            "Tijdelijke subpositie",
+            options=SUBPOSITION_OPTIONS,
+            index=SUBPOSITION_OPTIONS.index(temp_sub_position) if temp_sub_position in SUBPOSITION_OPTIONS else 0,
+            key=f"bench_temp_sub_position_{selected_player_id}",
+        )
+        st.caption(f"Actief in compare: {active_benchmark_position} via {active_source_label.lower()} instelling.")
+
+        action_cols = st.columns(3, gap="small")
+        if action_cols[0].button("Tijdelijk toepassen", width="stretch", key=f"bench_apply_temp_{selected_player_id}"):
+            set_temp_subposition_override(selected_player_id, temp_choice)
+            st.rerun()
+        if action_cols[1].button("Tijdelijke override wissen", width="stretch", key=f"bench_clear_temp_{selected_player_id}"):
+            set_temp_subposition_override(selected_player_id, "")
+            st.rerun()
+        if action_cols[2].button("Permanent opslaan", width="stretch", key=f"bench_save_perm_{selected_player_id}"):
+            ok, message = save_player_sub_position(sb, selected_player_id, permanent_choice)
+            if ok:
+                set_temp_subposition_override(selected_player_id, "")
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
 
     match_limit = COMPARE_MATCH_SCOPE_OPTIONS[scope_label]
     compare_bundle = build_player_match_compare_bundle(match_df, players_df, match_limit, min_minutes)
