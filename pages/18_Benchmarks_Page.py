@@ -291,6 +291,15 @@ def _status_html(status: str) -> str:
     return f'<span class="bench-status-pill {tone}">{status}</span>'
 
 
+def _status_class(status: str) -> str:
+    return {
+        "Vooruit": "is-up",
+        "Achteruit": "is-down",
+        "Stabiel": "is-flat",
+        "Nieuw": "is-new",
+    }.get(str(status), "is-flat")
+
+
 def build_stat_card(label: str, value: str, note: str) -> str:
     return f"""
     <div class="bench-stat-card">
@@ -308,6 +317,44 @@ def render_stat_cards(cards: list[tuple[str, str, str]], columns_per_row: int) -
         for column, (label, value, note) in zip(columns, row_cards):
             with column:
                 st.markdown(build_stat_card(label, value, note), unsafe_allow_html=True)
+
+
+def build_signal_card(label: str, title: str, note: str, status: str = "Stabiel") -> str:
+    tone = _status_class(status)
+    return f"""
+    <div class="bench-signal-card {tone}">
+      <div class="bench-signal-label">{label}</div>
+      <div class="bench-signal-title">{title}</div>
+      <div class="bench-signal-note">{note}</div>
+    </div>
+    """
+
+
+def build_position_card(position: str, row: pd.Series, metric_key: str) -> str:
+    status = str(row.get("overall_status", "--"))
+    tone = _status_class(status)
+    current_value = _format_metric(metric_key, row.get(f"{metric_key}_current"))
+    benchmark_value = _format_metric(metric_key, row.get(f"{metric_key}_benchmark"))
+    gap_value = _format_gap(metric_key, row.get(f"{metric_key}_gap_current"))
+    score_value = _format_score(row.get("current_score"))
+    delta_value = row.get("score_change")
+    score_delta = "--" if pd.isna(delta_value) else f"{'+' if float(delta_value) >= 0 else ''}{_format_decimal(delta_value, 1)}"
+    return f"""
+    <div class="bench-position-card">
+      <div class="bench-position-head">
+        <div class="bench-position-code">{position}</div>
+        <span class="bench-status-pill {tone}">{status}</span>
+      </div>
+      <div class="bench-position-metric">{METRIC_SPECS[metric_key]['label']}</div>
+      <div class="bench-position-value">{current_value}</div>
+      <div class="bench-position-grid">
+        <div><span>Benchmark</span><strong>{benchmark_value}</strong></div>
+        <div><span>Gap</span><strong>{gap_value}</strong></div>
+        <div><span>Bench-score</span><strong>{score_value}</strong></div>
+        <div><span>Delta</span><strong>{score_delta}</strong></div>
+      </div>
+    </div>
+    """
 
 
 @st.cache_data(show_spinner=False)
@@ -569,6 +616,67 @@ def build_position_snapshot(
     return position_snapshot
 
 
+def build_player_snapshot(
+    summary_df: pd.DataFrame,
+    players_df: pd.DataFrame,
+    source_key: str,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    if summary_df.empty or players_df.empty:
+        return pd.DataFrame()
+
+    window_df = summary_df.loc[
+        summary_df["datum"].between(pd.Timestamp(start_date), pd.Timestamp(end_date), inclusive="both")
+    ].copy()
+    if window_df.empty:
+        return pd.DataFrame()
+
+    player_map = players_df[["player_id", "full_name", "position"]].copy()
+    player_map["player_id"] = player_map["player_id"].astype(str)
+    player_map["full_name_key"] = player_map["full_name"].map(_canonical_player_name)
+
+    name_position_map = (
+        player_map.sort_values("full_name")
+        .drop_duplicates("full_name_key")
+        .set_index("full_name_key")["position"]
+        .to_dict()
+    )
+
+    window_df["player_id"] = window_df["player_id"].astype(str)
+    window_df["player_name_key"] = window_df["player_name"].map(_canonical_player_name)
+    window_df = window_df.merge(player_map[["player_id", "position"]], on="player_id", how="left")
+    window_df["position"] = window_df["position"].fillna(window_df["player_name_key"].map(name_position_map))
+    window_df["Positie"] = window_df["position"].apply(lambda value: map_position(value, source_key))
+    window_df = window_df.loc[window_df["Positie"].notna()].copy()
+    if window_df.empty:
+        return pd.DataFrame()
+
+    player_totals = (
+        window_df.groupby(["Positie", "player_id", "player_name"], as_index=False)
+        .agg(
+            session_count=("gps_id", "size"),
+            duration=("duration", "sum"),
+            total_distance=("total_distance", "sum"),
+            sprint=("sprint", "sum"),
+            high_sprint=("high_sprint", "sum"),
+            number_of_sprints=("number_of_sprints", "sum"),
+        )
+    )
+    player_totals = player_totals.loc[player_totals["duration"] > 0].copy()
+    if player_totals.empty:
+        return pd.DataFrame()
+
+    player_totals["hsr_hsd"] = player_totals["sprint"] + player_totals["high_sprint"]
+    player_totals["total_distance_90"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"], 90.0)
+    player_totals["hsr_hsd_90"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["duration"], 90.0)
+    player_totals["sprint_distance_90"] = _safe_divide_series(player_totals["high_sprint"], player_totals["duration"], 90.0)
+    player_totals["sprint_count_90"] = _safe_divide_series(player_totals["number_of_sprints"], player_totals["duration"], 90.0)
+    player_totals["total_distance_per_min"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"])
+    player_totals["intensity_pct"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["total_distance"], 100.0)
+    return player_totals
+
+
 def lookup_runs_benchmark_value(position: str) -> str:
     for source_df in BENCHMARK_SOURCE_TABLES.values():
         match = source_df.loc[source_df["Positie"].astype(str) == str(position), "Runs count >15.0 (#)"]
@@ -626,10 +734,13 @@ def build_compare_report(
     benchmark_df = build_benchmark_numeric_table(source_key)
     current_df = build_position_snapshot(summary_df, players_df, source_key, current_start, current_end)
     previous_df = build_position_snapshot(summary_df, players_df, source_key, previous_start, previous_end)
+    player_current_df = build_player_snapshot(summary_df, players_df, source_key, current_start, current_end)
+    player_previous_df = build_player_snapshot(summary_df, players_df, source_key, previous_start, previous_end)
 
     if current_df.empty:
         return {
             "report_df": pd.DataFrame(),
+            "player_report_df": pd.DataFrame(),
             "note": "Geen posities met bruikbare actuele Summary-data gevonden voor deze periode.",
             "current_start": current_start,
             "current_end": current_end,
@@ -697,8 +808,60 @@ def build_compare_report(
     report_df["active_players_current"] = pd.to_numeric(report_df["active_players_current"], errors="coerce").fillna(0).astype(int)
     report_df["active_players_previous"] = pd.to_numeric(report_df["active_players_previous"], errors="coerce").fillna(0).astype(int)
 
+    player_report_df = pd.DataFrame()
+    if not player_current_df.empty:
+        player_current_df = player_current_df.rename(
+            columns={column: f"{column}_current" for column in player_current_df.columns if column not in {"Positie", "player_id", "player_name"}}
+        )
+        if not player_previous_df.empty:
+            player_previous_df = player_previous_df.rename(
+                columns={column: f"{column}_previous" for column in player_previous_df.columns if column not in {"Positie", "player_id", "player_name"}}
+            )
+        player_report_df = (
+            player_current_df.merge(benchmark_df, on="Positie", how="left")
+            .merge(player_previous_df, on=["Positie", "player_id", "player_name"], how="left")
+        )
+        for metric_key, spec in METRIC_SPECS.items():
+            benchmark_col = f"{metric_key}_benchmark"
+            current_col = f"{metric_key}_current"
+            previous_col = f"{metric_key}_previous"
+            player_report_df[f"{metric_key}_gap_current"] = player_report_df[current_col] - player_report_df[benchmark_col]
+            player_report_df[f"{metric_key}_gap_previous"] = player_report_df[previous_col] - player_report_df[benchmark_col]
+            player_report_df[f"{metric_key}_status"] = player_report_df.apply(
+                lambda row: _metric_status(
+                    row.get(current_col),
+                    row.get(previous_col),
+                    row.get(benchmark_col),
+                    float(spec["tolerance"]),
+                ),
+                axis=1,
+            )
+        status_columns = [f"{metric_key}_status" for metric_key in METRIC_SPECS]
+        player_report_df["tracked_metrics"] = player_report_df[status_columns].apply(
+            lambda row: int(pd.Series(row).isin(["Vooruit", "Achteruit", "Stabiel"]).sum()),
+            axis=1,
+        )
+        player_report_df["improved_metrics"] = player_report_df[status_columns].apply(
+            lambda row: int((pd.Series(row) == "Vooruit").sum()),
+            axis=1,
+        )
+        player_report_df["worsened_metrics"] = player_report_df[status_columns].apply(
+            lambda row: int((pd.Series(row) == "Achteruit").sum()),
+            axis=1,
+        )
+        player_report_df["current_score"] = player_report_df.apply(lambda row: _score_against_benchmark(row, "current"), axis=1)
+        player_report_df["previous_score"] = player_report_df.apply(lambda row: _score_against_benchmark(row, "previous"), axis=1)
+        player_report_df["score_change"] = player_report_df["current_score"] - player_report_df["previous_score"]
+        player_report_df["progress_pct"] = _safe_divide_series(
+            player_report_df["improved_metrics"],
+            player_report_df["tracked_metrics"],
+            100.0,
+        )
+        player_report_df["overall_status"] = player_report_df.apply(_overall_status, axis=1)
+
     return {
         "report_df": report_df,
+        "player_report_df": player_report_df,
         "note": None,
         "current_start": current_start,
         "current_end": current_end,
@@ -736,6 +899,37 @@ def build_focus_table(report_df: pd.DataFrame, metric_key: str) -> pd.DataFrame:
         lambda value: "--" if pd.isna(value) else f"{'+' if float(value) >= 0 else ''}{_format_decimal(value, 1)}"
     )
     return focus_df[["Positie", "Spelers", "Huidig", "Vorig", "Benchmark", "Gap", "Trend", "Bench-score", "Score delta"]]
+
+
+def build_player_focus_table(player_report_df: pd.DataFrame, metric_key: str) -> pd.DataFrame:
+    current_col = f"{metric_key}_current"
+    previous_col = f"{metric_key}_previous"
+    benchmark_col = f"{metric_key}_benchmark"
+    gap_col = f"{metric_key}_gap_current"
+    status_col = f"{metric_key}_status"
+    focus_df = player_report_df.loc[player_report_df[current_col].notna(), [
+        "player_name",
+        "Positie",
+        "session_count_current",
+        current_col,
+        previous_col,
+        benchmark_col,
+        gap_col,
+        status_col,
+        "current_score",
+        "score_change",
+    ]].copy()
+    focus_df = focus_df.rename(columns={"player_name": "Speler", "session_count_current": "Sessies"})
+    focus_df["Huidig"] = focus_df[current_col].apply(lambda value: _format_metric(metric_key, value))
+    focus_df["Vorig"] = focus_df[previous_col].apply(lambda value: _format_metric(metric_key, value))
+    focus_df["Benchmark"] = focus_df[benchmark_col].apply(lambda value: _format_metric(metric_key, value))
+    focus_df["Gap"] = focus_df[gap_col].apply(lambda value: _format_gap(metric_key, value))
+    focus_df["Trend"] = focus_df[status_col].astype(str)
+    focus_df["Bench-score"] = focus_df["current_score"].apply(_format_score)
+    focus_df["Score delta"] = focus_df["score_change"].apply(
+        lambda value: "--" if pd.isna(value) else f"{'+' if float(value) >= 0 else ''}{_format_decimal(value, 1)}"
+    )
+    return focus_df[["Speler", "Positie", "Sessies", "Huidig", "Vorig", "Benchmark", "Gap", "Trend", "Bench-score", "Score delta"]]
 
 
 def build_position_detail_table(report_df: pd.DataFrame, position: str) -> pd.DataFrame:
@@ -792,34 +986,68 @@ def build_metric_compare_chart(
     current_col = f"{metric_key}_current"
     previous_col = f"{metric_key}_previous"
     benchmark_col = f"{metric_key}_benchmark"
-    chart_df = report_df.loc[report_df[current_col].notna(), ["Positie", current_col, previous_col, benchmark_col]].copy()
+    chart_df = report_df.loc[
+        report_df[current_col].notna(),
+        ["Positie", current_col, previous_col, benchmark_col, "overall_status"],
+    ].copy()
+    if not chart_df.empty:
+        chart_df["gap_abs"] = (chart_df[current_col] - chart_df[benchmark_col]).abs()
+        chart_df = chart_df.sort_values("gap_abs", ascending=False)
 
     fig = go.Figure()
-    fig.update_layout(**_chart_layout(f"{METRIC_SPECS[metric_key]['label']} vs benchmark"))
-    fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT))
-    fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_layout(**_chart_layout(f"{METRIC_SPECS[metric_key]['label']} vs benchmark", height=430))
+    fig.update_xaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT))
 
     if chart_df.empty:
         return fig
 
+    status_color_map = {
+        "Vooruit": MVV_GREEN,
+        "Achteruit": MVV_RED,
+        "Stabiel": MVV_AMBER,
+        "Nieuw": "#38BDF8",
+    }
+
+    for _, row in chart_df.iterrows():
+        fig.add_trace(
+            go.Scatter(
+                x=[row[benchmark_col], row[current_col]],
+                y=[row["Positie"], row["Positie"]],
+                mode="lines",
+                line=dict(color="rgba(255,255,255,0.22)", width=7),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
     fig.add_trace(
-        go.Bar(
-            name=f"Huidig ({period_label})",
-            x=chart_df["Positie"],
-            y=chart_df[current_col],
-            marker_color=METRIC_SPECS[metric_key]["color"],
-            text=[_format_metric(metric_key, value) for value in chart_df[current_col]],
-            textposition="outside",
-            cliponaxis=False,
+        go.Scatter(
+            name=f"Benchmark {source_key}",
+            x=chart_df[benchmark_col],
+            y=chart_df["Positie"],
+            mode="markers",
+            marker=dict(size=12, color=MVV_GOLD, symbol="diamond", line=dict(color="#fff4cc", width=1)),
+            customdata=chart_df[benchmark_col],
+            hovertemplate="<b>%{y}</b><br>Benchmark: %{customdata:.1f}<extra></extra>",
         )
     )
     fig.add_trace(
-        go.Bar(
-            name=f"Benchmark {source_key}",
-            x=chart_df["Positie"],
-            y=chart_df[benchmark_col],
-            marker_color="rgba(232,178,77,0.36)",
-            marker_line=dict(color=MVV_GOLD, width=1.2),
+        go.Scatter(
+            name=f"Huidig ({period_label})",
+            x=chart_df[current_col],
+            y=chart_df["Positie"],
+            mode="markers+text",
+            marker=dict(
+                size=15,
+                color=[status_color_map.get(status, METRIC_SPECS[metric_key]["color"]) for status in chart_df["overall_status"]],
+                line=dict(color="#ffffff", width=1.5),
+            ),
+            text=[_format_metric(metric_key, value) for value in chart_df[current_col]],
+            textposition="middle right",
+            textfont=dict(color=MVV_TEXT, size=11),
+            customdata=chart_df[current_col],
+            hovertemplate="<b>%{y}</b><br>Huidig: %{customdata:.1f}<extra></extra>",
         )
     )
 
@@ -827,11 +1055,12 @@ def build_metric_compare_chart(
         fig.add_trace(
             go.Scatter(
                 name="Vorige periode",
-                x=chart_df["Positie"],
-                y=chart_df[previous_col],
-                mode="lines+markers",
-                line=dict(color="#93C5FD", width=2.5, dash="dot"),
-                marker=dict(size=8, color="#93C5FD"),
+                x=chart_df[previous_col],
+                y=chart_df["Positie"],
+                mode="markers",
+                marker=dict(size=11, color="#0f172a", line=dict(color="#93C5FD", width=2)),
+                customdata=chart_df[previous_col],
+                hovertemplate="<b>%{y}</b><br>Vorig: %{customdata:.1f}<extra></extra>",
             )
         )
 
@@ -848,9 +1077,198 @@ def build_progress_chart(report_df: pd.DataFrame) -> go.Figure:
     ]].copy()
 
     fig = go.Figure()
-    fig.update_layout(**_chart_layout("Voortgang per positie", height=370))
+    fig.update_layout(**_chart_layout("Bench-score per positie", height=430))
     fig.update_yaxes(automargin=True, gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_xaxes(range=[0, 100], ticksuffix="%", showgrid=True, gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
+
+    if chart_df.empty:
+        return fig
+
+    score_df = report_df.loc[report_df["current_score"].notna(), [
+        "Positie",
+        "current_score",
+        "previous_score",
+        "score_change",
+        "overall_status",
+    ]].copy()
+    score_df = score_df.sort_values("current_score", ascending=True)
+
+    color_map = {
+        "Vooruit": MVV_GREEN,
+        "Achteruit": MVV_RED,
+        "Stabiel": MVV_AMBER,
+    }
+    fig.add_trace(
+        go.Bar(
+            x=score_df["current_score"].fillna(0),
+            y=score_df["Positie"],
+            orientation="h",
+            marker_color=[color_map.get(status, "#64748B") for status in score_df["overall_status"]],
+            text=[
+                "--" if pd.isna(value) else f"{_format_decimal(value, 0)}%"
+                for value in score_df["current_score"]
+            ],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{y}<br>Bench-score: %{x:.0f}%<extra></extra>",
+        )
+    )
+    if score_df["previous_score"].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                name="Vorige score",
+                x=score_df["previous_score"],
+                y=score_df["Positie"],
+                mode="markers",
+                marker=dict(size=10, color="#0f172a", line=dict(color="#93C5FD", width=2)),
+                hovertemplate="%{y}<br>Vorige score: %{x:.0f}%<extra></extra>",
+            )
+        )
+    fig.add_vline(x=75, line_dash="dot", line_color="rgba(255,255,255,0.18)")
+    return fig
+
+
+def build_status_heatmap(report_df: pd.DataFrame) -> go.Figure:
+    status_columns = [f"{metric_key}_status" for metric_key in METRIC_SPECS]
+    labels = [str(METRIC_SPECS[metric_key]["label"]) for metric_key in METRIC_SPECS]
+    chart_df = report_df[["Positie"] + status_columns].copy()
+    chart_df = chart_df.sort_values("current_score", ascending=False, na_position="last")
+
+    mapping = {"Achteruit": -1, "Stabiel": 0, "Vooruit": 1, "Nieuw": 2, "--": None}
+    z_values: list[list[float | None]] = []
+    text_values: list[list[str]] = []
+    for _, row in chart_df.iterrows():
+        z_row: list[float | None] = []
+        text_row: list[str] = []
+        for column in status_columns:
+            status = str(row.get(column, "--"))
+            z_row.append(mapping.get(status))
+            text_row.append(status)
+        z_values.append(z_row)
+        text_values.append(text_row)
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_values,
+            x=labels,
+            y=chart_df["Positie"],
+            text=text_values,
+            texttemplate="%{text}",
+            colorscale=[
+                [0.0, "rgba(234,51,81,0.85)"],
+                [0.25, "rgba(234,51,81,0.85)"],
+                [0.5, "rgba(245,165,36,0.85)"],
+                [0.75, "rgba(47,182,122,0.85)"],
+                [1.0, "rgba(56,189,248,0.85)"],
+            ],
+            zmin=-1,
+            zmax=2,
+            hovertemplate="<b>%{y}</b><br>%{x}: %{text}<extra></extra>",
+            showscale=False,
+            xgap=6,
+            ygap=6,
+        )
+    )
+    fig.update_layout(**_chart_layout("Voortgangsmatrix per metric", height=400))
+    fig.update_xaxes(side="top", tickfont=dict(color=MVV_TEXT_SOFT, size=11))
+    fig.update_yaxes(tickfont=dict(color=MVV_TEXT_SOFT))
+    return fig
+
+
+def build_player_compare_chart(player_report_df: pd.DataFrame, metric_key: str) -> go.Figure:
+    current_col = f"{metric_key}_current"
+    previous_col = f"{metric_key}_previous"
+    benchmark_col = f"{metric_key}_benchmark"
+    chart_df = player_report_df.loc[
+        player_report_df[current_col].notna(),
+        ["player_name", "Positie", current_col, previous_col, benchmark_col, "overall_status"],
+    ].copy()
+    if not chart_df.empty:
+        chart_df["label"] = chart_df["player_name"].astype(str) + " (" + chart_df["Positie"].astype(str) + ")"
+        chart_df["gap_abs"] = (chart_df[current_col] - chart_df[benchmark_col]).abs()
+        chart_df = chart_df.sort_values("gap_abs", ascending=False).head(14)
+
+    fig = go.Figure()
+    fig.update_layout(**_chart_layout("Spelers vs benchmark", height=470))
+    fig.update_xaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT, size=11))
+
+    if chart_df.empty:
+        return fig
+
+    status_color_map = {
+        "Vooruit": MVV_GREEN,
+        "Achteruit": MVV_RED,
+        "Stabiel": MVV_AMBER,
+        "Nieuw": "#38BDF8",
+    }
+
+    for _, row in chart_df.iterrows():
+        fig.add_trace(
+            go.Scatter(
+                x=[row[benchmark_col], row[current_col]],
+                y=[row["label"], row["label"]],
+                mode="lines",
+                line=dict(color="rgba(255,255,255,0.18)", width=6),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            name="Benchmark",
+            x=chart_df[benchmark_col],
+            y=chart_df["label"],
+            mode="markers",
+            marker=dict(size=11, color=MVV_GOLD, symbol="diamond", line=dict(color="#fff4cc", width=1)),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            name="Huidig",
+            x=chart_df[current_col],
+            y=chart_df["label"],
+            mode="markers+text",
+            marker=dict(
+                size=14,
+                color=[status_color_map.get(status, MVV_RED_SOFT) for status in chart_df["overall_status"]],
+                line=dict(color="#ffffff", width=1.4),
+            ),
+            text=[_format_metric(metric_key, value) for value in chart_df[current_col]],
+            textposition="middle right",
+            textfont=dict(color=MVV_TEXT, size=11),
+        )
+    )
+    if chart_df[previous_col].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                name="Vorig",
+                x=chart_df[previous_col],
+                y=chart_df["label"],
+                mode="markers",
+                marker=dict(size=10, color="#0f172a", line=dict(color="#93C5FD", width=2)),
+            )
+        )
+    return fig
+
+
+def build_player_score_chart(player_report_df: pd.DataFrame) -> go.Figure:
+    chart_df = player_report_df.loc[player_report_df["current_score"].notna(), [
+        "player_name",
+        "Positie",
+        "current_score",
+        "previous_score",
+        "overall_status",
+    ]].copy()
+    if not chart_df.empty:
+        chart_df["label"] = chart_df["player_name"].astype(str) + " (" + chart_df["Positie"].astype(str) + ")"
+        chart_df = chart_df.sort_values("current_score", ascending=True).tail(14)
+
+    fig = go.Figure()
+    fig.update_layout(**_chart_layout("Bench-score spelers", height=470))
+    fig.update_xaxes(range=[0, 100], ticksuffix="%", gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT, size=11))
 
     if chart_df.empty:
         return fig
@@ -862,16 +1280,26 @@ def build_progress_chart(report_df: pd.DataFrame) -> go.Figure:
     }
     fig.add_trace(
         go.Bar(
-            x=chart_df["progress_pct"].fillna(0),
-            y=chart_df["Positie"],
+            x=chart_df["current_score"],
+            y=chart_df["label"],
             orientation="h",
             marker_color=[color_map.get(status, "#64748B") for status in chart_df["overall_status"]],
-            text=[f"{int(improved)}/{int(total)} metrics" for improved, total in zip(chart_df["improved_metrics"], chart_df["tracked_metrics"])],
+            text=[_format_score(value) for value in chart_df["current_score"]],
             textposition="outside",
             cliponaxis=False,
-            hovertemplate="%{y}<br>%{x:.0f}% metrics vooruit<extra></extra>",
+            name="Huidig",
         )
     )
+    if chart_df["previous_score"].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                name="Vorig",
+                x=chart_df["previous_score"],
+                y=chart_df["label"],
+                mode="markers",
+                marker=dict(size=9, color="#0f172a", line=dict(color="#93C5FD", width=2)),
+            )
+        )
     return fig
 
 
@@ -1079,6 +1507,163 @@ def render_css() -> None:
           line-height: 1.4;
         }
 
+        .bench-compare-strip {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 0.75rem;
+          margin: 0.95rem 0 1rem 0;
+        }
+
+        .bench-compare-cell {
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: linear-gradient(180deg, rgba(18, 25, 42, 0.94), rgba(11, 16, 29, 0.96));
+          padding: 0.9rem 1rem;
+        }
+
+        .bench-compare-key {
+          color: rgba(255,255,255,0.6);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 0.35rem;
+        }
+
+        .bench-compare-main {
+          color: #ffffff;
+          font-size: 1.06rem;
+          font-weight: 800;
+          line-height: 1.2;
+        }
+
+        .bench-compare-sub {
+          color: rgba(255,255,255,0.72);
+          font-size: 0.82rem;
+          line-height: 1.4;
+          margin-top: 0.25rem;
+        }
+
+        .bench-signal-card {
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: linear-gradient(180deg, rgba(18, 25, 42, 0.94), rgba(11, 16, 29, 0.96));
+          padding: 0.95rem 1rem;
+          min-height: 132px;
+        }
+
+        .bench-signal-card.is-up {
+          border-color: rgba(47,182,122,0.38);
+          box-shadow: inset 0 0 0 1px rgba(47,182,122,0.12);
+        }
+
+        .bench-signal-card.is-down {
+          border-color: rgba(234,51,81,0.34);
+          box-shadow: inset 0 0 0 1px rgba(234,51,81,0.10);
+        }
+
+        .bench-signal-card.is-flat {
+          border-color: rgba(245,165,36,0.28);
+        }
+
+        .bench-signal-card.is-new {
+          border-color: rgba(56,189,248,0.28);
+        }
+
+        .bench-signal-label {
+          color: rgba(255,255,255,0.6);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          margin-bottom: 0.4rem;
+        }
+
+        .bench-signal-title {
+          color: #ffffff;
+          font-size: 1.2rem;
+          font-weight: 800;
+          line-height: 1.15;
+          margin-bottom: 0.35rem;
+        }
+
+        .bench-signal-note {
+          color: rgba(255,255,255,0.74);
+          font-size: 0.84rem;
+          line-height: 1.45;
+        }
+
+        .bench-subsection {
+          color: rgba(255,255,255,0.62);
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          margin: 1rem 0 0.4rem 0;
+        }
+
+        .bench-position-card {
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: linear-gradient(180deg, rgba(18, 25, 42, 0.94), rgba(11, 16, 29, 0.96));
+          padding: 0.95rem 1rem;
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
+          min-height: 186px;
+        }
+
+        .bench-position-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.6rem;
+          margin-bottom: 0.7rem;
+        }
+
+        .bench-position-code {
+          color: #ffffff;
+          font-size: 1.18rem;
+          font-weight: 900;
+          letter-spacing: 0.04em;
+        }
+
+        .bench-position-metric {
+          color: rgba(255,255,255,0.64);
+          font-size: 0.76rem;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+        }
+
+        .bench-position-value {
+          color: #ffffff;
+          font-size: 1.45rem;
+          font-weight: 800;
+          line-height: 1.05;
+          margin: 0.35rem 0 0.7rem 0;
+        }
+
+        .bench-position-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 0.55rem 0.75rem;
+        }
+
+        .bench-position-grid span {
+          display: block;
+          color: rgba(255,255,255,0.58);
+          font-size: 0.7rem;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-bottom: 0.18rem;
+        }
+
+        .bench-position-grid strong {
+          color: #ffffff;
+          font-size: 0.93rem;
+          font-weight: 800;
+        }
+
         .bench-status-pill {
           display: inline-flex;
           align-items: center;
@@ -1150,6 +1735,14 @@ def render_css() -> None:
 
           .bench-title {
             font-size: 2rem;
+          }
+
+          .bench-compare-strip {
+            grid-template-columns: 1fr;
+          }
+
+          .bench-position-grid {
+            grid-template-columns: 1fr;
           }
         }
         </style>
@@ -1226,6 +1819,7 @@ def render_compare_tab(sb) -> None:
 
     compare_bundle = build_compare_report(summary_df, players_df, source_key, PERIOD_OPTIONS[period_label])
     report_df = compare_bundle.get("report_df", pd.DataFrame())
+    player_report_df = compare_bundle.get("player_report_df", pd.DataFrame())
     if report_df.empty:
         st.markdown(
             f'<div class="bench-empty">{compare_bundle.get("note") or "Geen vergelijkingsdata beschikbaar."}</div>',
@@ -1258,6 +1852,53 @@ def render_compare_tab(sb) -> None:
         relative_gap, biggest_gap_position, biggest_gap_metric = max(gap_candidates, key=lambda item: item[0])
         biggest_gap_note = f"{biggest_gap_metric} | {_format_decimal(relative_gap * 100, 1)}% afwijking"
 
+    player_up_count = int((player_report_df["overall_status"] == "Vooruit").sum()) if not player_report_df.empty else 0
+    total_players = int(player_report_df["player_name"].nunique()) if not player_report_df.empty else 0
+    best_player_name = "--"
+    best_player_note = "Geen individuele benchmarkscore beschikbaar."
+    if not player_report_df.empty and player_report_df["current_score"].notna().any():
+        best_player_row = player_report_df.sort_values("current_score", ascending=False).iloc[0]
+        best_player_name = str(best_player_row["player_name"])
+        best_player_note = f"{best_player_row['Positie']} | Bench-score {_format_score(best_player_row['current_score'])}"
+
+    watch_player_name = "--"
+    watch_player_note = "Geen individuele gap gevonden."
+    if not player_report_df.empty:
+        player_gap_df = player_report_df.loc[player_report_df[f"{focus_metric}_current"].notna()].copy()
+        if not player_gap_df.empty:
+            player_gap_df["focus_gap_abs"] = (player_gap_df[f"{focus_metric}_gap_current"]).abs()
+            watch_row = player_gap_df.sort_values("focus_gap_abs", ascending=False).iloc[0]
+            watch_player_name = str(watch_row["player_name"])
+            watch_player_note = f"{watch_row['Positie']} | Gap { _format_gap(focus_metric, watch_row[f'{focus_metric}_gap_current']) }"
+
+    st.markdown(
+        f"""
+        <div class="bench-compare-strip">
+          <div class="bench-compare-cell">
+            <div class="bench-compare-key">Benchmarkbron</div>
+            <div class="bench-compare-main">{source_key}</div>
+            <div class="bench-compare-sub">Referentietabel voor alle vergelijkingen in dit rapport.</div>
+          </div>
+          <div class="bench-compare-cell">
+            <div class="bench-compare-key">Periode</div>
+            <div class="bench-compare-main">{period_label}</div>
+            <div class="bench-compare-sub">{current_start.strftime("%d/%m/%Y")} t/m {current_end.strftime("%d/%m/%Y")}</div>
+          </div>
+          <div class="bench-compare-cell">
+            <div class="bench-compare-key">Vorige referentie</div>
+            <div class="bench-compare-main">{previous_start.strftime("%d/%m/%Y")} t/m {previous_end.strftime("%d/%m/%Y")}</div>
+            <div class="bench-compare-sub">Wordt gebruikt om vooruit of achteruit te bepalen.</div>
+          </div>
+          <div class="bench-compare-cell">
+            <div class="bench-compare-key">Focus metric</div>
+            <div class="bench-compare-main">{METRIC_SPECS[focus_metric]['label']}</div>
+            <div class="bench-compare-sub">Hoofdvergelijking in de charts en detailtabellen hieronder.</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown(
         f"""
         <div class="bench-table-note">
@@ -1270,14 +1911,60 @@ def render_compare_tab(sb) -> None:
     )
 
     compare_cards = [
+        ("Spelers in scope", str(total_players), f"{total_players} MVV-spelers met benchmark-koppeling in de gekozen periode"),
         ("Gekoppelde posities", str(matched_positions), f"{matched_positions} van {len(report_df)} benchmarkposities hebben actuele data"),
         ("Metrics vooruit", f"{improved_total}/{tracked_total or 0}", "Aantal vergelijkbare metrics die dichter bij de benchmark kwamen"),
         ("Posities vooruit", str(progressing_positions), "Posities met een hogere benchmarks score dan in de vorige periode"),
-        ("Grootste gap", biggest_gap_position, biggest_gap_note),
     ]
     render_stat_cards(compare_cards, columns_per_row=4)
 
-    chart_col, progress_col = st.columns([0.62, 0.38], gap="large")
+    signal_cols = st.columns(3, gap="small")
+    with signal_cols[0]:
+        st.markdown(
+            build_signal_card(
+                "Beste match",
+                best_player_name,
+                best_player_note,
+                "Vooruit",
+            ),
+            unsafe_allow_html=True,
+        )
+    with signal_cols[1]:
+        st.markdown(
+            build_signal_card(
+                "Grootste watch",
+                watch_player_name,
+                watch_player_note,
+                "Achteruit",
+            ),
+            unsafe_allow_html=True,
+        )
+    with signal_cols[2]:
+        st.markdown(
+            build_signal_card(
+                "Spelers vooruit",
+                f"{player_up_count}/{total_players or 0}",
+                "Aantal individuele spelers dat in deze periode dichter bij de benchmark komt.",
+                "Stabiel" if total_players == 0 else ("Vooruit" if player_up_count >= max(1, total_players / 2) else "Achteruit"),
+            ),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div class="bench-subsection">Positie-overzicht</div>', unsafe_allow_html=True)
+    position_cards = []
+    for _, row in report_df.sort_values("current_score", ascending=False, na_position="last").iterrows():
+        if pd.isna(row.get(f"{focus_metric}_current")):
+            continue
+        position_cards.append(build_position_card(str(row["Positie"]), row, focus_metric))
+    if position_cards:
+        for start in range(0, len(position_cards), 4):
+            row_cards = position_cards[start : start + 4]
+            cols = st.columns(4, gap="small")
+            for col, card_html in zip(cols, row_cards):
+                with col:
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+    chart_col, progress_col = st.columns([0.56, 0.44], gap="large")
     with chart_col:
         fig = build_metric_compare_chart(report_df, focus_metric, source_key, period_label)
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
@@ -1285,18 +1972,63 @@ def render_compare_tab(sb) -> None:
         fig = build_progress_chart(report_df)
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
-    focus_table = build_focus_table(report_df, focus_metric)
-    st.markdown(
-        f"""
-        <div class="bench-sheet-card">
-          <div class="bench-sheet-kicker">Focus metric</div>
-          <div class="bench-sheet-title">{METRIC_SPECS[focus_metric]['label']} per positie</div>
-          <div class="bench-sheet-note">Huidige periode, vorige periode, benchmark en netto gap in dezelfde tabel.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.dataframe(focus_table, width="stretch", hide_index=True)
+    matrix_col, focus_table_col = st.columns([0.48, 0.52], gap="large")
+    with matrix_col:
+        fig = build_status_heatmap(report_df)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+    with focus_table_col:
+        focus_table = build_focus_table(report_df, focus_metric)
+        st.markdown(
+            f"""
+            <div class="bench-sheet-card">
+              <div class="bench-sheet-kicker">Focus metric</div>
+              <div class="bench-sheet-title">{METRIC_SPECS[focus_metric]['label']} per positie</div>
+              <div class="bench-sheet-note">Huidige periode, vorige periode, benchmark en netto gap in dezelfde tabel.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.dataframe(focus_table, width="stretch", hide_index=True)
+
+    if not player_report_df.empty:
+        st.markdown('<div class="bench-subsection">Spelers vs benchmark</div>', unsafe_allow_html=True)
+        player_filter_cols = st.columns([0.44, 0.56], gap="small")
+        position_options = ["Alle posities"] + sorted(player_report_df["Positie"].dropna().astype(str).unique().tolist())
+        selected_position_filter = player_filter_cols[0].selectbox("Positiefilter spelers", options=position_options)
+        player_sort_mode = player_filter_cols[1].selectbox(
+            "Spelers sorteren op",
+            options=["Grootste gap", "Beste bench-score", "Naam"],
+        )
+        filtered_player_df = player_report_df.copy()
+        if selected_position_filter != "Alle posities":
+            filtered_player_df = filtered_player_df.loc[filtered_player_df["Positie"] == selected_position_filter].copy()
+        if player_sort_mode == "Beste bench-score":
+            filtered_player_df = filtered_player_df.sort_values("current_score", ascending=False, na_position="last")
+        elif player_sort_mode == "Naam":
+            filtered_player_df = filtered_player_df.sort_values("player_name", ascending=True)
+        else:
+            filtered_player_df["focus_gap_abs"] = filtered_player_df[f"{focus_metric}_gap_current"].abs()
+            filtered_player_df = filtered_player_df.sort_values("focus_gap_abs", ascending=False, na_position="last")
+
+        player_chart_cols = st.columns([0.58, 0.42], gap="large")
+        with player_chart_cols[0]:
+            fig = build_player_compare_chart(filtered_player_df, focus_metric)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+        with player_chart_cols[1]:
+            fig = build_player_score_chart(filtered_player_df)
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+        st.markdown(
+            """
+            <div class="bench-sheet-card">
+              <div class="bench-sheet-kicker">Speler detail</div>
+              <div class="bench-sheet-title">Individuele benchmarkvergelijking</div>
+              <div class="bench-sheet-note">Hier vergelijk je jouw spelers direct met hun positiebenchmark, niet alleen het teamgemiddelde per positie.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.dataframe(build_player_focus_table(filtered_player_df, focus_metric), width="stretch", hide_index=True)
 
     detail_positions = report_df.loc[report_df[f"{focus_metric}_current"].notna(), "Positie"].astype(str).tolist()
     detail_cols = st.columns([0.42, 0.58], gap="large")
