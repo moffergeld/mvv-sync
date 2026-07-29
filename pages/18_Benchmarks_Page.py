@@ -119,12 +119,41 @@ BENCHMARK_SOURCE_TABLES = {
     "Eredivisie": EREDIVISIE_BENCHMARKS,
 }
 
+COMPARE_POSITION_CODES = set(KKD_BENCHMARKS["Positie"].astype(str)).union(EREDIVISIE_BENCHMARKS["Positie"].astype(str))
+
 PERIOD_OPTIONS = {
     "Laatste 4 weken": 4,
     "Laatste 6 weken": 6,
     "Laatste 8 weken": 8,
     "Laatste 12 weken": 12,
 }
+
+COMPARE_MATCH_SCOPE_OPTIONS = {
+    "Laatste 3 wedstrijden": 3,
+    "Laatste 5 wedstrijden": 5,
+    "Laatste 8 wedstrijden": 8,
+    "Alle wedstrijden": None,
+}
+
+MATCH_EVENT_SELECT_VARIANTS = [
+    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,number_of_sprints,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
+    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
+    "gps_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,number_of_sprints,playerload2d,total_accelerations,total_decelerations",
+    "gps_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,playerload2d,total_accelerations,total_decelerations",
+]
+
+MATCH_NUMERIC_COLS = [
+    "duration",
+    "total_distance",
+    "sprint",
+    "high_sprint",
+    "number_of_sprints",
+    "playerload2d",
+    "total_accelerations",
+    "high_accelerations",
+    "total_decelerations",
+    "high_decelerations",
+]
 
 METRIC_SPECS = {
     "total_distance_90": {
@@ -1303,6 +1332,567 @@ def build_player_score_chart(player_report_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def map_compare_position(raw_position: object) -> str | None:
+    value = str(raw_position or "").strip().upper()
+    if not value:
+        return None
+
+    valid_codes = COMPARE_POSITION_CODES
+    candidates = [segment.strip() for segment in re.split(r"[/,|;]+", value) if segment.strip()]
+    if not candidates:
+        candidates = [value]
+
+    for candidate in candidates:
+        cleaned = re.sub(r"[^A-Z ]", " ", candidate)
+        cleaned = " ".join(cleaned.split())
+        if cleaned in valid_codes:
+            return cleaned
+
+        if any(token in cleaned for token in ("KEEPER", "GOAL", "DOEL", "GK")):
+            return "GK"
+        if "LEFT" in cleaned and "BACK" in cleaned:
+            return "LB"
+        if "RIGHT" in cleaned and "BACK" in cleaned:
+            return "RB"
+        if "WING" in cleaned and "LEFT" in cleaned:
+            return "LW"
+        if "WING" in cleaned and "RIGHT" in cleaned:
+            return "RW"
+        if "ATTACK" in cleaned and "MID" in cleaned:
+            return "AM"
+        if "DEFENS" in cleaned and "MID" in cleaned:
+            return "DM"
+        if "CENTRAL" in cleaned and "MID" in cleaned:
+            return "CM"
+        if "CENTER" in cleaned and "BACK" in cleaned:
+            return "CB"
+        if "CENTRE" in cleaned and "BACK" in cleaned:
+            return "CB"
+        if any(token in cleaned for token in ("VERDEDIG", "DEFENDER", "DEFENCE", "DEFENSE")):
+            return "DEF"
+        if any(token in cleaned for token in ("MIDDENVELD", "MIDFIELD", "MIDFIELDER")):
+            return "MID"
+        if any(token in cleaned for token in ("AANVALL", "ATTACKER", "FORWARD", "STRIKER", "SPITS")):
+            return "FOR"
+
+        fallback_map = {
+            "MID": "MID",
+            "FOR": "FOR",
+            "DEF": "DEF",
+        }
+        if cleaned in fallback_map:
+            return fallback_map[cleaned]
+
+    return None
+
+
+def resolve_benchmark_position(position: object, source_key: str) -> str | None:
+    value = str(position or "").strip().upper()
+    if not value:
+        return None
+
+    valid_codes = set(BENCHMARK_SOURCE_TABLES[source_key]["Positie"].astype(str))
+    if value in valid_codes:
+        return value
+
+    fallback_map = {
+        "KKD": {
+            "DEF": "CB",
+            "MID": "CM",
+            "FOR": "CF",
+        },
+        "Eredivisie": {
+            "CM": "MID",
+        },
+    }
+    fallback = fallback_map.get(source_key, {}).get(value)
+    if fallback and fallback in valid_codes:
+        return fallback
+    return None
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_match_events_history_cached(access_token: str, start_iso: str) -> pd.DataFrame:
+    last_error: Exception | None = None
+
+    for select_clause in MATCH_EVENT_SELECT_VARIANTS:
+        try:
+            raw = rest_get_paged(
+                access_token,
+                "v_gps_match_events",
+                f"select={select_clause}&datum=gte.{start_iso}&order=datum.asc,gps_id.asc",
+            )
+            df = raw.copy()
+            if df.empty:
+                return df
+
+            df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
+            if "player_id" in df.columns:
+                df["player_id"] = df["player_id"].fillna("").astype(str)
+            if "player_name" in df.columns:
+                df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
+            if "type" in df.columns:
+                df["type"] = df["type"].fillna("").astype(str).str.strip().str.lower()
+            if "event" in df.columns:
+                df["event"] = df["event"].fillna("").astype(str).str.strip()
+            if "match_id" in df.columns:
+                df["match_id"] = pd.to_numeric(df["match_id"], errors="coerce").astype("Int64")
+            for column in MATCH_NUMERIC_COLS:
+                if column in df.columns:
+                    df[column] = pd.to_numeric(df[column], errors="coerce")
+            df = df.dropna(subset=["datum"]).copy()
+            return df
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"Kon v_gps_match_events niet laden: {last_error}")
+
+
+def _select_match_event_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    matches_df = df.loc[df["type"].eq("match")].copy()
+    if matches_df.empty:
+        return matches_df
+
+    event_group_cols = ["player_id", "player_name"]
+    if "match_id" in matches_df.columns and matches_df["match_id"].notna().any():
+        event_group_cols.append("match_id")
+    else:
+        event_group_cols.append("datum")
+
+    has_summary = matches_df.groupby(event_group_cols)["event"].transform(lambda values: values.astype(str).eq("Summary").any())
+    use_summary = has_summary & matches_df["event"].eq("Summary")
+    use_halves = (~has_summary) & matches_df["event"].isin(["First Half", "Second Half"])
+    return matches_df.loc[use_summary | use_halves].copy()
+
+
+def prepare_match_totals_for_compare(
+    match_df: pd.DataFrame,
+    players_df: pd.DataFrame,
+    min_minutes: float,
+) -> pd.DataFrame:
+    if match_df.empty or players_df.empty:
+        return pd.DataFrame()
+
+    working_df = _select_match_event_rows(match_df)
+    if working_df.empty:
+        return pd.DataFrame()
+
+    player_map = players_df[["player_id", "full_name", "position"]].copy()
+    player_map["player_id"] = player_map["player_id"].astype(str)
+    player_map["full_name_key"] = player_map["full_name"].map(_canonical_player_name)
+
+    name_position_map = (
+        player_map.sort_values("full_name")
+        .drop_duplicates("full_name_key")
+        .set_index("full_name_key")["position"]
+        .to_dict()
+    )
+
+    working_df["player_id"] = working_df["player_id"].astype(str)
+    working_df["player_name_key"] = working_df["player_name"].map(_canonical_player_name)
+    working_df = working_df.merge(player_map[["player_id", "position"]], on="player_id", how="left")
+    working_df["position"] = working_df["position"].fillna(working_df["player_name_key"].map(name_position_map))
+    working_df["Positie"] = working_df["position"].apply(map_compare_position)
+    working_df = working_df.loc[working_df["Positie"].notna()].copy()
+    if working_df.empty:
+        return pd.DataFrame()
+
+    group_cols = ["player_id", "player_name", "datum", "Positie"]
+    if "match_id" in working_df.columns:
+        group_cols.append("match_id")
+
+    agg_columns = [column for column in MATCH_NUMERIC_COLS if column in working_df.columns]
+    if not agg_columns:
+        return pd.DataFrame()
+
+    match_totals = working_df.groupby(group_cols, as_index=False)[agg_columns].sum(min_count=1)
+    match_totals = match_totals.loc[pd.to_numeric(match_totals["duration"], errors="coerce").fillna(0) >= float(min_minutes)].copy()
+    if match_totals.empty:
+        return pd.DataFrame()
+
+    match_totals["hsr_hsd"] = (
+        pd.to_numeric(match_totals.get("sprint"), errors="coerce").fillna(0.0)
+        + pd.to_numeric(match_totals.get("high_sprint"), errors="coerce").fillna(0.0)
+    )
+    match_totals["total_distance_90"] = _safe_divide_series(match_totals["total_distance"], match_totals["duration"], 90.0)
+    match_totals["hsr_hsd_90"] = _safe_divide_series(match_totals["hsr_hsd"], match_totals["duration"], 90.0)
+    match_totals["sprint_distance_90"] = _safe_divide_series(match_totals["high_sprint"], match_totals["duration"], 90.0)
+    if "number_of_sprints" in match_totals.columns:
+        match_totals["sprint_count_90"] = _safe_divide_series(match_totals["number_of_sprints"], match_totals["duration"], 90.0)
+    else:
+        match_totals["sprint_count_90"] = pd.NA
+    match_totals["total_distance_per_min"] = _safe_divide_series(match_totals["total_distance"], match_totals["duration"])
+    match_totals["intensity_pct"] = _safe_divide_series(match_totals["hsr_hsd"], match_totals["total_distance"], 100.0)
+    match_totals = match_totals.sort_values(["player_name", "datum"], ascending=[True, False]).reset_index(drop=True)
+    return match_totals
+
+
+def build_player_match_compare_bundle(
+    match_df: pd.DataFrame,
+    players_df: pd.DataFrame,
+    match_limit: int | None,
+    min_minutes: float,
+) -> dict[str, Any]:
+    match_totals = prepare_match_totals_for_compare(match_df, players_df, min_minutes)
+    if match_totals.empty:
+        return {
+            "player_compare_df": pd.DataFrame(),
+            "match_totals_df": pd.DataFrame(),
+            "note": "Geen bruikbare matchdata gevonden voor deze spelers en minutenfilter.",
+        }
+
+    player_rows: list[dict[str, Any]] = []
+    metric_keys = list(METRIC_SPECS.keys())
+    group_columns = ["player_id", "player_name", "Positie"]
+    for (player_id, player_name, position), player_matches in match_totals.groupby(group_columns, dropna=False):
+        sorted_matches = player_matches.sort_values("datum", ascending=False).copy()
+        scoped_matches = sorted_matches if match_limit is None else sorted_matches.head(int(match_limit)).copy()
+        if scoped_matches.empty:
+            continue
+
+        row: dict[str, Any] = {
+            "player_id": player_id,
+            "player_name": player_name,
+            "Positie": position,
+            "match_count": int(len(scoped_matches)),
+            "available_matches": int(len(sorted_matches)),
+            "sample_start": scoped_matches["datum"].min(),
+            "sample_end": scoped_matches["datum"].max(),
+            "last_match": sorted_matches["datum"].max(),
+        }
+        for metric_key in metric_keys:
+            row[f"{metric_key}_current"] = pd.to_numeric(scoped_matches.get(metric_key), errors="coerce").mean()
+        player_rows.append(row)
+
+    player_compare_df = pd.DataFrame(player_rows)
+    if player_compare_df.empty:
+        return {
+            "player_compare_df": pd.DataFrame(),
+            "match_totals_df": match_totals,
+            "note": "Geen spelervergelijkingen beschikbaar na het aggregeren van de matchdata.",
+        }
+
+    kkd_bench_df = build_benchmark_numeric_table("KKD").rename(
+        columns={
+            "Positie": "kkd_position",
+            **{f"{metric_key}_benchmark": f"{metric_key}_kkd_benchmark" for metric_key in metric_keys},
+        }
+    )
+    eredivisie_bench_df = build_benchmark_numeric_table("Eredivisie").rename(
+        columns={
+            "Positie": "eredivisie_position",
+            **{f"{metric_key}_benchmark": f"{metric_key}_eredivisie_benchmark" for metric_key in metric_keys},
+        }
+    )
+
+    player_compare_df["kkd_position"] = player_compare_df["Positie"].apply(lambda value: resolve_benchmark_position(value, "KKD"))
+    player_compare_df["eredivisie_position"] = player_compare_df["Positie"].apply(lambda value: resolve_benchmark_position(value, "Eredivisie"))
+    player_compare_df = player_compare_df.merge(kkd_bench_df, on="kkd_position", how="left")
+    player_compare_df = player_compare_df.merge(eredivisie_bench_df, on="eredivisie_position", how="left")
+
+    for metric_key in metric_keys:
+        player_compare_df[f"{metric_key}_gap_kkd"] = player_compare_df[f"{metric_key}_current"] - player_compare_df[f"{metric_key}_kkd_benchmark"]
+        player_compare_df[f"{metric_key}_gap_eredivisie"] = player_compare_df[f"{metric_key}_current"] - player_compare_df[f"{metric_key}_eredivisie_benchmark"]
+
+    return {
+        "player_compare_df": player_compare_df,
+        "match_totals_df": match_totals,
+        "note": None,
+    }
+
+
+def classify_focus_level(row: pd.Series, metric_key: str) -> str:
+    current_value = row.get(f"{metric_key}_current")
+    kkd_value = row.get(f"{metric_key}_kkd_benchmark")
+    eredivisie_value = row.get(f"{metric_key}_eredivisie_benchmark")
+    tolerance = float(METRIC_SPECS[metric_key]["tolerance"])
+
+    if not pd.isna(eredivisie_value) and not pd.isna(current_value) and float(current_value) >= float(eredivisie_value) - tolerance:
+        return "Eredivisie-niveau"
+    if not pd.isna(kkd_value) and not pd.isna(current_value) and float(current_value) >= float(kkd_value) - tolerance:
+        return "KKD-niveau"
+    if pd.isna(kkd_value) and pd.isna(eredivisie_value):
+        return "Geen koppeling"
+    return "Onder KKD"
+
+
+def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str) -> go.Figure:
+    current_col = f"{metric_key}_current"
+    kkd_col = f"{metric_key}_kkd_benchmark"
+    eredivisie_col = f"{metric_key}_eredivisie_benchmark"
+    chart_df = player_compare_df.loc[player_compare_df[current_col].notna()].copy()
+    fig = go.Figure()
+    fig.update_layout(**_chart_layout("Spelerload vs KKD en Eredivisie", height=500))
+    fig.update_xaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT, size=11))
+    if chart_df.empty:
+        return fig
+
+    chart_df["label"] = chart_df["player_name"].astype(str) + " (" + chart_df["Positie"].astype(str) + ")"
+    chart_df["focus_level"] = chart_df.apply(lambda row: classify_focus_level(row, metric_key), axis=1)
+    chart_df["sort_gap"] = (
+        chart_df[f"{metric_key}_gap_eredivisie"].abs().where(chart_df[eredivisie_col].notna(), chart_df[f"{metric_key}_gap_kkd"].abs())
+    )
+    chart_df = chart_df.sort_values("sort_gap", ascending=False).head(14)
+
+    level_colors = {
+        "Eredivisie-niveau": MVV_GREEN,
+        "KKD-niveau": MVV_GOLD,
+        "Onder KKD": MVV_RED,
+        "Geen koppeling": "#64748B",
+    }
+
+    for _, row in chart_df.iterrows():
+        bench_values = [value for value in [row.get(kkd_col), row.get(eredivisie_col)] if not pd.isna(value)]
+        if bench_values:
+            fig.add_trace(
+                go.Scatter(
+                    x=[min(bench_values), max(bench_values)],
+                    y=[row["label"], row["label"]],
+                    mode="lines",
+                    line=dict(color="rgba(255,255,255,0.16)", width=8),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+    if chart_df[kkd_col].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                name="KKD benchmark",
+                x=chart_df[kkd_col],
+                y=chart_df["label"],
+                mode="markers",
+                marker=dict(size=11, color=MVV_GOLD, symbol="diamond", line=dict(color="#fff4cc", width=1)),
+                hovertemplate="<b>%{y}</b><br>KKD: %{x:.1f}<extra></extra>",
+            )
+        )
+    if chart_df[eredivisie_col].notna().any():
+        fig.add_trace(
+            go.Scatter(
+                name="Eredivisie benchmark",
+                x=chart_df[eredivisie_col],
+                y=chart_df["label"],
+                mode="markers",
+                marker=dict(size=11, color="#38BDF8", symbol="circle", line=dict(color="#DBF5FF", width=1)),
+                hovertemplate="<b>%{y}</b><br>Eredivisie: %{x:.1f}<extra></extra>",
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            name="MVV speler",
+            x=chart_df[current_col],
+            y=chart_df["label"],
+            mode="markers+text",
+            marker=dict(
+                size=15,
+                color=[level_colors.get(level, MVV_RED_SOFT) for level in chart_df["focus_level"]],
+                line=dict(color="#ffffff", width=1.5),
+            ),
+            text=[_format_metric(metric_key, value) for value in chart_df[current_col]],
+            textposition="middle right",
+            textfont=dict(color=MVV_TEXT, size=11),
+            hovertemplate="<b>%{y}</b><br>MVV: %{x:.1f}<extra></extra>",
+        )
+    )
+    return fig
+
+
+def build_position_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str) -> go.Figure:
+    current_col = f"{metric_key}_current"
+    kkd_col = f"{metric_key}_kkd_benchmark"
+    eredivisie_col = f"{metric_key}_eredivisie_benchmark"
+    chart_df = (
+        player_compare_df.loc[player_compare_df[current_col].notna()]
+        .groupby("Positie", as_index=False)
+        .agg(
+            mvv_current=(current_col, "mean"),
+            kkd_benchmark=(kkd_col, "mean"),
+            eredivisie_benchmark=(eredivisie_col, "mean"),
+            players=("player_name", "nunique"),
+        )
+        .sort_values("mvv_current", ascending=False)
+    )
+
+    fig = go.Figure()
+    fig.update_layout(**_chart_layout("Positiegemiddelde vs benchmark", height=460))
+    fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    if chart_df.empty:
+        return fig
+
+    fig.add_trace(
+        go.Bar(
+            name="MVV spelers",
+            x=chart_df["Positie"],
+            y=chart_df["mvv_current"],
+            marker_color=MVV_RED,
+            text=[_format_metric(metric_key, value) for value in chart_df["mvv_current"]],
+            textposition="outside",
+            cliponaxis=False,
+        )
+    )
+    if chart_df["kkd_benchmark"].notna().any():
+        fig.add_trace(
+            go.Bar(
+                name="KKD",
+                x=chart_df["Positie"],
+                y=chart_df["kkd_benchmark"],
+                marker_color=MVV_GOLD,
+            )
+        )
+    if chart_df["eredivisie_benchmark"].notna().any():
+        fig.add_trace(
+            go.Bar(
+                name="Eredivisie",
+                x=chart_df["Positie"],
+                y=chart_df["eredivisie_benchmark"],
+                marker_color="#38BDF8",
+            )
+        )
+    return fig
+
+
+def build_player_match_timeline(
+    player_matches_df: pd.DataFrame,
+    metric_key: str,
+    kkd_benchmark: float | None,
+    eredivisie_benchmark: float | None,
+    player_name: str,
+) -> go.Figure:
+    fig = go.Figure()
+    fig.update_layout(**_chart_layout(f"{player_name} | matchtrend", height=440))
+    fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
+    if player_matches_df.empty:
+        return fig
+
+    chart_df = player_matches_df.sort_values("datum", ascending=True).copy()
+    chart_df["day_rank"] = chart_df.groupby("datum").cumcount() + 1
+    chart_df["day_total"] = chart_df.groupby("datum")["datum"].transform("size")
+    chart_df["x_label"] = chart_df.apply(
+        lambda row: (
+            f"{pd.Timestamp(row['datum']).strftime('%d/%m')} ({int(row['day_rank'])})"
+            if int(row["day_total"]) > 1
+            else pd.Timestamp(row["datum"]).strftime("%d/%m")
+        ),
+        axis=1,
+    )
+    current_col = metric_key
+
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df["x_label"],
+            y=chart_df[current_col],
+            mode="lines+markers+text",
+            name="Matchload",
+            line=dict(color=MVV_RED_DEEP, width=3),
+            marker=dict(size=10, color=MVV_RED, line=dict(color="#ffffff", width=1.6)),
+            text=[_format_metric(metric_key, value) for value in chart_df[current_col]],
+            textposition="top center",
+            hovertemplate="<b>%{x}</b><br>Waarde: %{y:.1f}<br>Minuten: %{customdata:.0f}<extra></extra>",
+            customdata=chart_df["duration"],
+        )
+    )
+
+    if kkd_benchmark is not None and not pd.isna(kkd_benchmark):
+        fig.add_hline(
+            y=float(kkd_benchmark),
+            line_dash="dot",
+            line_color=MVV_GOLD,
+            annotation_text=f"KKD {_format_metric(metric_key, kkd_benchmark)}",
+            annotation_position="top left",
+        )
+    if eredivisie_benchmark is not None and not pd.isna(eredivisie_benchmark):
+        fig.add_hline(
+            y=float(eredivisie_benchmark),
+            line_dash="dash",
+            line_color="#38BDF8",
+            annotation_text=f"Eredivisie {_format_metric(metric_key, eredivisie_benchmark)}",
+            annotation_position="bottom left",
+        )
+    return fig
+
+
+def build_compare_overview_table(player_compare_df: pd.DataFrame, metric_key: str) -> pd.DataFrame:
+    current_col = f"{metric_key}_current"
+    kkd_col = f"{metric_key}_kkd_benchmark"
+    eredivisie_col = f"{metric_key}_eredivisie_benchmark"
+    overview_df = player_compare_df.loc[player_compare_df[current_col].notna(), [
+        "player_name",
+        "Positie",
+        "match_count",
+        "available_matches",
+        "last_match",
+        current_col,
+        kkd_col,
+        f"{metric_key}_gap_kkd",
+        eredivisie_col,
+        f"{metric_key}_gap_eredivisie",
+    ]].copy()
+    overview_df["Niveau"] = overview_df.apply(lambda row: classify_focus_level(row, metric_key), axis=1)
+    overview_df["Laatste match"] = pd.to_datetime(overview_df["last_match"], errors="coerce").dt.strftime("%d/%m/%Y")
+    overview_df["Huidig"] = overview_df[current_col].apply(lambda value: _format_metric(metric_key, value))
+    overview_df["KKD"] = overview_df[kkd_col].apply(lambda value: _format_metric(metric_key, value))
+    overview_df["Gap KKD"] = overview_df[f"{metric_key}_gap_kkd"].apply(lambda value: _format_gap(metric_key, value))
+    overview_df["Eredivisie"] = overview_df[eredivisie_col].apply(lambda value: _format_metric(metric_key, value))
+    overview_df["Gap Eredivisie"] = overview_df[f"{metric_key}_gap_eredivisie"].apply(lambda value: _format_gap(metric_key, value))
+    overview_df = overview_df.rename(
+        columns={
+            "player_name": "Speler",
+            "match_count": "Matches in sample",
+            "available_matches": "Totaal matches",
+        }
+    )
+    return overview_df[
+        ["Speler", "Positie", "Matches in sample", "Totaal matches", "Laatste match", "Huidig", "KKD", "Gap KKD", "Eredivisie", "Gap Eredivisie", "Niveau"]
+    ]
+
+
+def build_player_metric_detail_table(player_row: pd.Series) -> pd.DataFrame:
+    detail_rows = []
+    for metric_key, spec in METRIC_SPECS.items():
+        detail_rows.append(
+            {
+                "Metric": spec["label"],
+                "MVV speler": _format_metric(metric_key, player_row.get(f"{metric_key}_current")),
+                "KKD": _format_metric(metric_key, player_row.get(f"{metric_key}_kkd_benchmark")),
+                "Gap KKD": _format_gap(metric_key, player_row.get(f"{metric_key}_gap_kkd")),
+                "Eredivisie": _format_metric(metric_key, player_row.get(f"{metric_key}_eredivisie_benchmark")),
+                "Gap Eredivisie": _format_gap(metric_key, player_row.get(f"{metric_key}_gap_eredivisie")),
+            }
+        )
+    return pd.DataFrame(detail_rows)
+
+
+def build_player_matches_table(
+    player_matches_df: pd.DataFrame,
+    metric_key: str,
+    kkd_benchmark: float | None,
+    eredivisie_benchmark: float | None,
+) -> pd.DataFrame:
+    table_df = player_matches_df.sort_values("datum", ascending=False).copy()
+    if table_df.empty:
+        return pd.DataFrame()
+
+    table_df["Datum"] = pd.to_datetime(table_df["datum"], errors="coerce").dt.strftime("%d/%m/%Y")
+    table_df["Min"] = table_df["duration"].apply(_format_decimal)
+    table_df["Totale afstand /90"] = table_df["total_distance_90"].apply(lambda value: _format_metric("total_distance_90", value))
+    table_df["HSR/HSD /90"] = table_df["hsr_hsd_90"].apply(lambda value: _format_metric("hsr_hsd_90", value))
+    table_df["Sprintafstand /90"] = table_df["sprint_distance_90"].apply(lambda value: _format_metric("sprint_distance_90", value))
+    table_df["Totale afstand /min"] = table_df["total_distance_per_min"].apply(lambda value: _format_metric("total_distance_per_min", value))
+    table_df["Intensiteit"] = table_df["intensity_pct"].apply(lambda value: _format_metric("intensity_pct", value))
+    table_df["Focus"] = table_df[metric_key].apply(lambda value: _format_metric(metric_key, value))
+    table_df["Gap KKD"] = table_df[metric_key].sub(kkd_benchmark).apply(lambda value: _format_gap(metric_key, value) if kkd_benchmark is not None and not pd.isna(kkd_benchmark) else "--")
+    table_df["Gap Eredivisie"] = table_df[metric_key].sub(eredivisie_benchmark).apply(lambda value: _format_gap(metric_key, value) if eredivisie_benchmark is not None and not pd.isna(eredivisie_benchmark) else "--")
+    return table_df[
+        ["Datum", "Min", "Focus", "Gap KKD", "Gap Eredivisie", "Totale afstand /90", "HSR/HSD /90", "Sprintafstand /90", "Totale afstand /min", "Intensiteit"]
+    ]
+
+
 def render_css() -> None:
     background = (
         f"linear-gradient(180deg, rgba(6, 10, 20, 0.82) 0%, rgba(6, 10, 20, 0.80) 100%), "
@@ -1781,24 +2371,18 @@ def render_compare_tab(sb) -> None:
         """
         <div class="bench-sheet-card">
           <div class="bench-sheet-kicker">Benchmark Report</div>
-          <div class="bench-sheet-title">Vergelijking met progressie</div>
-          <div class="bench-sheet-note">Bekijk per positie of MVV in de gekozen periode dichter bij of verder van de benchmark komt dan in de vorige referentieperiode.</div>
+          <div class="bench-sheet-title">Spelers vs KKD en Eredivisie</div>
+          <div class="bench-sheet-note">Vergelijk de wedstrijdbelasting per speler direct met de benchmarkniveaus van KKD en Eredivisie. De overview gebruikt het gemiddelde van de gekozen wedstrijdscope; onderaan zie je alle individuele matchloads van de geselecteerde speler.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    filter_cols = st.columns(3, gap="small")
-    source_key = filter_cols[0].selectbox("Benchmarkbron", options=list(BENCHMARK_SOURCE_TABLES.keys()), index=1)
-    period_labels = list(PERIOD_OPTIONS.keys())
-    default_period_index = period_labels.index("Laatste 8 weken")
-    period_label = filter_cols[1].selectbox("Vergelijkingsperiode", options=period_labels, index=default_period_index)
-    metric_options = list(METRIC_SPECS.keys())
-    focus_metric = filter_cols[2].selectbox(
-        "Focus metric",
-        options=metric_options,
-        format_func=lambda key: str(METRIC_SPECS[key]["label"]),
-    )
+    filter_cols = st.columns(2, gap="small")
+    scope_labels = list(COMPARE_MATCH_SCOPE_OPTIONS.keys())
+    default_scope_index = scope_labels.index("Laatste 5 wedstrijden")
+    scope_label = filter_cols[0].selectbox("Wedstrijdscope", options=scope_labels, index=default_scope_index)
+    min_minutes = float(filter_cols[1].slider("Minimum minuten per match", min_value=45, max_value=90, value=60, step=5))
 
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         st.markdown('<div class="bench-empty">Supabase-config ontbreekt, daardoor is de compare-rapportage nu niet beschikbaar.</div>', unsafe_allow_html=True)
@@ -1806,10 +2390,9 @@ def render_compare_tab(sb) -> None:
 
     try:
         access_token = get_access_token()
-        max_weeks = max(PERIOD_OPTIONS.values())
-        fetch_start = (date.today() - timedelta(days=(max_weeks * 14) + 21)).isoformat()
         players_df = fetch_active_players_cached(sb)
-        summary_df = fetch_summary_history_cached(access_token, fetch_start)
+        fetch_start = (date.today() - timedelta(days=540)).isoformat()
+        match_df = fetch_match_events_history_cached(access_token, fetch_start)
     except Exception as exc:
         st.markdown(
             f'<div class="bench-empty">Kon benchmarkdata niet laden: {exc}</div>',
@@ -1817,253 +2400,215 @@ def render_compare_tab(sb) -> None:
         )
         return
 
-    compare_bundle = build_compare_report(summary_df, players_df, source_key, PERIOD_OPTIONS[period_label])
-    report_df = compare_bundle.get("report_df", pd.DataFrame())
-    player_report_df = compare_bundle.get("player_report_df", pd.DataFrame())
-    if report_df.empty:
+    match_limit = COMPARE_MATCH_SCOPE_OPTIONS[scope_label]
+    compare_bundle = build_player_match_compare_bundle(match_df, players_df, match_limit, min_minutes)
+    player_compare_df = compare_bundle.get("player_compare_df", pd.DataFrame())
+    match_totals_df = compare_bundle.get("match_totals_df", pd.DataFrame())
+    if player_compare_df.empty:
         st.markdown(
             f'<div class="bench-empty">{compare_bundle.get("note") or "Geen vergelijkingsdata beschikbaar."}</div>',
             unsafe_allow_html=True,
         )
         return
 
-    current_start = compare_bundle["current_start"]
-    current_end = compare_bundle["current_end"]
-    previous_start = compare_bundle["previous_start"]
-    previous_end = compare_bundle["previous_end"]
+    available_metric_options = [
+        metric_key for metric_key in METRIC_SPECS if player_compare_df.get(f"{metric_key}_current", pd.Series(dtype=float)).notna().any()
+    ]
+    if not available_metric_options:
+        st.markdown(
+            '<div class="bench-empty">Geen benchmarkmetrics beschikbaar op basis van de huidige matchdata.</div>',
+            unsafe_allow_html=True,
+        )
+        return
 
-    tracked_total = int(report_df["tracked_metrics"].sum())
-    improved_total = int(report_df["improved_metrics"].sum())
-    progressing_positions = int((report_df["overall_status"] == "Vooruit").sum())
-    matched_positions = int(report_df[f"{focus_metric}_current"].notna().sum())
+    focus_row = st.columns(3, gap="small")
+    focus_metric = focus_row[0].selectbox(
+        "Focus metric",
+        options=available_metric_options,
+        format_func=lambda key: str(METRIC_SPECS[key]["label"]),
+    )
+    position_options = ["Alle posities"] + sorted(player_compare_df["Positie"].dropna().astype(str).unique().tolist())
+    selected_position_filter = focus_row[1].selectbox("Positiefilter", options=position_options)
+    player_sort_mode = focus_row[2].selectbox(
+        "Sorteer spelers op",
+        options=["Grootste Eredivisie-gap", "Grootste KKD-gap", "Hoogste load", "Naam"],
+    )
 
-    biggest_gap_position = "--"
-    biggest_gap_note = "Alle posities liggen dicht bij de benchmark."
-    gap_candidates: list[tuple[float, str, str]] = []
-    for _, row in report_df.iterrows():
-        for metric_key, spec in METRIC_SPECS.items():
-            benchmark = row.get(f"{metric_key}_benchmark")
-            current = row.get(f"{metric_key}_current")
-            if pd.isna(benchmark) or pd.isna(current) or float(benchmark) == 0:
-                continue
-            relative_gap = abs(float(current) - float(benchmark)) / abs(float(benchmark))
-            gap_candidates.append((relative_gap, str(row["Positie"]), str(spec["label"])))
-    if gap_candidates:
-        relative_gap, biggest_gap_position, biggest_gap_metric = max(gap_candidates, key=lambda item: item[0])
-        biggest_gap_note = f"{biggest_gap_metric} | {_format_decimal(relative_gap * 100, 1)}% afwijking"
+    player_compare_df = player_compare_df.copy()
+    player_compare_df["focus_level"] = player_compare_df.apply(lambda row: classify_focus_level(row, focus_metric), axis=1)
 
-    player_up_count = int((player_report_df["overall_status"] == "Vooruit").sum()) if not player_report_df.empty else 0
-    total_players = int(player_report_df["player_name"].nunique()) if not player_report_df.empty else 0
-    best_player_name = "--"
-    best_player_note = "Geen individuele benchmarkscore beschikbaar."
-    if not player_report_df.empty and player_report_df["current_score"].notna().any():
-        best_player_row = player_report_df.sort_values("current_score", ascending=False).iloc[0]
-        best_player_name = str(best_player_row["player_name"])
-        best_player_note = f"{best_player_row['Positie']} | Bench-score {_format_score(best_player_row['current_score'])}"
-
-    watch_player_name = "--"
-    watch_player_note = "Geen individuele gap gevonden."
-    if not player_report_df.empty:
-        player_gap_df = player_report_df.loc[player_report_df[f"{focus_metric}_current"].notna()].copy()
-        if not player_gap_df.empty:
-            player_gap_df["focus_gap_abs"] = (player_gap_df[f"{focus_metric}_gap_current"]).abs()
-            watch_row = player_gap_df.sort_values("focus_gap_abs", ascending=False).iloc[0]
-            watch_player_name = str(watch_row["player_name"])
-            watch_player_note = f"{watch_row['Positie']} | Gap { _format_gap(focus_metric, watch_row[f'{focus_metric}_gap_current']) }"
+    players_in_scope = int(player_compare_df["player_name"].nunique())
+    matches_in_scope = int(player_compare_df["match_count"].sum())
+    kkd_ready = int(player_compare_df["focus_level"].isin(["KKD-niveau", "Eredivisie-niveau"]).sum())
+    eredivisie_ready = int((player_compare_df["focus_level"] == "Eredivisie-niveau").sum())
+    attention_players = int((player_compare_df["focus_level"] == "Onder KKD").sum())
 
     st.markdown(
         f"""
         <div class="bench-compare-strip">
           <div class="bench-compare-cell">
-            <div class="bench-compare-key">Benchmarkbron</div>
-            <div class="bench-compare-main">{source_key}</div>
-            <div class="bench-compare-sub">Referentietabel voor alle vergelijkingen in dit rapport.</div>
+            <div class="bench-compare-key">Scope</div>
+            <div class="bench-compare-main">{scope_label}</div>
+            <div class="bench-compare-sub">Gemiddelde matchload per speler binnen deze wedstrijdselectie.</div>
           </div>
           <div class="bench-compare-cell">
-            <div class="bench-compare-key">Periode</div>
-            <div class="bench-compare-main">{period_label}</div>
-            <div class="bench-compare-sub">{current_start.strftime("%d/%m/%Y")} t/m {current_end.strftime("%d/%m/%Y")}</div>
+            <div class="bench-compare-key">Minimum minuten</div>
+            <div class="bench-compare-main">{int(min_minutes)} min</div>
+            <div class="bench-compare-sub">Matches onder deze duur tellen niet mee in de benchmarkvergelijking.</div>
           </div>
           <div class="bench-compare-cell">
-            <div class="bench-compare-key">Vorige referentie</div>
-            <div class="bench-compare-main">{previous_start.strftime("%d/%m/%Y")} t/m {previous_end.strftime("%d/%m/%Y")}</div>
-            <div class="bench-compare-sub">Wordt gebruikt om vooruit of achteruit te bepalen.</div>
+            <div class="bench-compare-key">Vergelijking</div>
+            <div class="bench-compare-main">KKD + Eredivisie</div>
+            <div class="bench-compare-sub">Per speler zie je direct beide benchmarkniveaus naast de eigen wedstrijdbelasting.</div>
           </div>
           <div class="bench-compare-cell">
             <div class="bench-compare-key">Focus metric</div>
             <div class="bench-compare-main">{METRIC_SPECS[focus_metric]['label']}</div>
-            <div class="bench-compare-sub">Hoofdvergelijking in de charts en detailtabellen hieronder.</div>
+            <div class="bench-compare-sub">De charts en rangschikking hieronder volgen deze metric.</div>
           </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f"""
-        <div class="bench-table-note">
-          Huidige periode: {current_start.strftime("%d/%m/%Y")} t/m {current_end.strftime("%d/%m/%Y")} |
-          Vorige periode: {previous_start.strftime("%d/%m/%Y")} t/m {previous_end.strftime("%d/%m/%Y")} |
-          Runs count &gt;15.0 (#) ontbreekt in de huidige Summary-bron en telt daarom niet mee in de voortgangsscore.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     compare_cards = [
-        ("Spelers in scope", str(total_players), f"{total_players} MVV-spelers met benchmark-koppeling in de gekozen periode"),
-        ("Gekoppelde posities", str(matched_positions), f"{matched_positions} van {len(report_df)} benchmarkposities hebben actuele data"),
-        ("Metrics vooruit", f"{improved_total}/{tracked_total or 0}", "Aantal vergelijkbare metrics die dichter bij de benchmark kwamen"),
-        ("Posities vooruit", str(progressing_positions), "Posities met een hogere benchmarks score dan in de vorige periode"),
+        ("Spelers in scope", str(players_in_scope), "Actieve MVV-spelers met bruikbare matchload en positiekoppeling"),
+        ("Matches in sample", str(matches_in_scope), "Aantal spelersmatches dat in de huidige vergelijking is meegenomen"),
+        ("Op KKD-niveau", str(kkd_ready), "Spelers die op of boven KKD-benchmark zitten voor de focus metric"),
+        ("Op Eredivisie-niveau", str(eredivisie_ready), "Spelers die de Eredivisie-benchmark halen of benaderen"),
+        ("Onder KKD", str(attention_players), "Spelers die op de focus metric nog onder KKD-referentie blijven"),
     ]
-    render_stat_cards(compare_cards, columns_per_row=4)
+    render_stat_cards(compare_cards, columns_per_row=5)
 
-    signal_cols = st.columns(3, gap="small")
-    with signal_cols[0]:
+    filtered_player_df = player_compare_df.copy()
+    if selected_position_filter != "Alle posities":
+        filtered_player_df = filtered_player_df.loc[filtered_player_df["Positie"] == selected_position_filter].copy()
+
+    if player_sort_mode == "Naam":
+        filtered_player_df = filtered_player_df.sort_values("player_name", ascending=True)
+    elif player_sort_mode == "Hoogste load":
+        filtered_player_df = filtered_player_df.sort_values(f"{focus_metric}_current", ascending=False, na_position="last")
+    elif player_sort_mode == "Grootste KKD-gap":
+        filtered_player_df["focus_sort_gap"] = filtered_player_df[f"{focus_metric}_gap_kkd"].abs()
+        filtered_player_df = filtered_player_df.sort_values("focus_sort_gap", ascending=False, na_position="last")
+    else:
+        filtered_player_df["focus_sort_gap"] = filtered_player_df[f"{focus_metric}_gap_eredivisie"].abs().where(
+            filtered_player_df[f"{focus_metric}_eredivisie_benchmark"].notna(),
+            filtered_player_df[f"{focus_metric}_gap_kkd"].abs(),
+        )
+        filtered_player_df = filtered_player_df.sort_values("focus_sort_gap", ascending=False, na_position="last")
+
+    if filtered_player_df.empty:
         st.markdown(
-            build_signal_card(
-                "Beste match",
-                best_player_name,
-                best_player_note,
-                "Vooruit",
-            ),
+            '<div class="bench-empty">Geen spelers over na dit positiefilter.</div>',
             unsafe_allow_html=True,
         )
-    with signal_cols[1]:
-        st.markdown(
-            build_signal_card(
-                "Grootste watch",
-                watch_player_name,
-                watch_player_note,
-                "Achteruit",
-            ),
-            unsafe_allow_html=True,
+        return
+
+    chart_cols = st.columns([0.58, 0.42], gap="large")
+    with chart_cols[0]:
+        st.plotly_chart(
+            build_dual_benchmark_chart(filtered_player_df, focus_metric),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
         )
-    with signal_cols[2]:
-        st.markdown(
-            build_signal_card(
-                "Spelers vooruit",
-                f"{player_up_count}/{total_players or 0}",
-                "Aantal individuele spelers dat in deze periode dichter bij de benchmark komt.",
-                "Stabiel" if total_players == 0 else ("Vooruit" if player_up_count >= max(1, total_players / 2) else "Achteruit"),
-            ),
-            unsafe_allow_html=True,
+    with chart_cols[1]:
+        st.plotly_chart(
+            build_position_benchmark_chart(filtered_player_df, focus_metric),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
         )
 
-    st.markdown('<div class="bench-subsection">Positie-overzicht</div>', unsafe_allow_html=True)
-    position_cards = []
-    for _, row in report_df.sort_values("current_score", ascending=False, na_position="last").iterrows():
-        if pd.isna(row.get(f"{focus_metric}_current")):
-            continue
-        position_cards.append(build_position_card(str(row["Positie"]), row, focus_metric))
-    if position_cards:
-        for start in range(0, len(position_cards), 4):
-            row_cards = position_cards[start : start + 4]
-            cols = st.columns(4, gap="small")
-            for col, card_html in zip(cols, row_cards):
-                with col:
-                    st.markdown(card_html, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="bench-sheet-card">
+          <div class="bench-sheet-kicker">Speleroverzicht</div>
+          <div class="bench-sheet-title">Matchload per speler vs benchmark</div>
+          <div class="bench-sheet-note">Huidige waarde = gemiddelde matchload binnen de gekozen scope. Daarachter zie je direct de gap naar KKD en Eredivisie.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.dataframe(build_compare_overview_table(filtered_player_df, focus_metric), width="stretch", hide_index=True)
 
-    chart_col, progress_col = st.columns([0.56, 0.44], gap="large")
-    with chart_col:
-        fig = build_metric_compare_chart(report_df, focus_metric, source_key, period_label)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-    with progress_col:
-        fig = build_progress_chart(report_df)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-
-    matrix_col, focus_table_col = st.columns([0.48, 0.52], gap="large")
-    with matrix_col:
-        fig = build_status_heatmap(report_df)
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-    with focus_table_col:
-        focus_table = build_focus_table(report_df, focus_metric)
-        st.markdown(
-            f"""
-            <div class="bench-sheet-card">
-              <div class="bench-sheet-kicker">Focus metric</div>
-              <div class="bench-sheet-title">{METRIC_SPECS[focus_metric]['label']} per positie</div>
-              <div class="bench-sheet-note">Huidige periode, vorige periode, benchmark en netto gap in dezelfde tabel.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.dataframe(focus_table, width="stretch", hide_index=True)
-
-    if not player_report_df.empty:
-        st.markdown('<div class="bench-subsection">Spelers vs benchmark</div>', unsafe_allow_html=True)
-        player_filter_cols = st.columns([0.44, 0.56], gap="small")
-        position_options = ["Alle posities"] + sorted(player_report_df["Positie"].dropna().astype(str).unique().tolist())
-        selected_position_filter = player_filter_cols[0].selectbox("Positiefilter spelers", options=position_options)
-        player_sort_mode = player_filter_cols[1].selectbox(
-            "Spelers sorteren op",
-            options=["Grootste gap", "Beste bench-score", "Naam"],
-        )
-        filtered_player_df = player_report_df.copy()
-        if selected_position_filter != "Alle posities":
-            filtered_player_df = filtered_player_df.loc[filtered_player_df["Positie"] == selected_position_filter].copy()
-        if player_sort_mode == "Beste bench-score":
-            filtered_player_df = filtered_player_df.sort_values("current_score", ascending=False, na_position="last")
-        elif player_sort_mode == "Naam":
-            filtered_player_df = filtered_player_df.sort_values("player_name", ascending=True)
-        else:
-            filtered_player_df["focus_gap_abs"] = filtered_player_df[f"{focus_metric}_gap_current"].abs()
-            filtered_player_df = filtered_player_df.sort_values("focus_gap_abs", ascending=False, na_position="last")
-
-        player_chart_cols = st.columns([0.58, 0.42], gap="large")
-        with player_chart_cols[0]:
-            fig = build_player_compare_chart(filtered_player_df, focus_metric)
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-        with player_chart_cols[1]:
-            fig = build_player_score_chart(filtered_player_df)
-            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-
-        st.markdown(
-            """
-            <div class="bench-sheet-card">
-              <div class="bench-sheet-kicker">Speler detail</div>
-              <div class="bench-sheet-title">Individuele benchmarkvergelijking</div>
-              <div class="bench-sheet-note">Hier vergelijk je jouw spelers direct met hun positiebenchmark, niet alleen het teamgemiddelde per positie.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.dataframe(build_player_focus_table(filtered_player_df, focus_metric), width="stretch", hide_index=True)
-
-    detail_positions = report_df.loc[report_df[f"{focus_metric}_current"].notna(), "Positie"].astype(str).tolist()
-    detail_cols = st.columns([0.42, 0.58], gap="large")
+    detail_cols = st.columns([0.34, 0.66], gap="large")
+    player_options = filtered_player_df["player_name"].dropna().astype(str).tolist()
     with detail_cols[0]:
-        selected_position = st.selectbox("Positie detail", options=detail_positions)
-        position_row = report_df.loc[report_df["Positie"] == selected_position].iloc[0]
+        selected_player = st.selectbox("Speler detail", options=player_options)
+        selected_player_row = filtered_player_df.loc[filtered_player_df["player_name"] == selected_player].iloc[0]
         st.markdown(
             build_stat_card(
-                "Bench-score nu",
-                _format_score(position_row.get("current_score")),
-                f"Vorige periode: {_format_score(position_row.get('previous_score'))} | Trend: {position_row.get('overall_status', '--')}",
+                "Huidig scope-gemiddelde",
+                _format_metric(focus_metric, selected_player_row.get(f"{focus_metric}_current")),
+                f"{selected_player_row['Positie']} | {int(selected_player_row.get('match_count', 0))} matches in sample",
             ),
             unsafe_allow_html=True,
         )
         st.markdown(
             build_stat_card(
-                "Spelers in scope",
-                str(int(position_row.get("active_players_current", 0))),
-                f"Vorige periode: {int(position_row.get('active_players_previous', 0))} | Vergelijkbare metrics: {int(position_row.get('tracked_metrics', 0))}",
+                "Gap naar KKD",
+                _format_gap(focus_metric, selected_player_row.get(f"{focus_metric}_gap_kkd")),
+                f"Benchmark: {_format_metric(focus_metric, selected_player_row.get(f'{focus_metric}_kkd_benchmark'))}",
             ),
             unsafe_allow_html=True,
         )
+        st.markdown(
+            build_stat_card(
+                "Gap naar Eredivisie",
+                _format_gap(focus_metric, selected_player_row.get(f"{focus_metric}_gap_eredivisie")),
+                f"Benchmark: {_format_metric(focus_metric, selected_player_row.get(f'{focus_metric}_eredivisie_benchmark'))}",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    selected_player_matches = match_totals_df.loc[match_totals_df["player_name"] == selected_player].copy()
     with detail_cols[1]:
+        st.plotly_chart(
+            build_player_match_timeline(
+                selected_player_matches,
+                focus_metric,
+                selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
+                selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
+                selected_player,
+            ),
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
+
+    detail_table_cols = st.columns([0.42, 0.58], gap="large")
+    with detail_table_cols[0]:
         st.markdown(
             """
             <div class="bench-sheet-card">
-              <div class="bench-sheet-kicker">Positie detail</div>
-              <div class="bench-sheet-title">Alle metrics voor de geselecteerde positie</div>
-              <div class="bench-sheet-note">Per metric zie je benchmark, actuele output, vorige referentie en of MVV daar dichter bij komt.</div>
+              <div class="bench-sheet-kicker">Metric detail</div>
+              <div class="bench-sheet-title">Alle benchmarkmetrics voor deze speler</div>
+              <div class="bench-sheet-note">Links staat de speleroutput, daarnaast steeds KKD en Eredivisie met de netto gap.</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        detail_df = build_position_detail_table(report_df, selected_position)
-        st.dataframe(detail_df, width="stretch", hide_index=True)
+        st.dataframe(build_player_metric_detail_table(selected_player_row), width="stretch", hide_index=True)
+    with detail_table_cols[1]:
+        st.markdown(
+            """
+            <div class="bench-sheet-card">
+              <div class="bench-sheet-kicker">Match detail</div>
+              <div class="bench-sheet-title">Individuele wedstrijden van de geselecteerde speler</div>
+              <div class="bench-sheet-note">Zo zie je per match exact welke load de speler draaide en hoe ver die van de benchmarks aflag.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.dataframe(
+            build_player_matches_table(
+                selected_player_matches,
+                focus_metric,
+                selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
+                selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
+            ),
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def main() -> None:
@@ -2098,12 +2643,12 @@ def main() -> None:
             </div>
           </div>
           <div class="bench-copy">
-            Gebruik <strong>Marks</strong> voor de vaste referentietabellen en <strong>Compare</strong> voor een echte benchmarkrapportage op basis van de actuele Summary-data van MVV.
+            Gebruik <strong>Marks</strong> voor de vaste referentietabellen en <strong>Compare</strong> om de matchload van jouw spelers direct naast KKD- en Eredivisiebenchmarks te leggen.
           </div>
           <div class="bench-pill-row">
             <span class="bench-pill">KKD 2024/2025</span>
             <span class="bench-pill">Eredivisie 2025/2026</span>
-            <span class="bench-pill">Progressie: vooruit of achteruit</span>
+            <span class="bench-pill">Speler vs benchmark</span>
           </div>
         </div>
         """,
