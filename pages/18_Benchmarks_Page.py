@@ -225,6 +225,7 @@ NUMERIC_GPS_COLS = [
 
 POSITION_EXACT_CODES = {"AM", "CB", "CF", "CM", "DEF", "DM", "FOR", "GK", "LB", "LW", "MID", "RB", "RW"}
 SUBPOSITION_OPTIONS = [""] + sorted(POSITION_EXACT_CODES)
+POSITION_DISPLAY_ORDER = ["GK", "CB", "LB", "RB", "DM", "CM", "AM", "LW", "RW", "CF", "DEF", "MID", "FOR"]
 
 
 def parse_metric_value(value: object) -> float:
@@ -260,6 +261,12 @@ def _format_decimal(value: object, decimals: int = 1) -> str:
         return "--"
     formatted = f"{float(value):,.{decimals}f}"
     return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _sort_compare_positions(values: list[str]) -> list[str]:
+    order_map = {code: index for index, code in enumerate(POSITION_DISPLAY_ORDER)}
+    cleaned_values = [str(value).strip().upper() for value in values if str(value).strip()]
+    return sorted(cleaned_values, key=lambda value: (order_map.get(value, 999), value))
 
 
 def _format_distance(value: object) -> str:
@@ -550,6 +557,9 @@ def save_player_sub_position(sb, player_id: str, sub_position: str) -> tuple[boo
         fetch_active_players_cached.clear()
         return True, "Subpositie permanent opgeslagen."
     except Exception as exc:
+        message = str(exc)
+        if "sub_position" in message.lower():
+            return False, "Permanent opslaan lukt nog niet omdat de kolom `sub_position` nog niet in Supabase staat. Voer eerst de migratie uit."
         return False, f"Permanent opslaan faalde: {exc}"
 
 
@@ -1710,18 +1720,19 @@ def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str)
     eredivisie_col = f"{metric_key}_eredivisie_benchmark"
     chart_df = player_compare_df.loc[player_compare_df[current_col].notna()].copy()
     fig = go.Figure()
-    fig.update_layout(**_chart_layout("Spelerload vs KKD en Eredivisie", height=500))
+    fig.update_layout(**_chart_layout(f"Spelerload vs benchmarks | {METRIC_SPECS[metric_key]['label']}", height=520))
     fig.update_xaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT, size=11))
     if chart_df.empty:
         return fig
 
-    chart_df["label"] = chart_df["player_name"].astype(str) + " (" + chart_df["Positie"].astype(str) + ")"
+    chart_df["label"] = chart_df["player_name"].astype(str) + " | " + chart_df["Positie"].astype(str)
     chart_df["focus_level"] = chart_df.apply(lambda row: classify_focus_level(row, metric_key), axis=1)
     chart_df["sort_gap"] = (
         chart_df[f"{metric_key}_gap_eredivisie"].abs().where(chart_df[eredivisie_col].notna(), chart_df[f"{metric_key}_gap_kkd"].abs())
     )
-    chart_df = chart_df.sort_values("sort_gap", ascending=False).head(14)
+    chart_df["position_order"] = chart_df["Positie"].map({code: idx for idx, code in enumerate(POSITION_DISPLAY_ORDER)}).fillna(999)
+    chart_df = chart_df.sort_values(["position_order", "sort_gap", current_col], ascending=[True, False, False]).head(16)
 
     level_colors = {
         "Eredivisie-niveau": MVV_GREEN,
@@ -1799,45 +1810,63 @@ def build_position_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: 
             eredivisie_benchmark=(eredivisie_col, "mean"),
             players=("player_name", "nunique"),
         )
-        .sort_values("mvv_current", ascending=False)
     )
 
+    if not chart_df.empty:
+        chart_df["Positie"] = pd.Categorical(
+            chart_df["Positie"],
+            categories=POSITION_DISPLAY_ORDER,
+            ordered=True,
+        )
+        chart_df = chart_df.sort_values("Positie").copy()
+        chart_df["Positie"] = chart_df["Positie"].astype(str)
+
     fig = go.Figure()
-    fig.update_layout(**_chart_layout("Positiegemiddelde vs benchmark", height=460))
+    fig.update_layout(**_chart_layout(f"Subpositieprofiel | {METRIC_SPECS[metric_key]['label']}", height=460))
     fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
-    fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     if chart_df.empty:
         return fig
 
-    fig.add_trace(
-        go.Bar(
-            name="MVV spelers",
-            x=chart_df["Positie"],
-            y=chart_df["mvv_current"],
-            marker_color=MVV_RED,
-            text=[_format_metric(metric_key, value) for value in chart_df["mvv_current"]],
-            textposition="outside",
-            cliponaxis=False,
-        )
-    )
     if chart_df["kkd_benchmark"].notna().any():
         fig.add_trace(
-            go.Bar(
+            go.Scatter(
                 name="KKD",
                 x=chart_df["Positie"],
                 y=chart_df["kkd_benchmark"],
-                marker_color=MVV_GOLD,
+                mode="lines+markers",
+                line=dict(color=MVV_GOLD, width=2.5, dash="dot"),
+                marker=dict(size=9, color=MVV_GOLD, line=dict(color="#fff4cc", width=1)),
+                hovertemplate="<b>%{x}</b><br>KKD: %{y:.1f}<extra></extra>",
             )
         )
     if chart_df["eredivisie_benchmark"].notna().any():
         fig.add_trace(
-            go.Bar(
+            go.Scatter(
                 name="Eredivisie",
                 x=chart_df["Positie"],
                 y=chart_df["eredivisie_benchmark"],
-                marker_color="#38BDF8",
+                mode="lines+markers",
+                line=dict(color="#38BDF8", width=2.5, dash="dash"),
+                marker=dict(size=9, color="#38BDF8", line=dict(color="#DBF5FF", width=1)),
+                hovertemplate="<b>%{x}</b><br>Eredivisie: %{y:.1f}<extra></extra>",
             )
         )
+    fig.add_trace(
+        go.Scatter(
+            name="MVV spelers",
+            x=chart_df["Positie"],
+            y=chart_df["mvv_current"],
+            mode="lines+markers+text",
+            line=dict(color=MVV_RED, width=4),
+            marker=dict(size=12, color=MVV_RED, line=dict(color="#ffffff", width=1.2)),
+            text=[_format_metric(metric_key, value) for value in chart_df["mvv_current"]],
+            textposition="top center",
+            textfont=dict(color=MVV_TEXT, size=10),
+            customdata=chart_df["players"],
+            hovertemplate="<b>%{x}</b><br>MVV: %{y:.1f}<br>Spelers: %{customdata}<extra></extra>",
+        )
+    )
     return fig
 
 
@@ -2452,22 +2481,8 @@ def render_marks_tab() -> None:
 
 
 def render_compare_tab(sb) -> None:
-    st.markdown(
-        """
-        <div class="bench-sheet-card">
-          <div class="bench-sheet-kicker">Benchmark Report</div>
-          <div class="bench-sheet-title">Spelers vs KKD en Eredivisie</div>
-          <div class="bench-sheet-note">Vergelijk de wedstrijdbelasting per speler direct met de benchmarkniveaus van KKD en Eredivisie, zonder extra KPI-ruis.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    filter_cols = st.columns(2, gap="small")
     scope_labels = list(COMPARE_MATCH_SCOPE_OPTIONS.keys())
     default_scope_index = scope_labels.index("Laatste 5 wedstrijden")
-    scope_label = filter_cols[0].selectbox("Wedstrijdscope", options=scope_labels, index=default_scope_index)
-    min_minutes = float(filter_cols[1].slider("Minimum minuten per match", min_value=45, max_value=90, value=60, step=5))
 
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         st.markdown('<div class="bench-empty">Supabase-config ontbreekt, daardoor is de compare-rapportage nu niet beschikbaar.</div>', unsafe_allow_html=True)
@@ -2488,72 +2503,67 @@ def render_compare_tab(sb) -> None:
     players_df = apply_benchmark_position_overrides(players_df)
     player_manager_df = players_df.sort_values("full_name").copy()
     if not player_manager_df.empty:
-        st.markdown(
-            """
-            <div class="bench-sheet-card" style="margin-top:0.65rem; margin-bottom:1rem;">
-              <div class="bench-sheet-kicker">Subpositie beheer</div>
-              <div class="bench-sheet-title">Benchmarkpositie per speler instellen</div>
-              <div class="bench-sheet-note">Pas de benchmarkvergelijking tijdelijk aan voor deze sessie of sla de subpositie permanent op in Supabase op zodra de kolom beschikbaar is.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        manager_cols = st.columns([1.2, 0.7, 0.9, 0.9], gap="small")
-        player_lookup = {
-            str(row["player_id"]): str(row["full_name"])
-            for _, row in player_manager_df.iterrows()
-            if str(row.get("player_id") or "").strip() and str(row.get("full_name") or "").strip()
-        }
-        player_ids = list(player_lookup.keys())
-        selected_player_id = manager_cols[0].selectbox(
-            "Speler",
-            options=player_ids,
-            format_func=lambda player_id: player_lookup.get(player_id, player_id),
-            key="bench_compare_player_selector",
-        )
-        selected_player_row = player_manager_df.loc[
-            player_manager_df["player_id"].astype(str) == str(selected_player_id)
-        ].iloc[0]
-        base_position = str(selected_player_row.get("position") or "--").strip() or "--"
-        permanent_sub_position = str(selected_player_row.get("sub_position") or "").strip().upper()
-        temp_sub_position = str(selected_player_row.get("temp_sub_position") or "").strip().upper()
-        active_benchmark_position = (
-            str(selected_player_row.get("benchmark_position_source") or "").strip()
-            or permanent_sub_position
-            or base_position
-        )
-        active_source_label = "Tijdelijk" if temp_sub_position else ("Permanent" if permanent_sub_position else "Hoofdpositie")
+        with st.expander("Subpositie beheer", expanded=False):
+            manager_cols = st.columns([1.2, 0.7, 0.9, 0.9], gap="small")
+            player_lookup = {
+                str(row["player_id"]): str(row["full_name"])
+                for _, row in player_manager_df.iterrows()
+                if str(row.get("player_id") or "").strip() and str(row.get("full_name") or "").strip()
+            }
+            player_ids = list(player_lookup.keys())
+            selected_player_id = manager_cols[0].selectbox(
+                "Speler",
+                options=player_ids,
+                format_func=lambda player_id: player_lookup.get(player_id, player_id),
+                key="bench_compare_player_selector",
+            )
+            selected_player_row = player_manager_df.loc[
+                player_manager_df["player_id"].astype(str) == str(selected_player_id)
+            ].iloc[0]
+            base_position = str(selected_player_row.get("position") or "--").strip() or "--"
+            permanent_sub_position = str(selected_player_row.get("sub_position") or "").strip().upper()
+            temp_sub_position = str(selected_player_row.get("temp_sub_position") or "").strip().upper()
+            active_benchmark_position = (
+                str(selected_player_row.get("benchmark_position_source") or "").strip()
+                or permanent_sub_position
+                or base_position
+            )
+            active_source_label = "Tijdelijk" if temp_sub_position else ("Permanent" if permanent_sub_position else "Hoofdpositie")
 
-        manager_cols[1].text_input("Hoofdpositie", value=base_position, disabled=True)
-        permanent_choice = manager_cols[2].selectbox(
-            "Permanente subpositie",
-            options=SUBPOSITION_OPTIONS,
-            index=SUBPOSITION_OPTIONS.index(permanent_sub_position) if permanent_sub_position in SUBPOSITION_OPTIONS else 0,
-            key=f"bench_perm_sub_position_{selected_player_id}",
-        )
-        temp_choice = manager_cols[3].selectbox(
-            "Tijdelijke subpositie",
-            options=SUBPOSITION_OPTIONS,
-            index=SUBPOSITION_OPTIONS.index(temp_sub_position) if temp_sub_position in SUBPOSITION_OPTIONS else 0,
-            key=f"bench_temp_sub_position_{selected_player_id}",
-        )
-        st.caption(f"Actief in compare: {active_benchmark_position} via {active_source_label.lower()} instelling.")
+            manager_cols[1].text_input("Hoofdpositie", value=base_position, disabled=True)
+            permanent_choice = manager_cols[2].selectbox(
+                "Permanente subpositie",
+                options=SUBPOSITION_OPTIONS,
+                index=SUBPOSITION_OPTIONS.index(permanent_sub_position) if permanent_sub_position in SUBPOSITION_OPTIONS else 0,
+                key=f"bench_perm_sub_position_{selected_player_id}",
+            )
+            temp_choice = manager_cols[3].selectbox(
+                "Tijdelijke subpositie",
+                options=SUBPOSITION_OPTIONS,
+                index=SUBPOSITION_OPTIONS.index(temp_sub_position) if temp_sub_position in SUBPOSITION_OPTIONS else 0,
+                key=f"bench_temp_sub_position_{selected_player_id}",
+            )
+            st.caption(f"Actief in compare: {active_benchmark_position} via {active_source_label.lower()} instelling.")
 
-        action_cols = st.columns(3, gap="small")
-        if action_cols[0].button("Tijdelijk toepassen", width="stretch", key=f"bench_apply_temp_{selected_player_id}"):
-            set_temp_subposition_override(selected_player_id, temp_choice)
-            st.rerun()
-        if action_cols[1].button("Tijdelijke override wissen", width="stretch", key=f"bench_clear_temp_{selected_player_id}"):
-            set_temp_subposition_override(selected_player_id, "")
-            st.rerun()
-        if action_cols[2].button("Permanent opslaan", width="stretch", key=f"bench_save_perm_{selected_player_id}"):
-            ok, message = save_player_sub_position(sb, selected_player_id, permanent_choice)
-            if ok:
-                set_temp_subposition_override(selected_player_id, "")
-                st.success(message)
+            action_cols = st.columns(3, gap="small")
+            if action_cols[0].button("Tijdelijk toepassen", width="stretch", key=f"bench_apply_temp_{selected_player_id}"):
+                set_temp_subposition_override(selected_player_id, temp_choice)
                 st.rerun()
-            else:
-                st.error(message)
+            if action_cols[1].button("Tijdelijke override wissen", width="stretch", key=f"bench_clear_temp_{selected_player_id}"):
+                set_temp_subposition_override(selected_player_id, "")
+                st.rerun()
+            if action_cols[2].button("Permanent opslaan", width="stretch", key=f"bench_save_perm_{selected_player_id}"):
+                ok, message = save_player_sub_position(sb, selected_player_id, permanent_choice)
+                if ok:
+                    set_temp_subposition_override(selected_player_id, "")
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+    filter_cols = st.columns(5, gap="small")
+    scope_label = filter_cols[0].selectbox("Wedstrijdscope", options=scope_labels, index=default_scope_index)
+    min_minutes = float(filter_cols[1].slider("Minimum minuten per match", min_value=45, max_value=90, value=60, step=5))
 
     match_limit = COMPARE_MATCH_SCOPE_OPTIONS[scope_label]
     compare_bundle = build_player_match_compare_bundle(match_df, players_df, match_limit, min_minutes)
@@ -2576,15 +2586,14 @@ def render_compare_tab(sb) -> None:
         )
         return
 
-    focus_row = st.columns(3, gap="small")
-    focus_metric = focus_row[0].selectbox(
+    focus_metric = filter_cols[2].selectbox(
         "Focus metric",
         options=available_metric_options,
         format_func=lambda key: str(METRIC_SPECS[key]["label"]),
     )
-    position_options = ["Alle posities"] + sorted(player_compare_df["Positie"].dropna().astype(str).unique().tolist())
-    selected_position_filter = focus_row[1].selectbox("Positiefilter", options=position_options)
-    player_sort_mode = focus_row[2].selectbox(
+    position_options = ["Alle posities"] + _sort_compare_positions(player_compare_df["Positie"].dropna().astype(str).unique().tolist())
+    selected_position_filter = filter_cols[3].selectbox("Positiefilter", options=position_options)
+    player_sort_mode = filter_cols[4].selectbox(
         "Sorteer spelers op",
         options=["Grootste Eredivisie-gap", "Grootste KKD-gap", "Hoogste load", "Naam"],
     )
