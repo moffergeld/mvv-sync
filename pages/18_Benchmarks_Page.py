@@ -145,6 +145,15 @@ def build_visual_card(title: str, note: str, image_uri: str | None) -> str:
     """
 
 
+def render_stat_cards(cards: list[tuple[str, str, str]], columns_per_row: int) -> None:
+    for start in range(0, len(cards), columns_per_row):
+        row_cards = cards[start : start + columns_per_row]
+        columns = st.columns(columns_per_row, gap="small")
+        for column, (label, value, note) in zip(columns, row_cards):
+            with column:
+                st.markdown(build_stat_card(label, value, note), unsafe_allow_html=True)
+
+
 @st.cache_data(show_spinner=False)
 def load_pdf_bytes(path: str) -> bytes:
     return Path(path).read_bytes()
@@ -496,24 +505,22 @@ def main() -> None:
         with marks_tab:
             kkd_top_td_idx = KKD_BENCHMARKS["Totale afstand (m)"].apply(parse_metric_value).idxmax()
             eredivisie_top_hsr_idx = EREDIVISIE_BENCHMARKS["HI afstand >20.0 (m)"].apply(parse_metric_value).idxmax()
-            marks_cards = "".join(
-                [
-                    build_stat_card("Sets", "2 benchmarkbladen", "KKD en Eredivisie direct naast elkaar"),
-                    build_stat_card("KKD posities", str(len(KKD_BENCHMARKS)), "Referenties uit seizoen 2024/2025"),
-                    build_stat_card("Eredivisie posities", str(len(EREDIVISIE_BENCHMARKS)), "Referenties uit seizoen 2025/2026"),
-                    build_stat_card(
-                        "Top volume KKD",
-                        f"{KKD_BENCHMARKS.loc[kkd_top_td_idx, 'Positie']} | {KKD_BENCHMARKS.loc[kkd_top_td_idx, 'Totale afstand (m)']} m",
-                        "Hoogste totale afstand per 90 minuten",
-                    ),
-                    build_stat_card(
-                        "Top HSR Eredivisie",
-                        f"{EREDIVISIE_BENCHMARKS.loc[eredivisie_top_hsr_idx, 'Positie']} | {EREDIVISIE_BENCHMARKS.loc[eredivisie_top_hsr_idx, 'HI afstand >20.0 (m)']} m",
-                        "Hoogste high-intensity afstand per 90 minuten",
-                    ),
-                ]
-            )
-            st.markdown(f'<div class="bench-stat-grid">{marks_cards}</div>', unsafe_allow_html=True)
+            marks_cards = [
+                ("Sets", "2 benchmarkbladen", "KKD en Eredivisie direct naast elkaar"),
+                ("KKD posities", str(len(KKD_BENCHMARKS)), "Referenties uit seizoen 2024/2025"),
+                ("Eredivisie posities", str(len(EREDIVISIE_BENCHMARKS)), "Referenties uit seizoen 2025/2026"),
+                (
+                    "Top volume KKD",
+                    f"{KKD_BENCHMARKS.loc[kkd_top_td_idx, 'Positie']} | {KKD_BENCHMARKS.loc[kkd_top_td_idx, 'Totale afstand (m)']} m",
+                    "Hoogste totale afstand per 90 minuten",
+                ),
+                (
+                    "Top HSR Eredivisie",
+                    f"{EREDIVISIE_BENCHMARKS.loc[eredivisie_top_hsr_idx, 'Positie']} | {EREDIVISIE_BENCHMARKS.loc[eredivisie_top_hsr_idx, 'HI afstand >20.0 (m)']} m",
+                    "Hoogste high-intensity afstand per 90 minuten",
+                ),
+            ]
+            render_stat_cards(marks_cards, columns_per_row=5)
 
             left_col, right_col = st.columns(2, gap="large")
             visual_uris = [KKD_IMAGE_URI, EREDIVISIE_IMAGE_URI]
@@ -541,27 +548,25 @@ def main() -> None:
 
         with compare_tab:
             _, title, note, table_df = COMPARE_TABLE
-            comparison_cards = "".join(
-                [
-                    build_stat_card("Overlap", str(len(table_df)), "Posities die 1-op-1 te vergelijken zijn"),
-                    build_stat_card(
-                        "HSR hoger in ED",
-                        str(int((table_df["HI afstand >20.0 (m)"].apply(parse_metric_value) > 0).sum())),
-                        "Aantal posities waar Eredivisie hoger ligt",
-                    ),
-                    build_stat_card(
-                        "Sprintafstand hoger in ED",
-                        str(int((table_df["Sprintafstand >25.0 (m)"].apply(parse_metric_value) > 0).sum())),
-                        "Aantal posities met hogere sprintafstand",
-                    ),
-                    build_stat_card(
-                        "TD hoger in KKD",
-                        str(int((table_df["Totale afstand (m)"].apply(parse_metric_value) < 0).sum())),
-                        "Aantal posities waar KKD hogere totale afstand heeft",
-                    ),
-                ]
-            )
-            st.markdown(f'<div class="bench-stat-grid">{comparison_cards}</div>', unsafe_allow_html=True)
+            comparison_cards = [
+                ("Overlap", str(len(table_df)), "Posities die 1-op-1 te vergelijken zijn"),
+                (
+                    "HSR hoger in ED",
+                    str(int((table_df["HI afstand >20.0 (m)"].apply(parse_metric_value) > 0).sum())),
+                    "Aantal posities waar Eredivisie hoger ligt",
+                ),
+                (
+                    "Sprintafstand hoger in ED",
+                    str(int((table_df["Sprintafstand >25.0 (m)"].apply(parse_metric_value) > 0).sum())),
+                    "Aantal posities met hogere sprintafstand",
+                ),
+                (
+                    "TD hoger in KKD",
+                    str(int((table_df["Totale afstand (m)"].apply(parse_metric_value) < 0).sum())),
+                    "Aantal posities waar KKD hogere totale afstand heeft",
+                ),
+            ]
+            render_stat_cards(comparison_cards, columns_per_row=4)
             st.markdown(
                 build_visual_card(title, "Visuele vergelijking van het verschil tussen Eredivisie en KKD op overlappende posities.", COMPARE_IMAGE_URI),
                 unsafe_allow_html=True,
