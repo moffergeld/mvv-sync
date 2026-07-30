@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from pathlib import Path
 import re
 from typing import Any
 
@@ -25,10 +24,6 @@ from utils.streamlit_ui import apply_streamlit_chrome
 
 st.set_page_config(page_title="Benchmarks", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-BENCHMARKS_DIR = ROOT_DIR / "Assets" / "Benchmarks"
-BENCHMARKS_PDF = BENCHMARKS_DIR / "Positional_Benchmarks_MVV.pdf"
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
 TEAM_LOGO_URI = build_data_uri(TEAM_LOGO)
@@ -407,12 +402,6 @@ def build_position_card(position: str, row: pd.Series, metric_key: str) -> str:
       </div>
     </div>
     """
-
-
-@st.cache_data(show_spinner=False)
-def load_pdf_bytes(path: str) -> bytes:
-    return Path(path).read_bytes()
-
 
 def rest_headers(access_token: str) -> dict[str, str]:
     return {
@@ -2786,11 +2775,6 @@ def main() -> None:
 
     render_sidebar_navigation(profile)
 
-    if not BENCHMARKS_PDF.exists():
-        st.error("De benchmark-PDF is niet gevonden in de assets.")
-        render_sidebar_footer(profile)
-        st.stop()
-
     logo_markup = f'<img src="{TEAM_LOGO_URI}" alt="MVV Maastricht" class="bench-logo" />' if TEAM_LOGO_URI else ""
     st.markdown(
         f"""
@@ -2815,36 +2799,11 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    info_col, download_col = st.columns([0.72, 0.28], gap="large")
-    with info_col:
-        marks_tab, compare_tab = st.tabs(["Marks", "Compare"])
-        with marks_tab:
-            render_marks_tab()
-        with compare_tab:
-            render_compare_tab(sb)
-
-    with download_col:
-        st.markdown(
-            """
-            <div class="bench-download-card">
-              <div class="bench-download-label">Bronbestand</div>
-              <div class="bench-download-title">Positional Benchmarks [MVV]</div>
-              <div class="bench-download-copy">
-                Download hier de originele PDF zoals die in de Benchmarks-pagina is opgenomen.
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.download_button(
-            "Download PDF",
-            data=load_pdf_bytes(str(BENCHMARKS_PDF)),
-            file_name="Positional_Benchmarks_MVV.pdf",
-            mime="application/pdf",
-            width="stretch",
-            key="benchmarks_download_pdf",
-        )
-        st.page_link("pages/10_Data_Page_Beta.py", label="Terug naar Data")
+    marks_tab, compare_tab = st.tabs(["Marks", "Compare"])
+    with marks_tab:
+        render_marks_tab()
+    with compare_tab:
+        render_compare_tab(sb)
 
     render_sidebar_footer(profile)
 
