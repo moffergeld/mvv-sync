@@ -201,6 +201,15 @@ METRIC_SPECS = {
     },
 }
 
+PLAYER_DETAIL_METRIC_ORDER = [
+    "total_distance_90",
+    "hsr_hsd_90",
+    "sprint_distance_90",
+    "sprint_count_90",
+    "total_distance_per_min",
+    "intensity_pct",
+]
+
 GPS_SELECT_COLS = [
     "gps_id",
     "datum",
@@ -223,9 +232,9 @@ NUMERIC_GPS_COLS = [
     "number_of_sprints",
 ]
 
-POSITION_EXACT_CODES = {"AM", "CB", "CF", "CM", "DEF", "DM", "FOR", "GK", "LB", "LW", "MID", "RB", "RW"}
+POSITION_EXACT_CODES = {"AM", "CB", "CF", "CM", "DM", "GK", "LB", "LW", "RB", "RW"}
 SUBPOSITION_OPTIONS = [""] + sorted(POSITION_EXACT_CODES)
-POSITION_DISPLAY_ORDER = ["GK", "CB", "LB", "RB", "DM", "CM", "AM", "LW", "RW", "CF", "DEF", "MID", "FOR"]
+POSITION_DISPLAY_ORDER = ["GK", "CB", "LB", "RB", "DM", "CM", "AM", "LW", "RW", "CF"]
 
 
 def parse_metric_value(value: object) -> float:
@@ -267,6 +276,11 @@ def _sort_compare_positions(values: list[str]) -> list[str]:
     order_map = {code: index for index, code in enumerate(POSITION_DISPLAY_ORDER)}
     cleaned_values = [str(value).strip().upper() for value in values if str(value).strip()]
     return sorted(cleaned_values, key=lambda value: (order_map.get(value, 999), value))
+
+
+def _count_exact_subpositions(values: pd.Series) -> int:
+    cleaned = values.fillna("").astype(str).str.strip().str.upper()
+    return int(cleaned.isin(POSITION_EXACT_CODES).sum())
 
 
 def _format_distance(value: object) -> str:
@@ -1425,7 +1439,6 @@ def map_compare_position(raw_position: object) -> str | None:
     if not value:
         return None
 
-    valid_codes = COMPARE_POSITION_CODES
     candidates = [segment.strip() for segment in re.split(r"[/,|;]+", value) if segment.strip()]
     if not candidates:
         candidates = [value]
@@ -1433,7 +1446,7 @@ def map_compare_position(raw_position: object) -> str | None:
     for candidate in candidates:
         cleaned = re.sub(r"[^A-Z ]", " ", candidate)
         cleaned = " ".join(cleaned.split())
-        if cleaned in valid_codes:
+        if cleaned in POSITION_EXACT_CODES:
             return cleaned
 
         if any(token in cleaned for token in ("KEEPER", "GOAL", "DOEL", "GK")):
@@ -1456,20 +1469,18 @@ def map_compare_position(raw_position: object) -> str | None:
             return "CB"
         if "CENTRE" in cleaned and "BACK" in cleaned:
             return "CB"
-        if any(token in cleaned for token in ("VERDEDIG", "DEFENDER", "DEFENCE", "DEFENSE")):
-            return "DEF"
-        if any(token in cleaned for token in ("MIDDENVELD", "MIDFIELD", "MIDFIELDER")):
-            return "MID"
-        if any(token in cleaned for token in ("AANVALL", "ATTACKER", "FORWARD", "STRIKER", "SPITS")):
-            return "FOR"
-
-        fallback_map = {
-            "MID": "MID",
-            "FOR": "FOR",
-            "DEF": "DEF",
-        }
-        if cleaned in fallback_map:
-            return fallback_map[cleaned]
+        if "ATTACK" in cleaned and "FORWARD" in cleaned:
+            return "CF"
+        if "CENTRE" in cleaned and "FORWARD" in cleaned:
+            return "CF"
+        if "CENTER" in cleaned and "FORWARD" in cleaned:
+            return "CF"
+        if "STRIKER" in cleaned or "SPITS" in cleaned:
+            return "CF"
+        if "LEFT" in cleaned and "WING" in cleaned:
+            return "LW"
+        if "RIGHT" in cleaned and "WING" in cleaned:
+            return "RW"
 
     return None
 
@@ -1633,10 +1644,15 @@ def build_player_match_compare_bundle(
 ) -> dict[str, Any]:
     match_totals = prepare_match_totals_for_compare(match_df, players_df, min_minutes)
     if match_totals.empty:
+        exact_subposition_count = _count_exact_subpositions(players_df.get("benchmark_position_source", pd.Series(dtype=str)))
+        if exact_subposition_count == 0:
+            note = "Geen vergelijking beschikbaar: er zijn nog geen exacte subposities gekoppeld. Stel per speler eerst bijvoorbeeld CB, CM, AM, LW of CF in."
+        else:
+            note = "Geen bruikbare matchdata gevonden voor deze spelers en minutenfilter."
         return {
             "player_compare_df": pd.DataFrame(),
             "match_totals_df": pd.DataFrame(),
-            "note": "Geen bruikbare matchdata gevonden voor deze spelers en minutenfilter.",
+            "note": note,
         }
 
     player_rows: list[dict[str, Any]] = []
@@ -1714,13 +1730,31 @@ def classify_focus_level(row: pd.Series, metric_key: str) -> str:
     return "Onder KKD"
 
 
-def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str) -> go.Figure:
+def build_dual_benchmark_chart(
+    player_compare_df: pd.DataFrame,
+    metric_key: str,
+    match_totals_df: pd.DataFrame | None = None,
+) -> go.Figure:
     current_col = f"{metric_key}_current"
     kkd_col = f"{metric_key}_kkd_benchmark"
     eredivisie_col = f"{metric_key}_eredivisie_benchmark"
     chart_df = player_compare_df.loc[player_compare_df[current_col].notna()].copy()
     fig = go.Figure()
     fig.update_layout(**_chart_layout(f"Spelerload vs benchmarks | {METRIC_SPECS[metric_key]['label']}", height=520))
+    fig.update_layout(
+        margin=dict(l=18, r=18, t=108, b=58),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(10,16,28,0.82)",
+            bordercolor="rgba(255,255,255,0.08)",
+            borderwidth=1,
+            font=dict(color=MVV_TEXT, size=11),
+        ),
+    )
     fig.update_xaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_yaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT, size=11))
     if chart_df.empty:
@@ -1755,10 +1789,53 @@ def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str)
                 )
             )
 
+    if match_totals_df is not None and not match_totals_df.empty and metric_key in match_totals_df.columns:
+        recent_matches = (
+            match_totals_df.loc[
+                match_totals_df["player_id"].astype(str).isin(chart_df["player_id"].astype(str)),
+                ["player_id", "datum", metric_key, "duration"],
+            ]
+            .copy()
+        )
+        if not recent_matches.empty:
+            recent_matches["player_id"] = recent_matches["player_id"].astype(str)
+            recent_matches["datum"] = pd.to_datetime(recent_matches["datum"], errors="coerce")
+            recent_matches = recent_matches.dropna(subset=["datum"])
+            recent_matches = recent_matches.sort_values(["player_id", "datum"], ascending=[True, False])
+            recent_matches["match_rank"] = recent_matches.groupby("player_id").cumcount() + 1
+            recent_matches = recent_matches.loc[recent_matches["match_rank"] <= 5].copy()
+            if not recent_matches.empty:
+                label_lookup = chart_df.set_index(chart_df["player_id"].astype(str))["label"].to_dict()
+                recent_matches["label"] = recent_matches["player_id"].map(label_lookup)
+                recent_matches = recent_matches.dropna(subset=["label", metric_key])
+                if not recent_matches.empty:
+                    recent_matches["match_label"] = recent_matches["datum"].dt.strftime("%d/%m/%Y")
+                    recent_matches["metric_label"] = recent_matches[metric_key].apply(lambda value: _format_metric(metric_key, value))
+                    fig.add_trace(
+                        go.Scatter(
+                            name="Laatste 5 matches",
+                            x=recent_matches[metric_key],
+                            y=recent_matches["label"],
+                            mode="markers",
+                            marker=dict(
+                                size=8,
+                                color="rgba(255,255,255,0.28)",
+                                line=dict(color="rgba(248,250,252,0.85)", width=1.1),
+                            ),
+                            customdata=recent_matches[["match_rank", "match_label", "metric_label", "duration"]],
+                            hovertemplate=(
+                                "<b>%{y}</b><br>"
+                                "Wedstrijd %{customdata[0]}: %{customdata[1]}<br>"
+                                "Waarde: %{customdata[2]}<br>"
+                                "Minuten: %{customdata[3]:.0f}<extra></extra>"
+                            ),
+                        )
+                    )
+
     if chart_df[kkd_col].notna().any():
         fig.add_trace(
             go.Scatter(
-                name="KKD benchmark",
+                name="KKD",
                 x=chart_df[kkd_col],
                 y=chart_df["label"],
                 mode="markers",
@@ -1769,7 +1846,7 @@ def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str)
     if chart_df[eredivisie_col].notna().any():
         fig.add_trace(
             go.Scatter(
-                name="Eredivisie benchmark",
+                name="Eredivisie",
                 x=chart_df[eredivisie_col],
                 y=chart_df["label"],
                 mode="markers",
@@ -1779,7 +1856,7 @@ def build_dual_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: str)
         )
     fig.add_trace(
         go.Scatter(
-            name="MVV speler",
+            name="MVV",
             x=chart_df[current_col],
             y=chart_df["label"],
             mode="markers+text",
@@ -1823,6 +1900,20 @@ def build_position_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: 
 
     fig = go.Figure()
     fig.update_layout(**_chart_layout(f"Subpositieprofiel | {METRIC_SPECS[metric_key]['label']}", height=460))
+    fig.update_layout(
+        margin=dict(l=18, r=18, t=108, b=52),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.08,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(10,16,28,0.82)",
+            bordercolor="rgba(255,255,255,0.08)",
+            borderwidth=1,
+            font=dict(color=MVV_TEXT, size=11),
+        ),
+    )
     fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_yaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     if chart_df.empty:
@@ -1854,7 +1945,7 @@ def build_position_benchmark_chart(player_compare_df: pd.DataFrame, metric_key: 
         )
     fig.add_trace(
         go.Scatter(
-            name="MVV spelers",
+            name="MVV",
             x=chart_df["Positie"],
             y=chart_df["mvv_current"],
             mode="lines+markers+text",
@@ -1876,9 +1967,12 @@ def build_player_match_timeline(
     kkd_benchmark: float | None,
     eredivisie_benchmark: float | None,
     player_name: str,
+    *,
+    title_override: str | None = None,
+    height: int = 440,
 ) -> go.Figure:
     fig = go.Figure()
-    fig.update_layout(**_chart_layout(f"{player_name} | matchtrend", height=440))
+    fig.update_layout(**_chart_layout(title_override or f"{player_name} | matchtrend", height=height))
     fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_yaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
     if player_matches_df.empty:
@@ -2501,6 +2595,13 @@ def render_compare_tab(sb) -> None:
         return
 
     players_df = apply_benchmark_position_overrides(players_df)
+    exact_subposition_count = _count_exact_subpositions(players_df.get("benchmark_position_source", pd.Series(dtype=str)))
+    total_player_count = int(len(players_df))
+    if total_player_count:
+        st.caption(
+            f"Compare gebruikt nu alleen exacte subposities. "
+            f"{exact_subposition_count}/{total_player_count} spelers hebben momenteel een geldige subpositie-instelling."
+        )
     player_manager_df = players_df.sort_values("full_name").copy()
     if not player_manager_df.empty:
         with st.expander("Subpositie beheer", expanded=False):
@@ -2592,7 +2693,7 @@ def render_compare_tab(sb) -> None:
         format_func=lambda key: str(METRIC_SPECS[key]["label"]),
     )
     position_options = ["Alle posities"] + _sort_compare_positions(player_compare_df["Positie"].dropna().astype(str).unique().tolist())
-    selected_position_filter = filter_cols[3].selectbox("Positiefilter", options=position_options)
+    selected_position_filter = filter_cols[3].selectbox("Subpositiefilter", options=position_options)
     player_sort_mode = filter_cols[4].selectbox(
         "Sorteer spelers op",
         options=["Grootste Eredivisie-gap", "Grootste KKD-gap", "Hoogste load", "Naam"],
@@ -2629,7 +2730,7 @@ def render_compare_tab(sb) -> None:
     chart_cols = st.columns([0.58, 0.42], gap="large")
     with chart_cols[0]:
         st.plotly_chart(
-            build_dual_benchmark_chart(filtered_player_df, focus_metric),
+            build_dual_benchmark_chart(filtered_player_df, focus_metric, match_totals_df),
             width="stretch",
             config={"displayModeBar": False, "responsive": True},
         )
@@ -2641,20 +2742,33 @@ def render_compare_tab(sb) -> None:
         )
 
     player_options = filtered_player_df["player_name"].dropna().astype(str).tolist()
-    selected_player = st.selectbox("Speler detailgrafiek", options=player_options)
+    selected_player = st.selectbox("Speler detailgrafieken", options=player_options)
     selected_player_row = filtered_player_df.loc[filtered_player_df["player_name"] == selected_player].iloc[0]
     selected_player_matches = match_totals_df.loc[match_totals_df["player_name"] == selected_player].copy()
-    st.plotly_chart(
-        build_player_match_timeline(
-            selected_player_matches,
-            focus_metric,
-            selected_player_row.get(f"{focus_metric}_kkd_benchmark"),
-            selected_player_row.get(f"{focus_metric}_eredivisie_benchmark"),
-            selected_player,
-        ),
-        width="stretch",
-        config={"displayModeBar": False, "responsive": True},
-    )
+    detail_metric_options = [
+        metric_key
+        for metric_key in PLAYER_DETAIL_METRIC_ORDER
+        if metric_key in METRIC_SPECS
+        and metric_key in selected_player_matches.columns
+        and selected_player_matches[metric_key].notna().any()
+    ]
+    if detail_metric_options:
+        detail_cols = st.columns(2, gap="large")
+        for index, metric_key in enumerate(detail_metric_options):
+            with detail_cols[index % 2]:
+                st.plotly_chart(
+                    build_player_match_timeline(
+                        selected_player_matches,
+                        metric_key,
+                        selected_player_row.get(f"{metric_key}_kkd_benchmark"),
+                        selected_player_row.get(f"{metric_key}_eredivisie_benchmark"),
+                        selected_player,
+                        title_override=f"{selected_player} | {METRIC_SPECS[metric_key]['label']}",
+                        height=340,
+                    ),
+                    width="stretch",
+                    config={"displayModeBar": False, "responsive": True},
+                )
 
 
 def main() -> None:
