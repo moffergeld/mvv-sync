@@ -45,6 +45,18 @@ def _normalize_event(e: str) -> str:
     return "summary" if str(e).strip().lower() == "summary" else str(e).strip().lower()
 
 
+def _session_family(type_value: str) -> str:
+    normalized = str(type_value).strip().lower()
+    return "Wedstrijd" if normalized in {"match", "practice match"} else "Training"
+
+
+def _session_display_label(type_value: str) -> str:
+    raw_value = str(type_value).strip()
+    if not raw_value:
+        return "Onbekende sessie"
+    return f"{_session_family(raw_value)} | {raw_value}"
+
+
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df = df_gps.copy()
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -143,7 +155,7 @@ def _session_types_for_day(df: pd.DataFrame, selected_day: date) -> list[str]:
         .unique()
         .tolist()
     )
-    return sorted(types)
+    return sorted(types, key=lambda value: (_session_family(value), str(value).strip().lower()))
 
 
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
@@ -507,24 +519,25 @@ def session_load_pages_main(
         return
 
     session_types = _session_types_for_day(df, selected_day)
-    session_type_options = ["Alle sessies"] + session_types
+    session_type_options = [None] + session_types
     selected_session_type = st.selectbox(
         "Sessie op deze dag",
         options=session_type_options,
         index=0,
         key=f"sl_session_type_{selected_day.isoformat()}",
-        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Practice (1) en Practice (2).",
+        format_func=lambda option: "Alle sessies" if option is None else _session_display_label(option),
+        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Practice (1), Match of Practice Match.",
     )
 
-    if selected_session_type != "Alle sessies" and COL_TYPE in df_day.columns:
+    if selected_session_type is not None and COL_TYPE in df_day.columns:
         df_day = df_day[df_day[COL_TYPE].astype(str).str.strip() == selected_session_type].copy()
         if df_day.empty:
             st.info("Geen data gevonden voor deze sessie op de gekozen datum.")
             return
 
     filter_caption = (
-        f"Actieve sessie: {selected_session_type}"
-        if selected_session_type != 'Alle sessies'
+        f"Actieve sessie: {_session_display_label(selected_session_type)}"
+        if selected_session_type is not None
         else "Actieve sessie: alle Summary-sessies van deze dag"
     )
     st.caption(filter_caption)
