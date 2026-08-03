@@ -43,7 +43,7 @@ MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
-WEEK_REPORT_HTML_REVISION = "REV-20260803B"
+WEEK_REPORT_HTML_REVISION = "REV-20260803C"
 
 GPS_SELECT_COLS = [
     "gps_id",

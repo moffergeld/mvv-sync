@@ -939,8 +939,8 @@ def _build_pie_chart_svg(
     labels: Sequence[object],
     values: Sequence[object],
     *,
-    width: int = 640,
-    height: int = 182,
+    width: int = 648,
+    height: int = 188,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -950,11 +950,11 @@ def _build_pie_chart_svg(
     panel_id = _chart_id(title, "pie-panel")
     pie_shadow = _chart_id(title, "pie-shadow")
     badge = _chart_badge(title)
-    pie_cx = 118
-    pie_cy = 114
-    radius = 48
-    legend_x = 216
-    legend_top = 86
+    pie_cx = 108
+    pie_cy = 112
+    radius = 40
+    legend_x = 206
+    legend_top = 84
     legend_row_height = 11.2
     title_font = 10.8 if len(str(title)) > 7 else 11.4
 
@@ -966,15 +966,15 @@ def _build_pie_chart_svg(
         '<stop offset="100%" stop-color="#F6FAFF" />',
         "</linearGradient>",
         f'<filter id="{pie_shadow}" x="-20%" y="-20%" width="160%" height="160%">',
-        '<feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="rgba(15,23,42,0.14)" />',
+        '<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="rgba(15,23,42,0.10)" />',
         "</filter>",
         "</defs>",
         f'<rect x="8" y="10" width="{width - 16}" height="{height - 18}" rx="18" fill="#FFFFFF" stroke="#D8E1EC" />',
         f'<text x="24" y="45" font-size="{title_font}" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="{width - 32}" y="27" text-anchor="end" font-size="6.2" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
         f'<line x1="24" y1="52" x2="{width - 24}" y2="52" stroke="#E7EDF4" />',
-        f'<rect x="18" y="54" width="190" height="108" rx="16" fill="url(#{panel_id})" stroke="#DFE7F0" />',
-        f'<rect x="210" y="54" width="{width - 232}" height="108" rx="16" fill="#FFFFFF" stroke="#DFE7F0" />',
+        f'<rect x="18" y="58" width="176" height="100" rx="16" fill="url(#{panel_id})" stroke="#DFE7F0" />',
+        f'<rect x="198" y="58" width="{width - 220}" height="100" rx="16" fill="#FFFFFF" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
 
@@ -988,7 +988,7 @@ def _build_pie_chart_svg(
         y2 = pie_cy + radius * math.sin(end_angle)
         large_arc = 1 if sweep > math.pi else 0
         parts.append(
-            f'<path d="M {pie_cx:.1f} {pie_cy:.1f} L {x1:.1f} {y1:.1f} A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {x2:.1f} {y2:.1f} Z" fill="{color}" stroke="#FFFFFF" stroke-width="1.8" filter="url(#{pie_shadow})" />'
+            f'<path d="M {pie_cx:.1f} {pie_cy:.1f} L {x1:.1f} {y1:.1f} A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {x2:.1f} {y2:.1f} Z" fill="{color}" stroke="#FFFFFF" stroke-width="1.4" filter="url(#{pie_shadow})" />'
         )
         start_angle = end_angle
 
@@ -1001,7 +1001,6 @@ def _build_pie_chart_svg(
             f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="7.4" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
         )
 
-    _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
     parts.append("</svg>")
     return "".join(parts)
 
