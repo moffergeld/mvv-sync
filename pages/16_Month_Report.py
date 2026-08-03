@@ -18,6 +18,7 @@ from report_monitoring import (
     summarize_monitoring_dataset,
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
+from speed_outlier_utils import sanitize_progressive_max_speed
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
@@ -479,8 +480,8 @@ def fetch_summary_history_cached(access_token: str) -> pd.DataFrame:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
 
-    df["max_speed"] = pd.to_numeric(df.get("max_speed"), errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
+    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_name"], order_cols=["gps_id"])
 
     df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)

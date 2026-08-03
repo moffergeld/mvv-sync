@@ -1650,7 +1650,7 @@ def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
                 "subvalue": f"{_fmt_distance(row.get('distance_per_player'))} per speler",
                 "meta": f"{_fmt_int(row.get('active_players'))} spelers | {_fmt_int(row.get('player_sessions'))} sessies",
                 "stats": [
-                    {"label": "HSR / HSD", "value": _fmt_distance(row.get("hsr_hsd"))},
+                    {"label": "HSR", "value": _fmt_distance(row.get("hsr_hsd"))},
                     {"label": "Spr", "value": _fmt_int(row.get("sprints"))},
                     {"label": "Exp", "value": _fmt_int(row.get("speed_exposures"))},
                     {"label": "Top", "value": _fmt_speed(row.get("max_speed"))},
@@ -1824,12 +1824,12 @@ def build_week_report_html_pdf_bytes(
         "report_header_meta": [],
         "badges": [],
         "cards": [
-            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": "Opgetelde teamload in de week"},
-            {"label": "HSR / HSD", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
-            {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": "Teamload gedeeld door actieve spelers"},
-            {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totale sprintacties in deze week"},
-            {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
-            {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": "Spelersessies >= 90% van individuele seizoensmax"},
+            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": ""},
+            {"label": "HSR", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": ""},
+            {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": ""},
+            {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": ""},
+            {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": ""},
+            {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": ""},
         ],
         "summary_chart_section": {
             "title": "Weekly load rhythm",
@@ -1841,17 +1841,17 @@ def build_week_report_html_pdf_bytes(
                         "Daily Team Distance",
                         session_flow,
                         "total_distance",
-                        height=176,
+                        height=208,
                         formatter=_fmt_distance,
                         footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
                     )
                 },
                 {
                     "svg": _build_session_metric_chart_svg(
-                        "Daily Team HSR / HSD",
+                        "Daily Team HSR",
                         session_flow,
                         "hsr_hsd",
-                        height=176,
+                        height=208,
                         formatter=_fmt_distance,
                         footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
                     )
@@ -1881,12 +1881,12 @@ def build_week_report_html_pdf_bytes(
                     },
                     {
                         "svg": _build_session_metric_error_chart_svg(
-                            "Player Avg HSR / HSD +/- SD",
+                            "Player Avg HSR +/- SD",
                             session_spread,
                             "hsr_hsd_mean",
                             "hsr_hsd_std",
                             formatter=_fmt_distance,
-                            footer_text="Per sessie-event: gemiddelde HSR/HSD per speler met standaarddeviatie.",
+                            footer_text="Per sessie-event: gemiddelde HSR per speler met standaarddeviatie.",
                         )
                     },
                 ],
@@ -2029,7 +2029,7 @@ def build_week_report_html_pdf_bytes(
                     },
                     {
                         "svg": _build_horizontal_bar_chart_svg(
-                            "Top Players by HSR / HSD",
+                            "Top Players by HSR",
                             hsr_leaders.get("player_name", pd.Series(dtype=str)).tolist(),
                             hsr_leaders.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
                             color="#C8102E",
@@ -2064,7 +2064,7 @@ def build_week_report_html_pdf_bytes(
                             ("session_display", "Type", None),
                             ("total_distance", "TD", _fmt_distance),
                             ("distance_per_player", "Dist / Player", _fmt_distance),
-                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("speed_exposures", "Exposures", _fmt_int),
                             ("max_speed", "Top Speed", _fmt_speed),
@@ -2080,7 +2080,7 @@ def build_week_report_html_pdf_bytes(
                             ("active_players", "Players", _fmt_int),
                             ("player_sessions", "Sessions", _fmt_int),
                             ("total_distance", "TD", _fmt_distance),
-                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("max_speed", "Top Speed", _fmt_speed),
                         ],
@@ -2101,7 +2101,7 @@ def build_week_report_html_pdf_bytes(
                             ("player_name", "Speler", None),
                             ("sessions", "Sessies", _fmt_int),
                             ("total_distance", "TD", _fmt_distance),
-                            ("hsr_hsd", "HSR / HSD", _fmt_distance),
+                            ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
                             ("max_speed", "Top Speed", _fmt_speed),

@@ -57,6 +57,33 @@ def _session_display_label(type_value: str) -> str:
     return f"{_session_family(raw_value)} | {raw_value}"
 
 
+SELECT_ALL_OPT = "-- Select all --"
+
+
+def _session_label_map_for_day(df: pd.DataFrame, selected_day: date) -> dict[str, str]:
+    if df.empty or COL_DATE not in df.columns or COL_TYPE not in df.columns:
+        return {}
+
+    day_df = df.copy()
+    day_df[COL_DATE] = pd.to_datetime(day_df[COL_DATE], errors="coerce")
+    day_df = day_df[day_df[COL_DATE].dt.date == selected_day].copy()
+    if day_df.empty:
+        return {}
+
+    if COL_PLAYER in day_df.columns:
+        player_counts = day_df.groupby(COL_TYPE, dropna=False)[COL_PLAYER].nunique().to_dict()
+    else:
+        player_counts = day_df.groupby(COL_TYPE, dropna=False).size().to_dict()
+
+    label_map: dict[str, str] = {}
+    for session_type, player_count in player_counts.items():
+        session_key = str(session_type or "").strip()
+        if not session_key:
+            continue
+        label_map[session_key] = f"{_session_display_label(session_key)} ({int(player_count)} spelers)"
+    return label_map
+
+
 def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df = df_gps.copy()
     if COL_DATE not in df.columns or COL_PLAYER not in df.columns:
@@ -519,14 +546,19 @@ def session_load_pages_main(
         return
 
     session_types = _session_types_for_day(df, selected_day)
+    session_label_map = _session_label_map_for_day(df, selected_day)
     session_type_options = [None] + session_types
     selected_session_type = st.selectbox(
         "Sessie op deze dag",
         options=session_type_options,
         index=0,
         key=f"sl_session_type_{selected_day.isoformat()}",
-        format_func=lambda option: "Alle sessies" if option is None else _session_display_label(option),
-        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Practice (1), Match of Practice Match.",
+        format_func=lambda option: (
+            "Alle sessies"
+            if option is None
+            else session_label_map.get(str(option), _session_display_label(str(option)))
+        ),
+        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Training | Practice, Wedstrijd | Match of Wedstrijd | Practice Match.",
     )
 
     if selected_session_type is not None and COL_TYPE in df_day.columns:
