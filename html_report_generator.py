@@ -939,8 +939,8 @@ def _build_pie_chart_svg(
     labels: Sequence[object],
     values: Sequence[object],
     *,
-    width: int = 560,
-    height: int = 138,
+    width: int = 640,
+    height: int = 182,
 ) -> str:
     described = _describe_zone_series(labels, values)
     total = sum(value for _, value, _ in described)
@@ -950,12 +950,12 @@ def _build_pie_chart_svg(
     panel_id = _chart_id(title, "pie-panel")
     pie_shadow = _chart_id(title, "pie-shadow")
     badge = _chart_badge(title)
-    pie_cx = 98
-    pie_cy = 93
-    radius = 38
-    legend_x = 174
-    legend_top = 73
-    legend_row_height = 9.3
+    pie_cx = 118
+    pie_cy = 114
+    radius = 48
+    legend_x = 216
+    legend_top = 86
+    legend_row_height = 11.2
     title_font = 10.8 if len(str(title)) > 7 else 11.4
 
     parts: list[str] = [
@@ -973,8 +973,8 @@ def _build_pie_chart_svg(
         f'<text x="24" y="45" font-size="{title_font}" font-weight="800" fill="#0F172A">{escape(title)}</text>',
         f'<text x="{width - 32}" y="27" text-anchor="end" font-size="6.2" font-weight="800" fill="#64748B" letter-spacing="0.06em">TOTAAL {escape(_fmt_distance_km(total))}</text>',
         f'<line x1="24" y1="52" x2="{width - 24}" y2="52" stroke="#E7EDF4" />',
-        f'<rect x="18" y="54" width="150" height="78" rx="16" fill="url(#{panel_id})" stroke="#DFE7F0" />',
-        f'<rect x="170" y="54" width="{width - 192}" height="78" rx="16" fill="#FFFFFF" stroke="#DFE7F0" />',
+        f'<rect x="18" y="54" width="190" height="108" rx="16" fill="url(#{panel_id})" stroke="#DFE7F0" />',
+        f'<rect x="210" y="54" width="{width - 232}" height="108" rx="16" fill="#FFFFFF" stroke="#DFE7F0" />',
     ]
     _append_brand_tile(parts, width=width, y=18, accent="#C8102E")
 
@@ -995,10 +995,10 @@ def _build_pie_chart_svg(
     for index, (label, value, color) in enumerate(described):
         percentage = (value / total) * 100 if total > 0 else 0.0
         row_y = legend_top + index * legend_row_height
-        parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 6:.2f}" width="8" height="8" rx="2" fill="{color}" />')
-        parts.append(f'<text x="{legend_x + 13:.1f}" y="{row_y:.1f}" font-size="6.7" font-weight="700" fill="#334155">{escape(label)}</text>')
+        parts.append(f'<rect x="{legend_x:.1f}" y="{row_y - 7:.2f}" width="10" height="10" rx="2" fill="{color}" />')
+        parts.append(f'<text x="{legend_x + 16:.1f}" y="{row_y:.1f}" font-size="7.4" font-weight="700" fill="#334155">{escape(label)}</text>')
         parts.append(
-            f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="6.7" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
+            f'<text x="{width - 30:.1f}" y="{row_y:.1f}" text-anchor="end" font-size="7.4" font-weight="800" fill="#0F172A">{escape(_fmt_dec(percentage, 1))}% | {escape(_fmt_distance_km(value))}</text>'
         )
 
     _append_chart_footer(parts, width=width, height=height, accent="#C8102E")
@@ -1834,16 +1834,16 @@ def build_week_report_html_pdf_bytes(
             {"label": "Speed Exposures", "value": _fmt_int(summary.get("speed_exposures")), "foot": ""},
         ],
         "summary_chart_section": {
-            "title": "Weekly load rhythm",
-            "subtitle": "",
-            "columns": 2,
+                "title": "Weekly load rhythm",
+                "subtitle": "",
+            "columns": 1,
             "panels": [
                 {
                     "svg": _build_session_metric_chart_svg(
                         "Daily Team Distance",
                         session_flow,
                         "total_distance",
-                        height=228,
+                        height=196,
                         formatter=_fmt_distance,
                         footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
                     )
@@ -1853,7 +1853,7 @@ def build_week_report_html_pdf_bytes(
                         "Daily Team HSR",
                         session_flow,
                         "hsr_hsd",
-                        height=228,
+                        height=196,
                         formatter=_fmt_distance,
                         footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
                     )
@@ -1932,7 +1932,7 @@ def build_week_report_html_pdf_bytes(
                 "eyebrow": "Locomotion zones",
                 "title": "Distance zone share",
                 "subtitle": "Normale cirkeldiagrammen voor de hele week en voor elke actieve dag binnen dezelfde week.",
-                "columns": 3,
+                "columns": 2,
                 "panels": _build_zone_share_panels(zone_df, zone_day_table),
                 "page_break": True,
             },
