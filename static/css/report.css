@@ -451,7 +451,8 @@ body {
 }
 
 .day-card {
-  padding: 1.15mm 1.25mm;
+  min-height: 31mm;
+  padding: 1.7mm 1.7mm 1.55mm;
   border-radius: 14px;
   border: 0.3mm solid var(--panel-border);
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
@@ -464,22 +465,22 @@ body {
 
 .day-card__label {
   color: var(--brand-red);
-  font-size: 7.2pt;
+  font-size: 7.5pt;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .day-card__value {
-  margin-top: 0.35mm;
+  margin-top: 0.55mm;
   color: var(--text-strong);
-  font-size: 9.2pt;
+  font-size: 10pt;
   font-weight: 800;
 }
 
 .day-card__subvalue {
   color: var(--text-body);
-  font-size: 6.95pt;
+  font-size: 7.35pt;
   font-weight: 700;
 }
 
@@ -493,7 +494,7 @@ body {
 
 .day-card__meta {
   color: var(--text-soft);
-  font-size: 6.35pt;
+  font-size: 6.7pt;
   white-space: nowrap;
 }
 
@@ -502,8 +503,8 @@ body {
   flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1.1mm;
-  margin-top: 0.35mm;
+  gap: 1.5mm;
+  margin-top: 0.75mm;
 }
 
 .day-card__stat {
@@ -517,14 +518,14 @@ body {
 
 .day-card__stat-label {
   color: var(--text-soft);
-  font-size: 5.9pt;
+  font-size: 6.1pt;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .day-card__stat-value {
   color: var(--text-strong);
-  font-size: 6.85pt;
+  font-size: 7.15pt;
   font-weight: 800;
   white-space: nowrap;
 }

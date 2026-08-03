@@ -2008,41 +2008,6 @@ def build_week_report_html_pdf_bytes(
                     },
                 ],
             },
-            {
-                "eyebrow": "Player leaders",
-                "title": "Top outputs within the squad",
-                "subtitle": "Snel overzicht van volume-, high-speed- en sprintleiders voor de weekevaluatie.",
-                "columns": 3,
-                "panels": [
-                    {
-                        "svg": _build_horizontal_bar_chart_svg(
-                            "Top Players by Total Distance",
-                            top_players.get("player_name", pd.Series(dtype=str)).tolist(),
-                            top_players.get("total_distance", pd.Series(dtype=float)).tolist(),
-                            color="#6E1222",
-                            formatter=_fmt_distance,
-                        )
-                    },
-                    {
-                        "svg": _build_horizontal_bar_chart_svg(
-                            "Top Players by HSR",
-                            hsr_leaders.get("player_name", pd.Series(dtype=str)).tolist(),
-                            hsr_leaders.get("hsr_hsd", pd.Series(dtype=float)).tolist(),
-                            color="#C8102E",
-                            formatter=_fmt_distance,
-                        )
-                    },
-                    {
-                        "svg": _build_horizontal_bar_chart_svg(
-                            "Top Players by Sprints",
-                            sprint_leaders.get("player_name", pd.Series(dtype=str)).tolist(),
-                            sprint_leaders.get("sprints", pd.Series(dtype=float)).tolist(),
-                            color="#EA3351",
-                            formatter=_fmt_int,
-                        )
-                    },
-                ],
-            },
         ],
         "table_sections": [
             {
