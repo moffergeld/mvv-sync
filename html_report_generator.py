@@ -1673,6 +1673,8 @@ def _build_zone_share_panels(zone_df: pd.DataFrame | None, zone_day_table: pd.Da
                     "Hele week",
                     zones.get("zone", pd.Series(dtype=str)).tolist(),
                     zones.get("value", pd.Series(dtype=float)).tolist(),
+                    width=580,
+                    height=164,
                 )
             }
         )
@@ -1690,7 +1692,7 @@ def _build_zone_share_panels(zone_df: pd.DataFrame | None, zone_day_table: pd.Da
             if not values:
                 continue
             panel_title = _fmt_text(row.get("label"))
-            panels.append({"svg": _build_pie_chart_svg(panel_title, labels, values)})
+            panels.append({"svg": _build_pie_chart_svg(panel_title, labels, values, width=580, height=164)})
 
     if panels:
         return panels
@@ -1841,7 +1843,7 @@ def build_week_report_html_pdf_bytes(
                         "Daily Team Distance",
                         session_flow,
                         "total_distance",
-                        height=208,
+                        height=228,
                         formatter=_fmt_distance,
                         footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
                     )
@@ -1851,7 +1853,7 @@ def build_week_report_html_pdf_bytes(
                         "Daily Team HSR",
                         session_flow,
                         "hsr_hsd",
-                        height=208,
+                        height=228,
                         formatter=_fmt_distance,
                         footer_text="High-speed output uitgesplitst per event in plaats van alleen per dagtotaal.",
                     )
@@ -1866,7 +1868,7 @@ def build_week_report_html_pdf_bytes(
             {
                 "eyebrow": "Squad spread",
                 "title": "Average player load +/- SD",
-                "subtitle": "Dagelijkse gemiddelde spelerbelasting met spreiding binnen de selectie.",
+                "subtitle": "Dagelijkse spelerbelasting, explosieve output en speed exposures per event.",
                 "columns": 2,
                 "panels": [
                     {
@@ -1875,6 +1877,7 @@ def build_week_report_html_pdf_bytes(
                             session_spread,
                             "total_distance_mean",
                             "total_distance_std",
+                            height=236,
                             formatter=_fmt_distance,
                             footer_text="Per sessie-event: gemiddelde afstand per speler met standaarddeviatie.",
                         )
@@ -1885,24 +1888,18 @@ def build_week_report_html_pdf_bytes(
                             session_spread,
                             "hsr_hsd_mean",
                             "hsr_hsd_std",
+                            height=236,
                             formatter=_fmt_distance,
                             footer_text="Per sessie-event: gemiddelde HSR per speler met standaarddeviatie.",
                         )
                     },
-                ],
-            },
-            {
-                "eyebrow": "Squad spread",
-                "title": "Explosive outputs +/- SD",
-                "subtitle": "Acceleraties, deceleraties en sprintgemiddelden per speler per dag.",
-                "columns": 2,
-                "panels": [
                     {
                         "svg": _build_session_dual_metric_error_chart_svg(
                             "Player Avg Accel / Decel +/- SD",
                             session_spread,
                             {"label": "Accelerations", "color": "#6E1222", "mean": "total_accelerations_mean", "std": "total_accelerations_std"},
                             {"label": "Decelerations", "color": "#EA3351", "mean": "total_decelerations_mean", "std": "total_decelerations_std"},
+                            height=236,
                             footer_text="Explosieve output per sessie-event, inclusief spreiding per speler.",
                         )
                     },
@@ -1912,23 +1909,19 @@ def build_week_report_html_pdf_bytes(
                             session_spread,
                             "sprints_mean",
                             "sprints_std",
+                            height=236,
                             formatter=lambda value: _fmt_dec(value, 1),
                             footer_text="Sprintgemiddelden per speler, los getoond voor elke training of wedstrijd op dezelfde dag.",
                         )
                     },
                 ],
-            },
-            {
-                "eyebrow": "Speed profile",
-                "title": "Daily speed exposures",
-                "subtitle": "Aantal spelersessies per event op of boven 90% van de individuele seizoensmax.",
-                "columns": 1,
-                "panels": [
+                "full_width_panels": [
                     {
                         "svg": _build_session_metric_chart_svg(
                             "Daily Speed Exposures",
                             session_flow,
                             "speed_exposures",
+                            height=236,
                             formatter=_fmt_int,
                             footer_text="Speed exposure wordt per training of wedstrijd getoond, niet meer verstopt in een dagtotaal.",
                         )
@@ -1945,9 +1938,10 @@ def build_week_report_html_pdf_bytes(
             },
             {
                 "eyebrow": "Monitoring",
-                "title": "Daily wellness profile +/- SD",
-                "subtitle": "Fysieke en mentale welzijnsindicatoren per dag met standaarddeviatie.",
+                "title": "Daily wellness + RPE profile +/- SD",
+                "subtitle": "Fysieke en mentale welzijnsindicatoren plus sessie-RPE op dezelfde pagina.",
                 "columns": 2,
+                "page_break": True,
                 "panels": [
                     {
                         "svg": _build_grouped_error_bar_chart_svg(
@@ -1967,6 +1961,7 @@ def build_week_report_html_pdf_bytes(
                                     "errors": monitoring_timeline.get("fatigue_std", pd.Series(dtype=float)).tolist(),
                                 },
                             ],
+                            height=232,
                             y_max=10,
                         )
                     },
@@ -1994,6 +1989,7 @@ def build_week_report_html_pdf_bytes(
                                     "errors": monitoring_timeline.get("mood_std", pd.Series(dtype=float)).tolist(),
                                 },
                             ],
+                            height=232,
                             y_max=10,
                         )
                     },
@@ -2005,6 +2001,7 @@ def build_week_report_html_pdf_bytes(
                             rpe_session_timeline,
                             "avg_rpe",
                             "avg_rpe_std",
+                            height=232,
                             formatter=lambda value: _fmt_dec(value, 1),
                             footer_text="RPE per sessie binnen de dag gegroepeerd, zodat dubbele trainingsmomenten naast elkaar zichtbaar blijven.",
                             y_max=10,
