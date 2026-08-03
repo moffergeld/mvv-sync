@@ -21,6 +21,7 @@ from report_monitoring import (
     summarize_monitoring_dataset,
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
+from speed_outlier_utils import sanitize_progressive_max_speed
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
@@ -550,8 +551,8 @@ def fetch_summary_history_cached(access_token: str) -> pd.DataFrame:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
 
-    df["max_speed"] = pd.to_numeric(df.get("max_speed"), errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
+    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_name"], order_cols=["gps_id"])
 
     df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
@@ -858,7 +859,7 @@ def build_week_notes(summary: dict[str, object], day_table: pd.DataFrame, player
         f"Week {week_start:%d/%m/%Y}: {_format_int(summary['active_players'])} actieve GPS-spelers en {_format_int(summary['player_sessions'])} player-sessies."
     )
     notes.append(
-        f"Teamload: {_format_int(summary['total_distance'])} m total distance, {_format_int(summary['hsr_hsd'])} m HSR/HSD en {_format_int(summary['sprints'])} sprints."
+        f"Teamload: {_format_int(summary['total_distance'])} m total distance, {_format_int(summary['hsr_hsd'])} m HSR en {_format_int(summary['sprints'])} sprints."
     )
     if not day_table.empty:
         peak_day = day_table.sort_values("total_distance", ascending=False).iloc[0]
@@ -1091,7 +1092,7 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
         ("Active Players", _format_int(summary["active_players"]), "Unieke GPS-spelers in deze week"),
         ("Player Sessions", _format_int(summary["player_sessions"]), "Totaal aantal Summary-sessies"),
         ("Total Distance", _format_distance(summary["total_distance"]), "Opgetelde teamload binnen de week"),
-        ("HSR / HSD", _format_distance(summary["hsr_hsd"]), "Sprint + high sprint distance"),
+        ("HSR", _format_distance(summary["hsr_hsd"]), "Sprint + high sprint distance"),
         ("Sprints", _format_int(summary["sprints"]), "Totale sprintacties in deze week"),
         ("Speed Exposures", _format_int(summary["speed_exposures"]), "Sessies >= 90% van individuele seizoensmax"),
         ("Dist / Player", _format_distance(summary["dist_per_player"]), "Team totaal gedeeld door actieve spelers"),
@@ -1394,8 +1395,8 @@ def main() -> None:
             )
         with top_right:
             render_plot_panel(
-                "Daily Team HSR / HSD",
-                build_daily_bar_chart(day_table, "hsr_hsd", "Daily Team HSR / HSD", MVV_RED_BRIGHT, _format_distance),
+                "Daily Team HSR",
+                build_daily_bar_chart(day_table, "hsr_hsd", "Daily Team HSR", MVV_RED_BRIGHT, _format_distance),
                 "Sprint plus high sprint per dag",
             )
 
@@ -1416,7 +1417,7 @@ def main() -> None:
                         ("active_players", "Players", _format_int),
                         ("player_sessions", "Sessions", _format_int),
                         ("total_distance", "Distance", _format_distance),
-                        ("hsr_hsd", "HSR/HSD", _format_distance),
+                        ("hsr_hsd", "HSR", _format_distance),
                         ("sprints", "Sprints", _format_int),
                         ("max_speed", "Top Speed", _format_speed),
                     ],
@@ -1433,7 +1434,7 @@ def main() -> None:
                     ("active_players", "Players", _format_int),
                     ("player_sessions", "Sessions", _format_int),
                     ("total_distance", "Distance", _format_distance),
-                    ("hsr_hsd", "HSR/HSD", _format_distance),
+                    ("hsr_hsd", "HSR", _format_distance),
                     ("sprints", "Sprints", _format_int),
                     ("distance_per_player", "Dist / Player", _format_distance),
                 ],
@@ -1451,8 +1452,8 @@ def main() -> None:
             )
         with spread_row_one[1]:
             render_plot_panel(
-                "Player Avg HSR / HSD +/- SD",
-                build_error_bar_chart(day_stats, "hsr_hsd_mean", "hsr_hsd_std", "Daily Player Average HSR / HSD +/- SD", MVV_RED_BRIGHT, _format_distance),
+                "Player Avg HSR +/- SD",
+                build_error_bar_chart(day_stats, "hsr_hsd_mean", "hsr_hsd_std", "Daily Player Average HSR +/- SD", MVV_RED_BRIGHT, _format_distance),
                 "Per dag gemiddelde high-speed distance met spreiding",
             )
 
@@ -1552,8 +1553,8 @@ def main() -> None:
             )
         with leader_row[1]:
             render_plot_panel(
-                "Top 10 HSR / HSD",
-                build_leaderboard_chart(player_table, "hsr_hsd", "Top 10 Players by HSR / HSD", _format_distance),
+                "Top 10 HSR",
+                build_leaderboard_chart(player_table, "hsr_hsd", "Top 10 Players by HSR", _format_distance),
                 "Weekranking op high-speed distance",
             )
         with leader_row[2]:
@@ -1571,7 +1572,7 @@ def main() -> None:
                     ("player_name", "Speler", None),
                     ("sessions", "Sessies", _format_int),
                     ("total_distance", "Distance", _format_distance),
-                    ("hsr_hsd", "HSR/HSD", _format_distance),
+                    ("hsr_hsd", "HSR", _format_distance),
                     ("sprints", "Sprints", _format_int),
                     ("distance_per_min", "Dist / Min", _format_decimal),
                     ("max_speed", "Top Speed", _format_speed),

@@ -7,7 +7,6 @@
         <div class="section-kicker">Executive summary</div>
         <h2>Team week snapshot</h2>
       </div>
-      <div class="section-meta">Kern-KPI's en staffsignalen voor dezelfde weekselectie als het dashboard</div>
     </div>
 
     <div class="metric-grid metric-grid--6">
@@ -15,7 +14,9 @@
         <article class="metric-card">
           <div class="metric-card__label">{{ card.label }}</div>
           <div class="metric-card__value">{{ card.value }}</div>
-          <div class="metric-card__foot">{{ card.foot }}</div>
+          {% if card.foot %}
+            <div class="metric-card__foot">{{ card.foot }}</div>
+          {% endif %}
         </article>
       {% endfor %}
     </div>
@@ -30,8 +31,10 @@
           <article class="day-card day-card--{{ card.tone }}">
             <div class="day-card__label">{{ card.label }}</div>
             <div class="day-card__value">{{ card.value }}</div>
-            <div class="day-card__subvalue">{{ card.subvalue }}</div>
-            <div class="day-card__meta">{{ card.meta }}</div>
+            <div class="day-card__subline">
+              <div class="day-card__subvalue">{{ card.subvalue }}</div>
+              <div class="day-card__meta">{{ card.meta }}</div>
+            </div>
             <div class="day-card__stats">
               {% for item in card.stats %}
                 <div class="day-card__stat">
@@ -189,7 +192,9 @@
           <article class="metric-card metric-card--subtle">
             <div class="metric-card__label">{{ card.label }}</div>
             <div class="metric-card__value">{{ card.value }}</div>
-            <div class="metric-card__foot">{{ card.foot }}</div>
+            {% if card.foot %}
+              <div class="metric-card__foot">{{ card.foot }}</div>
+            {% endif %}
           </article>
         {% endfor %}
       </div>

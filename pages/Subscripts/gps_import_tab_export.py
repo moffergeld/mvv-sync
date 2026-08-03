@@ -21,6 +21,7 @@ from pages.Subscripts.gps_import_common import (
     toast_err,
     toast_ok,
 )
+from speed_outlier_utils import sanitize_progressive_max_speed
 
 
 # ------------------------------------------------------------
@@ -320,6 +321,13 @@ def _build_top3_match_export(
         match_df[metric_90] = (match_df[metric_key] / match_df["duration_minutes"]) * 90.0
         metric_90_map[metric_key] = metric_90
 
+    match_df["max_speed"] = sanitize_progressive_max_speed(
+        match_df,
+        group_cols=["player_name"],
+        date_col="match_date",
+        order_cols=["match_key"],
+    )
+
     player_summaries = []
     for player, g in match_df.groupby("player_name", dropna=False):
         row: dict[str, object] = {
@@ -327,7 +335,7 @@ def _build_top3_match_export(
             "Qualified Matches": len(g),
         }
 
-        valid_speed = g.loc[g["max_speed"].notna() & (g["max_speed"] <= 37), "max_speed"]
+        valid_speed = g.loc[g["max_speed"].notna(), "max_speed"]
         row[_display_name(mapping, "max_speed")] = valid_speed.max() if not valid_speed.empty else pd.NA
 
         for metric_key in TOP3_METRIC_KEYS:

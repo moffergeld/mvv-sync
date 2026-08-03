@@ -11,7 +11,7 @@ import streamlit as st
 import roles as roles_mod
 
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
-from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores
+from readiness_utils import enrich_wellness_scores
 from roles import (
     clear_tokens_in_cookie,
     cookie_mgr,
@@ -41,7 +41,8 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "MAIN-20260728J"
+APP_BUILD_STAMP = "MAIN-20260801A"
+HOME_RECENT_MAX_AGE_DAYS = 1
 
 
 def _fallback_consume_login_notice() -> Optional[str]:
@@ -535,6 +536,15 @@ def build_status(score: Optional[float]) -> tuple[str, str]:
     return "Alert", "#b91c1c"
 
 
+def _safe_optional_float(value: Any) -> Optional[float]:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def format_metric_value(value: Optional[float], suffix: str = "") -> str:
     if value is None or pd.isna(value):
         return "--"
@@ -776,8 +786,115 @@ def build_snapshot_lookup(df: pd.DataFrame, date_col: str, value_col: str) -> Di
     return out
 
 
-def build_current_week_acwr_lookup(weekly_df: pd.DataFrame) -> tuple[str, Dict[str, Dict[str, Any]]]:
-    current_week_key, current_week_label = current_week_context()
+def _resolve_reference_recent_date(
+    df: pd.DataFrame,
+    date_col: str,
+    *,
+    today_value: Optional[date] = None,
+    reference_date: Optional[date] = None,
+    max_age_days: int = HOME_RECENT_MAX_AGE_DAYS,
+    exact_reference: bool = False,
+) -> tuple[Optional[date], bool, pd.DataFrame]:
+    if df.empty or date_col not in df.columns:
+        return None, False, df.iloc[0:0].copy()
+
+    today_value = today_value or date.today()
+    reference_date = reference_date or today_value
+    work_df = df.copy()
+    work_df[date_col] = pd.to_datetime(work_df[date_col], errors="coerce").dt.date
+    work_df = work_df.dropna(subset=[date_col]).copy()
+    work_df = work_df.loc[work_df[date_col] <= reference_date].copy()
+    if work_df.empty:
+        return None, False, work_df
+
+    recent_date = max(work_df[date_col].tolist())
+    if exact_reference and recent_date != reference_date:
+        return recent_date, False, work_df.iloc[0:0].copy()
+
+    age_days = (today_value - recent_date).days
+    is_recent = 0 <= age_days <= int(max_age_days)
+    if not is_recent:
+        return recent_date, False, work_df.iloc[0:0].copy()
+    return recent_date, True, work_df.loc[work_df[date_col] == recent_date].copy()
+
+
+def build_recent_snapshot_lookup(
+    df: pd.DataFrame,
+    date_col: str,
+    value_col: str,
+    *,
+    today_value: Optional[date] = None,
+    reference_date: Optional[date] = None,
+    max_age_days: int = HOME_RECENT_MAX_AGE_DAYS,
+    exact_reference: bool = False,
+) -> tuple[Optional[date], bool, Dict[str, Dict[str, Any]]]:
+    recent_date, is_recent, recent_df = _resolve_reference_recent_date(
+        df,
+        date_col,
+        today_value=today_value,
+        reference_date=reference_date,
+        max_age_days=max_age_days,
+        exact_reference=exact_reference,
+    )
+    if recent_df.empty:
+        return recent_date, is_recent, {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for player_id, grp in recent_df.groupby("player_id"):
+        row = grp.sort_values(date_col).tail(1).iloc[0]
+        out[str(player_id)] = {
+            "value": _safe_optional_float(row.get(value_col)),
+            "date": recent_date,
+            "is_today": bool(recent_date == (today_value or date.today())),
+            "is_recent": bool(is_recent),
+        }
+    return recent_date, is_recent, out
+
+
+def build_recent_wellness_snapshot_lookup(
+    df: pd.DataFrame,
+    date_col: str = "entry_date",
+    *,
+    today_value: Optional[date] = None,
+    reference_date: Optional[date] = None,
+    max_age_days: int = HOME_RECENT_MAX_AGE_DAYS,
+    exact_reference: bool = False,
+) -> tuple[Optional[date], bool, Dict[str, Dict[str, Any]]]:
+    recent_date, is_recent, recent_df = _resolve_reference_recent_date(
+        df,
+        date_col,
+        today_value=today_value,
+        reference_date=reference_date,
+        max_age_days=max_age_days,
+        exact_reference=exact_reference,
+    )
+    if recent_df.empty:
+        return recent_date, is_recent, {}
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for player_id, grp in recent_df.groupby("player_id"):
+        row = grp.sort_values(date_col).tail(1).iloc[0]
+        out[str(player_id)] = {
+            "overall": _safe_optional_float(row.get("wellness_avg")),
+            "physical": _safe_optional_float(row.get("wellness_physical")),
+            "mental": _safe_optional_float(row.get("wellness_mental")),
+            "readiness_score": _safe_optional_float(row.get("readiness_score")),
+            "date": recent_date,
+            "is_today": bool(recent_date == (today_value or date.today())),
+            "is_recent": bool(is_recent),
+        }
+    return recent_date, is_recent, out
+
+
+def build_current_week_acwr_lookup(
+    weekly_df: pd.DataFrame,
+    *,
+    reference_day: Optional[date] = None,
+) -> tuple[str, Dict[str, Dict[str, Any]]]:
+    reference_day = reference_day or date.today()
+    iso = reference_day.isocalendar()
+    current_week_key = int(iso.year) * 100 + int(iso.week)
+    current_week_label = f"{int(iso.year):04d}-W{int(iso.week):02d}"
     if weekly_df.empty:
         return current_week_label, {}
 
@@ -816,6 +933,7 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
         return players_df
 
     today_value = date.today()
+    previous_day_value = today_value - timedelta(days=1)
     start_wellness = today_value - timedelta(days=13)
     start_rpe = today_value - timedelta(days=6)
     start_gps = today_value - timedelta(days=13)
@@ -826,10 +944,31 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
     gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
     acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
 
-    wellness_lookup = build_wellness_snapshot_lookup(wellness_df, "entry_date")
-    rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
-    gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
-    current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
+    wellness_recent_date, wellness_is_recent, wellness_lookup = build_recent_wellness_snapshot_lookup(
+        wellness_df,
+        "entry_date",
+        today_value=today_value,
+    )
+    rpe_recent_date, rpe_is_recent, rpe_lookup = build_recent_snapshot_lookup(
+        rpe_df,
+        "entry_date",
+        "rpe_avg",
+        today_value=today_value,
+        reference_date=previous_day_value,
+        exact_reference=True,
+    )
+    gps_recent_date, gps_is_recent, gps_lookup = build_recent_snapshot_lookup(
+        gps_df,
+        "datum",
+        "total_distance",
+        today_value=today_value,
+        reference_date=previous_day_value,
+        exact_reference=True,
+    )
+    current_week_label, acwr_lookup = build_current_week_acwr_lookup(
+        acwr_weekly_df,
+        reference_day=previous_day_value,
+    )
 
     rows: List[Dict[str, Any]] = []
     for player in players:
@@ -851,13 +990,19 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
                 "wellness_mental": wellness.get("mental"),
                 "wellness_date": wellness.get("date"),
                 "wellness_today": bool(wellness.get("is_today", False)),
+                "wellness_recent": bool(wellness.get("is_recent", False)),
+                "wellness_recent_date": wellness_recent_date if wellness_is_recent else None,
                 "rpe_value": rpe.get("value"),
                 "rpe_date": rpe.get("date"),
                 "rpe_today": bool(rpe.get("is_today", False)),
+                "rpe_recent": bool(rpe.get("is_recent", False)),
+                "rpe_recent_date": rpe_recent_date if rpe_is_recent else None,
                 "gps_value": gps.get("value"),
                 "gps_date": gps.get("date"),
+                "gps_recent": bool(gps.get("is_recent", False)),
+                "gps_recent_date": gps_recent_date if gps_is_recent else None,
                 "acwr_week_label": acwr.get("week_label", current_week_label),
-                "total_distance_acwr": acwr.get("total_distance_acwr"),
+                "total_distance_acwr": acwr.get("total_distance_acwr") if gps.get("is_recent", False) else None,
                 "readiness_score": readiness_score,
                 "readiness_label": readiness_label,
                 "readiness_color": readiness_color,
@@ -903,14 +1048,14 @@ def render_home_summary(df: pd.DataFrame, role: str) -> None:
     ready_count = int((df["readiness_label"] == "Ready").sum()) if not df.empty else 0
     watch_count = int((df["readiness_label"] == "Watch").sum()) if not df.empty else 0
     alert_count = int((df["readiness_label"] == "Alert").sum()) if not df.empty else 0
-    wellness_today_count = int(df["wellness_today"].sum()) if not df.empty else 0
-    rpe_today_count = int(df["rpe_today"].sum()) if not df.empty else 0
+    wellness_recent_count = int(df["wellness_recent"].sum()) if ("wellness_recent" in df.columns and not df.empty) else 0
+    rpe_recent_count = int(df["rpe_recent"].sum()) if ("rpe_recent" in df.columns and not df.empty) else 0
 
     summary_cards = [
         ("Rol", role_label, "Actieve toegangslaag voor deze sessie"),
         ("Spelers", str(len(df)), "Compact overzicht op basis van de actuele selectie"),
-        ("Wellness vandaag", str(wellness_today_count), "Spelers met wellness-invoer vandaag"),
-        ("RPE vandaag", str(rpe_today_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
+        ("Wellness recent", str(wellness_recent_count), "Spelers met wellness-invoer op de laatste meetdag"),
+        ("RPE recent", str(rpe_recent_count), f"Ready: {ready_count} | Watch: {watch_count} | Alert: {alert_count}"),
     ]
     summary_markup = "".join(
         f"""<div class="home-summary-card">
@@ -940,8 +1085,16 @@ def build_player_meta(row: dict) -> str:
         parts.append(position_value)
     if row.get("gps_date"):
         parts.append(f"GPS {row['gps_date'].strftime('%d-%m')}")
-    parts.append(f"Wellness vandaag {'Ja' if row.get('wellness_today') else 'Nee'}")
-    parts.append(f"RPE vandaag {'Ja' if row.get('rpe_today') else 'Nee'}")
+    parts.append(
+        f"Wellness {row['wellness_date'].strftime('%d-%m')}"
+        if row.get("wellness_date")
+        else "Wellness --"
+    )
+    parts.append(
+        f"RPE {row['rpe_date'].strftime('%d-%m')}"
+        if row.get("rpe_date")
+        else "RPE --"
+    )
     return " | ".join(parts)
 
 

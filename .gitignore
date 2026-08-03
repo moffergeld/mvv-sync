@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 *.pyo
+.python_packages/
+.tmp/
+tmp/
+ConnectionSpringSupabase.txt
+tablet_app/__pycache__/
