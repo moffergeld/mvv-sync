@@ -110,3 +110,42 @@ Voor lokale Windows-omgevingen kan een extra GTK/Pango/Cairo-runtime nodig zijn.
 Voor Linux-deployments is meestal een set renderbibliotheken nodig die door het platform beschikbaar moet zijn.
 
 Als `report_style="html"` een dependencyfout geeft, blijft `report_style="legacy"` altijd als fallback beschikbaar.
+
+## Secrets en Supabase
+
+Gebruik voor lokale of cloud-configuratie altijd een niet-getrackte secretsfile:
+
+- `.streamlit/secrets.toml`
+
+Er staat nu een veilige voorbeeldfile in de repo:
+
+- `.streamlit/secrets.toml.example`
+
+Belangrijk:
+
+- zet nooit Postgres-connection strings of service-role keys in tracked bestanden
+- gebruik voor de hoofdapp minimaal `SUPABASE_URL` en `SUPABASE_ANON_KEY`
+- gebruik voor de losse tablet-app daarnaast `SUPABASE_SERVICE_ROLE_KEY`, `TABLET_SHARED_CODE` en `TABLET_CREATED_BY_USER_ID`
+
+Als er eerder credentials in de repo hebben gestaan, roteer die dan ook in Supabase.
+
+## Supabase Preview
+
+Deze repo bevat momenteel geen lokale `supabase/` projectmap of Supabase Branching-configuratie.
+De GitHub-check `Supabase Preview` wordt dus niet vanuit deze repo zelf aangestuurd, maar vanuit een externe Supabase/GitHub-integratie.
+
+Om onnodige preview-checks te voorkomen is de `keep-awake` workflow aangepast:
+
+- geen lege commits meer naar `main`
+- alleen nog een periodieke health ping naar de live app
+
+Optioneel kun je hiervoor GitHub repository variables instellen:
+
+- `KEEP_AWAKE_URL`
+- `KEEP_AWAKE_SECONDARY_URL`
+
+Als `KEEP_AWAKE_URL` leeg blijft, gebruikt de workflow standaard:
+
+- `https://mvv-dashboard.streamlit.app/`
+
+Als `Supabase Preview` ondanks dit toch blijft falen, dan moet die integratie in Supabase of GitHub zelf worden aangepast of uitgezet voor deze repo.

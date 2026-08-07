@@ -4,5 +4,8 @@ __pycache__/
 .python_packages/
 .tmp/
 tmp/
+.env
+.env.*
+.streamlit/secrets.toml
 ConnectionSpringSupabase.txt
 tablet_app/__pycache__/

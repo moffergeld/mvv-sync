@@ -1,4 +1,4 @@
-name: Keep app awake (empty commit)
+name: Keep app awake (health ping)
 
 on:
   schedule:
@@ -6,30 +6,39 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: keep-awake
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  empty-commit:
+  ping-app:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout default branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-
-      - name: Configure git identity
+      - name: Ping live dashboard(s)
+        env:
+          KEEP_AWAKE_URL: ${{ vars.KEEP_AWAKE_URL }}
+          KEEP_AWAKE_SECONDARY_URL: ${{ vars.KEEP_AWAKE_SECONDARY_URL }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          set -euo pipefail
 
-      - name: Create empty commit
-        run: |
-          git commit --allow-empty -m "chore: keep awake"
+          primary_url="${KEEP_AWAKE_URL:-}"
+          secondary_url="${KEEP_AWAKE_SECONDARY_URL:-}"
 
-      - name: Push
-        run: |
-          git push origin HEAD:${{ github.event.repository.default_branch }}
+          if [ -z "$primary_url" ]; then
+            primary_url="https://mvv-dashboard.streamlit.app/"
+          fi
+
+          urls=("$primary_url")
+          if [ -n "$secondary_url" ]; then
+            urls+=("$secondary_url")
+          fi
+
+          for url in "${urls[@]}"; do
+            echo "Pinging $url"
+            curl -fsSL --retry 3 --retry-delay 5 --max-time 45 \
+              -A "mvv-keep-awake/1.0" \
+              "${url}?keep_awake=1" \
+              -o /dev/null
+          done
