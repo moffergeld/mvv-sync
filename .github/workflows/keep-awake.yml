@@ -26,19 +26,31 @@ jobs:
           primary_url="${KEEP_AWAKE_URL:-}"
           secondary_url="${KEEP_AWAKE_SECONDARY_URL:-}"
 
+          normalize_streamlit_health_url() {
+            local raw_url="$1"
+            local clean_url="${raw_url%%\?*}"
+            clean_url="${clean_url%/}"
+
+            if [[ "$clean_url" == *"/_stcore/health" ]]; then
+              printf '%s\n' "$clean_url"
+            else
+              printf '%s/_stcore/health\n' "$clean_url"
+            fi
+          }
+
           if [ -z "$primary_url" ]; then
-            primary_url="https://mvv-dashboard.streamlit.app/"
+            primary_url="https://mvv-dashboard.streamlit.app"
           fi
 
-          urls=("$primary_url")
+          urls=("$(normalize_streamlit_health_url "$primary_url")")
           if [ -n "$secondary_url" ]; then
-            urls+=("$secondary_url")
+            urls+=("$(normalize_streamlit_health_url "$secondary_url")")
           fi
 
           for url in "${urls[@]}"; do
             echo "Pinging $url"
-            curl -fsSL --retry 3 --retry-delay 5 --max-time 45 \
+            curl -fsS --retry 3 --retry-delay 5 --max-time 45 \
               -A "mvv-keep-awake/1.0" \
-              "${url}?keep_awake=1" \
+              "$url" \
               -o /dev/null
           done

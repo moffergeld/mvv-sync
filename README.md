@@ -146,6 +146,12 @@ Optioneel kun je hiervoor GitHub repository variables instellen:
 
 Als `KEEP_AWAKE_URL` leeg blijft, gebruikt de workflow standaard:
 
-- `https://mvv-dashboard.streamlit.app/`
+- `https://mvv-dashboard.streamlit.app/_stcore/health`
+
+Je mag in die variabelen zowel de gewone app-URL als direct de health-URL zetten.
+De workflow normaliseert beide automatisch naar de Streamlit health-check:
+
+- `https://mvv-dashboard.streamlit.app`
+- `https://mvv-dashboard.streamlit.app/_stcore/health`
 
 Als `Supabase Preview` ondanks dit toch blijft falen, dan moet die integratie in Supabase of GitHub zelf worden aangepast of uitgezet voor deze repo.
