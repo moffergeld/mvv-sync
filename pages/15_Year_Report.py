@@ -65,6 +65,19 @@ GPS_SELECT_COLS = [
     "max_speed",
 ]
 
+GPS_INDEX_SELECT_COLS = [
+    "gps_id",
+    "player_id",
+    "player_name",
+    "datum",
+    "type",
+    "total_distance",
+    "sprint",
+    "high_sprint",
+    "number_of_sprints",
+    "max_speed",
+]
+
 SUM_COLUMNS = [
     "duration",
     "total_distance",
@@ -79,6 +92,13 @@ SUM_COLUMNS = [
     "total_accelerations",
     "total_decelerations",
     "hrtrimp",
+]
+
+INDEX_SUM_COLUMNS = [
+    "total_distance",
+    "sprint",
+    "high_sprint",
+    "number_of_sprints",
 ]
 
 
@@ -487,33 +507,87 @@ def _format_hours(value: object) -> str:
     return f"{_format_decimal(value, 1)} h"
 
 
-@st.cache_data(show_spinner=False, ttl=180)
-def fetch_summary_history_cached(access_token: str) -> pd.DataFrame:
-    raw = rest_get_paged(
-        access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
-    )
+def _prepare_summary_index_df(raw: pd.DataFrame) -> pd.DataFrame:
     if raw.empty:
         return raw
 
     df = raw.copy()
+    df["player_id"] = df["player_id"].fillna("").astype(str)
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
     df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
     df["type"] = df["type"].fillna("").astype(str).str.strip()
-    for column in SUM_COLUMNS:
+    for column in INDEX_SUM_COLUMNS:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
-    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_name"], order_cols=["gps_id"])
+    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
     df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
     df["season_label"] = df["season_start_year"].astype(int).astype(str) + "/" + (df["season_start_year"] + 1).astype(int).astype(str)
-    season_max_speed = df.groupby("player_name")["max_speed"].transform("max")
+    season_max_speed = df.groupby("player_id")["max_speed"].transform("max")
     df["speed_exposure_flag"] = season_max_speed.gt(0) & df["max_speed"].ge(season_max_speed * 0.9)
     return df
+
+
+def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
+    if raw.empty:
+        return raw
+
+    df = raw.copy()
+    df["player_id"] = df["player_id"].fillna("").astype(str)
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
+    df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
+    df["type"] = df["type"].fillna("").astype(str).str.strip()
+    df["event"] = df["event"].fillna("").astype(str).str.strip()
+    for column in SUM_COLUMNS:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
+    df = df.dropna(subset=["datum"]).copy()
+    df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
+    df["session_category"] = df["type"].apply(_session_category)
+    df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
+    df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
+    df["season_label"] = df["season_start_year"].astype(int).astype(str) + "/" + (df["season_start_year"] + 1).astype(int).astype(str)
+    return df
+
+
+def _merge_summary_context(scope_df: pd.DataFrame, history_df: pd.DataFrame) -> pd.DataFrame:
+    if scope_df.empty or history_df.empty:
+        return scope_df
+
+    context_df = (
+        history_df[["gps_id", "max_speed", "speed_exposure_flag"]]
+        .drop_duplicates(subset=["gps_id"])
+        .rename(columns={"max_speed": "history_max_speed"})
+    )
+    merged = scope_df.merge(context_df, on="gps_id", how="left")
+    merged["max_speed"] = merged["history_max_speed"].combine_first(merged["max_speed"])
+    merged["speed_exposure_flag"] = merged["speed_exposure_flag"].fillna(False).astype(bool)
+    return merged.drop(columns=["history_max_speed"])
+
+
+@st.cache_data(show_spinner=False, ttl=180)
+def fetch_summary_index_cached(access_token: str) -> pd.DataFrame:
+    raw = rest_get_paged(
+        access_token,
+        "gps_records",
+        f"select={','.join(GPS_INDEX_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
+    )
+    return _prepare_summary_index_df(raw)
+
+
+@st.cache_data(show_spinner=False, ttl=180)
+def fetch_summary_period_cached(access_token: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    raw = rest_get_paged(
+        access_token,
+        "gps_records",
+        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&datum=gte.{start_iso}&datum=lte.{end_iso}&order=datum.asc,gps_id.asc",
+    )
+    return _prepare_summary_period_df(raw)
 
 
 def build_season_dataset(season_df: pd.DataFrame, acwr_mode: str) -> pd.DataFrame:
@@ -946,13 +1020,13 @@ def main() -> None:
     render_sidebar_navigation(profile)
 
     with st.spinner("Year report data laden..."):
-        all_df = fetch_summary_history_cached(access_token)
+        history_source_df = fetch_summary_index_cached(access_token)
 
-    if all_df.empty:
+    if history_source_df.empty:
         st.info("Geen Summary GPS-data gevonden voor de jaarrapportage.")
         st.stop()
 
-    season_years = sorted(all_df["season_start_year"].dropna().astype(int).unique().tolist(), reverse=True)
+    season_years = sorted(history_source_df["season_start_year"].dropna().astype(int).unique().tolist(), reverse=True)
     if not season_years:
         st.info("Geen seizoenen gevonden in de GPS-data.")
         st.stop()
@@ -1009,7 +1083,13 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-    season_df = all_df[all_df["season_start_year"] == int(selected_season_start)].copy()
+    season_start = pd.Timestamp(year=int(selected_season_start), month=7, day=1)
+    season_end = pd.Timestamp(year=int(selected_season_start) + 1, month=6, day=30)
+    season_df = fetch_summary_period_cached(access_token, season_start.date().isoformat(), season_end.date().isoformat())
+    season_df = _merge_summary_context(
+        season_df,
+        history_source_df.loc[history_source_df["season_start_year"] == int(selected_season_start)].copy(),
+    )
     if season_df.empty:
         st.info("Geen data gevonden voor dit seizoen.")
         st.stop()

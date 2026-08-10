@@ -240,12 +240,17 @@ def parse_metric_value(value: object) -> float:
         text = text.replace(".", "").replace(",", ".")
     elif "," in text:
         text = text.replace(",", ".")
-    else:
-        text = text.replace(".", "")
     try:
         return float(text)
     except ValueError:
         return 0.0
+
+
+def _compare_fetch_lookback_days(scope_label: str) -> int:
+    match_limit = COMPARE_MATCH_SCOPE_OPTIONS.get(scope_label)
+    if match_limit is None:
+        return 400
+    return max(120, int(match_limit) * 45)
 
 
 def _safe_divide_series(numerator: pd.Series, denominator: pd.Series, multiplier: float = 1.0) -> pd.Series:
@@ -2568,6 +2573,9 @@ def render_marks_tab() -> None:
 def render_compare_tab(sb) -> None:
     scope_labels = list(COMPARE_MATCH_SCOPE_OPTIONS.keys())
     default_scope_index = scope_labels.index("Laatste 5 wedstrijden")
+    filter_cols = st.columns(5, gap="small")
+    scope_label = filter_cols[0].selectbox("Wedstrijdscope", options=scope_labels, index=default_scope_index)
+    min_minutes = float(filter_cols[1].slider("Minimum minuten per match", min_value=45, max_value=90, value=60, step=5))
 
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         st.markdown('<div class="bench-empty">Supabase-config ontbreekt, daardoor is de compare-rapportage nu niet beschikbaar.</div>', unsafe_allow_html=True)
@@ -2576,7 +2584,7 @@ def render_compare_tab(sb) -> None:
     try:
         access_token = get_access_token()
         players_df = fetch_active_players_cached(sb)
-        fetch_start = (date.today() - timedelta(days=365)).isoformat()
+        fetch_start = (date.today() - timedelta(days=_compare_fetch_lookback_days(scope_label))).isoformat()
         match_df = fetch_match_events_history_cached(access_token, fetch_start)
     except Exception as exc:
         st.markdown(
@@ -2651,10 +2659,6 @@ def render_compare_tab(sb) -> None:
                     st.rerun()
                 else:
                     st.error(message)
-
-    filter_cols = st.columns(5, gap="small")
-    scope_label = filter_cols[0].selectbox("Wedstrijdscope", options=scope_labels, index=default_scope_index)
-    min_minutes = float(filter_cols[1].slider("Minimum minuten per match", min_value=45, max_value=90, value=60, step=5))
 
     match_limit = COMPARE_MATCH_SCOPE_OPTIONS[scope_label]
     compare_bundle = build_player_match_compare_bundle(match_df, players_df, match_limit, min_minutes)

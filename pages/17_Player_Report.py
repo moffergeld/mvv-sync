@@ -65,6 +65,19 @@ GPS_SELECT_COLS = [
     "max_speed",
 ]
 
+GPS_INDEX_SELECT_COLS = [
+    "gps_id",
+    "player_id",
+    "player_name",
+    "datum",
+    "type",
+    "total_distance",
+    "sprint",
+    "high_sprint",
+    "number_of_sprints",
+    "max_speed",
+]
+
 SUM_COLUMNS = [
     "duration",
     "total_distance",
@@ -81,6 +94,13 @@ SUM_COLUMNS = [
     "number_of_repeated_sprints",
     "hrtrimp",
     "avg_hr",
+]
+
+INDEX_SUM_COLUMNS = [
+    "total_distance",
+    "sprint",
+    "high_sprint",
+    "number_of_sprints",
 ]
 
 RECENT_SESSION_PERIOD_LABELS = {
@@ -462,27 +482,21 @@ def _report_file_name(base_name: str, report_style: str) -> str:
     return base_name
 
 
-@st.cache_data(show_spinner=False, ttl=180)
-def fetch_summary_history_cached(access_token: str) -> pd.DataFrame:
-    raw = rest_get_paged(
-        access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
-    )
+def _prepare_summary_index_df(raw: pd.DataFrame) -> pd.DataFrame:
     if raw.empty:
         return raw
 
     df = raw.copy()
-    df["player_id"] = df["player_id"].astype(str)
+    df["player_id"] = df["player_id"].fillna("").astype(str)
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
     df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
     df["type"] = df["type"].fillna("").astype(str).str.strip()
-    df["event"] = df["event"].fillna("").astype(str).str.strip()
 
-    for column in SUM_COLUMNS:
+    for column in INDEX_SUM_COLUMNS:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
 
+    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
     df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
     df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
@@ -494,6 +508,58 @@ def fetch_summary_history_cached(access_token: str) -> pd.DataFrame:
     season_max_speed = df.groupby("player_id")["max_speed"].transform("max")
     df["speed_exposure_flag"] = season_max_speed.gt(0) & df["max_speed"].ge(season_max_speed * 0.9)
     return df
+
+
+def _prepare_player_summary_df(raw: pd.DataFrame) -> pd.DataFrame:
+    if raw.empty:
+        return raw
+
+    df = raw.copy()
+    df["player_id"] = df["player_id"].fillna("").astype(str)
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
+    df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
+    df["type"] = df["type"].fillna("").astype(str).str.strip()
+    df["event"] = df["event"].fillna("").astype(str).str.strip()
+
+    for column in SUM_COLUMNS:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+
+    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
+    df = df.dropna(subset=["datum"]).copy()
+    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
+    df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
+    df["session_category"] = df["type"].apply(_session_category)
+    df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
+    df["month_start"] = df["datum"].dt.to_period("M").dt.to_timestamp()
+    df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
+    df["season_label"] = df["season_start_year"].astype(int).astype(str) + "/" + (df["season_start_year"] + 1).astype(int).astype(str)
+    season_max_speed = df.groupby("player_id")["max_speed"].transform("max")
+    df["speed_exposure_flag"] = season_max_speed.gt(0) & df["max_speed"].ge(season_max_speed * 0.9)
+    return df
+
+
+@st.cache_data(show_spinner=False, ttl=180)
+def fetch_summary_index_cached(access_token: str) -> pd.DataFrame:
+    raw = rest_get_paged(
+        access_token,
+        "gps_records",
+        f"select={','.join(GPS_INDEX_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
+    )
+    return _prepare_summary_index_df(raw)
+
+
+@st.cache_data(show_spinner=False, ttl=180)
+def fetch_player_summary_history_cached(access_token: str, player_id: str) -> pd.DataFrame:
+    normalized_player_id = str(player_id).strip()
+    if not normalized_player_id:
+        return pd.DataFrame()
+    raw = rest_get_paged(
+        access_token,
+        "gps_records",
+        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&player_id=eq.{normalized_player_id}&order=datum.asc,gps_id.asc",
+    )
+    return _prepare_player_summary_df(raw)
 
 
 def _week_label(week_start: pd.Timestamp) -> str:
@@ -962,9 +1028,9 @@ def main() -> None:
     render_sidebar_navigation(profile)
 
     with st.spinner("Player report data laden..."):
-        all_df = fetch_summary_history_cached(access_token)
+        history_source_df = fetch_summary_index_cached(access_token)
 
-    if all_df.empty:
+    if history_source_df.empty:
         st.info("Geen Summary GPS-data gevonden voor player reports.")
         st.stop()
 
@@ -1017,7 +1083,7 @@ def main() -> None:
         st.info("Geen speler beschikbaar voor deze rapportage.")
         st.stop()
 
-    player_df = all_df[all_df["player_id"].astype(str) == str(target_player_id)].copy()
+    player_df = fetch_player_summary_history_cached(access_token, str(target_player_id))
     if player_df.empty:
         st.info("Geen GPS Summary-data gevonden voor deze speler.")
         st.stop()

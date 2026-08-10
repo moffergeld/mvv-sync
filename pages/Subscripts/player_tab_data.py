@@ -105,6 +105,16 @@ def _plotly_config_static() -> Dict[str, Any]:
     }
 
 
+def _cache_scope() -> str:
+    return "|".join(
+        [
+            str(st.session_state.get("user_id") or ""),
+            str(st.session_state.get("role") or ""),
+            str(st.session_state.get("user_email") or ""),
+        ]
+    )
+
+
 def _strip_titles(fig: go.Figure) -> None:
     fig.update_layout(
         title_text="",
@@ -143,18 +153,17 @@ def _add_zone_background(fig: go.Figure, y_min: float = 0, y_max: float = 10) ->
 # ============================================================
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_gps_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: int = 1000) -> pd.DataFrame:
+def fetch_gps_14d_cached(_sb, cache_scope: str, player_id: str, start_iso: str, end_iso: str, limit: int = 1000) -> pd.DataFrame:
     """
     Haalt GPS summary rijen op voor 1 speler binnen datumbereik.
     Server-side filter: eq(player_id) + gte/lte(datum).
     """
-    sb = st.session_state.get("_sb_for_cache")
-    if sb is None:
+    if _sb is None:
         return pd.DataFrame()
 
     try:
         rows = (
-            sb.table(GPS_TABLE)
+            _sb.table(GPS_TABLE)
             .select(",".join(GPS_TABLE_COLS_RAW + ["player_id"]))
             .eq("player_id", player_id)
             .gte("datum", start_iso)
@@ -180,10 +189,9 @@ def fetch_gps_14d(sb, player_id: str, days: int = 14) -> pd.DataFrame:
     - sb in session_state zet voor cached functies
     - standaard laatste 14 dagen pakt
     """
-    st.session_state["_sb_for_cache"] = sb
     end_d = date.today()
     start_d = end_d - timedelta(days=days - 1)
-    return fetch_gps_14d_cached(str(player_id), start_d.isoformat(), end_d.isoformat())
+    return fetch_gps_14d_cached(sb, _cache_scope(), str(player_id), start_d.isoformat(), end_d.isoformat())
 
 
 def gps_table_pretty(df_raw: pd.DataFrame) -> pd.DataFrame:
@@ -244,15 +252,14 @@ def plot_gps_over_time(df_daily: pd.DataFrame, metric_label: str, metric_key: st
 # ============================================================
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_asrm_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: int = 200) -> pd.DataFrame:
+def fetch_asrm_14d_cached(_sb, cache_scope: str, player_id: str, start_iso: str, end_iso: str, limit: int = 200) -> pd.DataFrame:
     """Haalt wellness entries voor 14 dagen (server-side date range)."""
-    sb = st.session_state.get("_sb_for_cache")
-    if sb is None:
+    if _sb is None:
         return pd.DataFrame()
 
     try:
         rows = (
-            sb.table("asrm_entries")
+            _sb.table("asrm_entries")
             .select("entry_date,muscle_soreness,fatigue,sleep_quality,stress,mood,player_id")
             .eq("player_id", player_id)
             .gte("entry_date", start_iso)
@@ -273,21 +280,19 @@ def fetch_asrm_14d_cached(player_id: str, start_iso: str, end_iso: str, limit: i
 
 
 def fetch_asrm_14d(sb, player_id: str, days: int = 14) -> pd.DataFrame:
-    st.session_state["_sb_for_cache"] = sb
     end_d = date.today()
     start_d = end_d - timedelta(days=days - 1)
-    return fetch_asrm_14d_cached(str(player_id), start_d.isoformat(), end_d.isoformat())
+    return fetch_asrm_14d_cached(sb, _cache_scope(), str(player_id), start_d.isoformat(), end_d.isoformat())
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def load_asrm_cached(player_id: str, entry_date_iso: str) -> Optional[Dict[str, Any]]:
+def load_asrm_cached(_sb, cache_scope: str, player_id: str, entry_date_iso: str) -> Optional[Dict[str, Any]]:
     """1 wellness entry op 1 dag (cached)."""
-    sb = st.session_state.get("_sb_for_cache")
-    if sb is None:
+    if _sb is None:
         return None
     try:
         resp = (
-            sb.table("asrm_entries")
+            _sb.table("asrm_entries")
             .select("*")
             .eq("player_id", player_id)
             .eq("entry_date", entry_date_iso)
@@ -300,8 +305,7 @@ def load_asrm_cached(player_id: str, entry_date_iso: str) -> Optional[Dict[str, 
 
 
 def load_asrm(sb, player_id: str, entry_date: date) -> Optional[Dict[str, Any]]:
-    st.session_state["_sb_for_cache"] = sb
-    return load_asrm_cached(str(player_id), entry_date.isoformat())
+    return load_asrm_cached(sb, _cache_scope(), str(player_id), entry_date.isoformat())
 
 
 def plot_asrm_over_time(df: pd.DataFrame, param_key: str) -> None:
@@ -346,19 +350,18 @@ def plot_asrm_session(row: Dict[str, Any]) -> None:
 # ============================================================
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_rpe_for_date_cached(player_id: str, entry_date_iso: str) -> pd.DataFrame:
+def fetch_rpe_for_date_cached(_sb, cache_scope: str, player_id: str, entry_date_iso: str) -> pd.DataFrame:
     """
     RPE session view:
     - pakt rpe_entries header (id) voor player+date
     - pakt rpe_sessions voor die header (session_index, rpe)
     """
-    sb = st.session_state.get("_sb_for_cache")
-    if sb is None:
+    if _sb is None:
         return pd.DataFrame()
 
     try:
         header = (
-            sb.table("rpe_entries")
+            _sb.table("rpe_entries")
             .select("id")
             .eq("player_id", player_id)
             .eq("entry_date", entry_date_iso)
@@ -374,7 +377,7 @@ def fetch_rpe_for_date_cached(player_id: str, entry_date_iso: str) -> pd.DataFra
 
     try:
         rows = (
-            sb.table("rpe_sessions")
+            _sb.table("rpe_sessions")
             .select("session_index,rpe")
             .eq("rpe_entry_id", header["id"])
             .order("session_index")
@@ -393,25 +396,23 @@ def fetch_rpe_for_date_cached(player_id: str, entry_date_iso: str) -> pd.DataFra
 
 
 def fetch_rpe_for_date(sb, player_id: str, d: date) -> pd.DataFrame:
-    st.session_state["_sb_for_cache"] = sb
-    return fetch_rpe_for_date_cached(str(player_id), d.isoformat())
+    return fetch_rpe_for_date_cached(sb, _cache_scope(), str(player_id), d.isoformat())
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_rpe_over_time_7d_cached(player_id: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+def fetch_rpe_over_time_7d_cached(_sb, cache_scope: str, player_id: str, start_iso: str, end_iso: str) -> pd.DataFrame:
     """
     RPE over time (laatste 7 dagen):
     - haalt rpe_entries in dat range
     - haalt sessions per entry (max 7 entries)
     - geeft gemiddelde RPE per dag terug
     """
-    sb = st.session_state.get("_sb_for_cache")
-    if sb is None:
+    if _sb is None:
         return pd.DataFrame()
 
     try:
         entries = (
-            sb.table("rpe_entries")
+            _sb.table("rpe_entries")
             .select("id,entry_date")
             .eq("player_id", player_id)
             .gte("entry_date", start_iso)
@@ -427,25 +428,37 @@ def fetch_rpe_over_time_7d_cached(player_id: str, start_iso: str, end_iso: str) 
     if not entries:
         return pd.DataFrame()
 
+    entry_lookup = {
+        str(entry.get("id")): entry.get("entry_date")
+        for entry in entries
+        if entry.get("id") and entry.get("entry_date")
+    }
+    if not entry_lookup:
+        return pd.DataFrame()
+
     rows_all: List[Dict[str, Any]] = []
-    for e in entries:
-        eid = e.get("id")
-        ed = e.get("entry_date")
-        if not eid or not ed:
-            continue
+    entry_ids = list(entry_lookup.keys())
+    chunk_size = 100
+    for start_idx in range(0, len(entry_ids), chunk_size):
+        chunk = entry_ids[start_idx : start_idx + chunk_size]
         try:
-            sess = (
-                sb.table("rpe_sessions")
-                .select("rpe")
-                .eq("rpe_entry_id", eid)
+            sess_rows = (
+                _sb.table("rpe_sessions")
+                .select("rpe_entry_id,rpe")
+                .in_("rpe_entry_id", chunk)
                 .execute()
                 .data
                 or []
             )
-            for s in sess:
-                rows_all.append({"entry_date": ed, "rpe": s.get("rpe")})
         except Exception:
             continue
+
+        for session_row in sess_rows:
+            entry_id = str(session_row.get("rpe_entry_id") or "")
+            entry_date = entry_lookup.get(entry_id)
+            if not entry_date:
+                continue
+            rows_all.append({"entry_date": entry_date, "rpe": session_row.get("rpe")})
 
     df = _df(rows_all)
     if df.empty:
@@ -458,10 +471,9 @@ def fetch_rpe_over_time_7d_cached(player_id: str, start_iso: str, end_iso: str) 
 
 
 def fetch_rpe_over_time_7d(sb, player_id: str) -> pd.DataFrame:
-    st.session_state["_sb_for_cache"] = sb
     end_d = date.today()
     start_d = end_d - timedelta(days=6)
-    return fetch_rpe_over_time_7d_cached(str(player_id), start_d.isoformat(), end_d.isoformat())
+    return fetch_rpe_over_time_7d_cached(sb, _cache_scope(), str(player_id), start_d.isoformat(), end_d.isoformat())
 
 
 def plot_rpe_session(sessions_df: pd.DataFrame) -> None:
@@ -521,8 +533,6 @@ def render_data_tab(sb, target_player_id: str) -> None:
     """
     Main renderer voor Player Page -> Data tab.
     """
-    st.session_state["_sb_for_cache"] = sb
-
     st.header("Data")
     st.caption(
         "GPS & Wellness: laatste 14 dagen | RPE over time: laatste 7 dagen | Grafieken: static (mobiel vriendelijk)"
