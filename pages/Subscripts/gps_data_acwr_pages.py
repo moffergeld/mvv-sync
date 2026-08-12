@@ -483,6 +483,130 @@ def line_chart_acwr(
     st.plotly_chart(fig, width="stretch")
 
 
+def _acwr_zone_color(value: float) -> str:
+    if not np.isfinite(value):
+        return "#64748B"
+    if value < SWEET_SPOT_LOW:
+        return "#DC2626"
+    if value <= SWEET_SPOT_HIGH:
+        return "#16A34A"
+    if value <= AMBER_SPOT_HIGH:
+        return "#D97706"
+    return "#991B1B"
+
+
+def _format_pct_change_label(value: float) -> str:
+    if not np.isfinite(value):
+        return ""
+    return f"{value:+.0f}%"
+
+
+def bar_chart_acwr_week_all_players(
+    df_players: pd.DataFrame,
+    param: str,
+    selected_week_key: int,
+    week_col: str = "week_key",
+    label_col: str = "week_label",
+):
+    acwr_col = f"{param}_ACWR"
+    required_cols = {"player", week_col, label_col, acwr_col}
+    if not required_cols.issubset(df_players.columns):
+        st.warning(f"Geen ACWR weekdata gevonden voor '{param}'.")
+        return
+
+    df_plot = df_players[list(required_cols)].dropna(subset=["player", week_col, acwr_col]).copy()
+    if df_plot.empty:
+        st.warning(f"Geen data voor '{param}'.")
+        return
+
+    df_plot[week_col] = pd.to_numeric(df_plot[week_col], errors="coerce").astype("Int64")
+    df_plot = df_plot.dropna(subset=[week_col]).sort_values(["player", week_col])
+
+    current_week_df = df_plot[df_plot[week_col] == int(selected_week_key)].copy()
+    if current_week_df.empty:
+        st.info(f"Geen ACWR-data voor '{param}' in de gekozen week.")
+        return
+
+    previous_week_df = (
+        df_plot[df_plot[week_col] < int(selected_week_key)]
+        .groupby("player", as_index=False)
+        .tail(1)[["player", week_col, label_col, acwr_col]]
+        .rename(
+            columns={
+                week_col: "previous_week_key",
+                label_col: "previous_week_label",
+                acwr_col: "previous_acwr",
+            }
+        )
+    )
+
+    current_week_df = current_week_df.merge(previous_week_df, on="player", how="left")
+    current_week_df["pct_change"] = np.where(
+        current_week_df["previous_acwr"].notna() & (current_week_df["previous_acwr"] != 0),
+        ((current_week_df[acwr_col] - current_week_df["previous_acwr"]) / current_week_df["previous_acwr"]) * 100.0,
+        np.nan,
+    )
+    current_week_df = current_week_df.sort_values(acwr_col, ascending=False).copy()
+
+    current_label = str(current_week_df[label_col].iloc[0])
+    y_vals = current_week_df[acwr_col].astype(float).tolist()
+    max_val = float(np.nanmax(y_vals)) if y_vals else 1.0
+    max_y = max(1.8, AMBER_SPOT_HIGH + 0.1, max_val * 1.22)
+
+    current_week_df["bar_color"] = current_week_df[acwr_col].astype(float).apply(_acwr_zone_color)
+    current_week_df["delta_label"] = current_week_df["pct_change"].apply(_format_pct_change_label)
+    current_week_df["player_label"] = current_week_df["player"].astype(str)
+
+    customdata = np.column_stack(
+        [
+            current_week_df["player_label"],
+            current_week_df[acwr_col].astype(float),
+            current_week_df["previous_acwr"].astype(float).where(current_week_df["previous_acwr"].notna(), np.nan),
+            current_week_df["pct_change"].astype(float).where(current_week_df["pct_change"].notna(), np.nan),
+            current_week_df["previous_week_label"].fillna("Geen vorige week"),
+        ]
+    )
+
+    fig = go.Figure()
+    fig.add_hrect(y0=0.0, y1=SWEET_SPOT_LOW, line_width=0, fillcolor="#8B0000", opacity=0.22, layer="below")
+    fig.add_hrect(y0=SWEET_SPOT_LOW, y1=SWEET_SPOT_HIGH, line_width=0, fillcolor="#006400", opacity=0.22, layer="below")
+    fig.add_hrect(y0=SWEET_SPOT_HIGH, y1=AMBER_SPOT_HIGH, line_width=0, fillcolor="#D97706", opacity=0.22, layer="below")
+    fig.add_hrect(y0=AMBER_SPOT_HIGH, y1=max_y, line_width=0, fillcolor="#8B0000", opacity=0.18, layer="below")
+    fig.add_hline(y=1.0, line_dash="dot", line_width=1)
+
+    fig.add_trace(
+        go.Bar(
+            x=current_week_df["player_label"],
+            y=current_week_df[acwr_col].astype(float),
+            marker=dict(color=current_week_df["bar_color"], line=dict(color="#F8FAFC", width=1)),
+            text=current_week_df["delta_label"],
+            textposition="outside",
+            cliponaxis=False,
+            customdata=customdata,
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                f"{param} ACWR: "
+                "%{customdata[1]:.2f}<br>"
+                "Vorige week: %{customdata[4]}<br>"
+                "Vorige ACWR: %{customdata[2]:.2f}<br>"
+                "Verschil: %{customdata[3]:+.1f}%<extra></extra>"
+            ),
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        title=f"ACWR - {param} ({current_label})",
+        xaxis_title="Speler",
+        yaxis_title="ACWR",
+        yaxis_range=[0.0, max_y],
+        margin=dict(l=10, r=10, t=48, b=10),
+        showlegend=False,
+    )
+    fig.update_xaxes(tickangle=-45)
+    st.plotly_chart(fig, width="stretch")
+
+
 # ------------------------------------------------------------
 # TARGETS vs WORKLOAD HELPERS
 # ------------------------------------------------------------
@@ -758,6 +882,15 @@ def acwr_pages_main(df_gps: pd.DataFrame):
             )
             acwr_highlight_key = label_to_key.get(acwr_highlight_label) if week_labels else None
 
+            acwr_compare_week_label = st.selectbox(
+                "Week voor kolomoverzicht",
+                options=week_labels if week_labels else ["Geen weken"],
+                index=(len(week_labels) - 1) if week_labels else 0,
+                key="acwr_compare_week_sidebar",
+                disabled=not bool(week_labels),
+            )
+            acwr_compare_week_key = label_to_key.get(acwr_compare_week_label) if week_labels else None
+
             acwr_params = st.multiselect(
                 "Parameters (max 4)",
                 options=metrics,
@@ -799,6 +932,13 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         st.caption("Zones: rood < 0.80, groen 0.80-1.30, amber 1.30-1.50, rood > 1.50.")
         st.caption(f"ACWR-model: {acwr_meta['label']} | {acwr_meta['description']}")
 
+        acwr_view_mode = st.radio(
+            "Weergave",
+            ["Trend", "Alle spelers per week"],
+            horizontal=True,
+            key="acwr_dashboard_view_mode",
+        )
+
         c1, c2 = st.columns([1.1, 1.9])
         with c1:
             acwr_level = st.radio(
@@ -826,22 +966,38 @@ def acwr_pages_main(df_gps: pd.DataFrame):
         if not acwr_params:
             st.warning("Selecteer minimaal 1 parameter in de sidebar.")
         else:
-            if acwr_level == "Per speler":
-                df_view = df_acwr_players[df_acwr_players["player"] == acwr_selected_player].copy()
-                group_label = acwr_selected_player
-            else:
-                df_view = df_acwr_team.copy()
-                group_label = "Team (globaal)"
+            if acwr_view_mode == "Trend":
+                if acwr_level == "Per speler":
+                    df_view = df_acwr_players[df_acwr_players["player"] == acwr_selected_player].copy()
+                    group_label = acwr_selected_player
+                else:
+                    df_view = df_acwr_team.copy()
+                    group_label = "Team (globaal)"
 
-            cols = st.columns(2)
-            for i, p in enumerate(acwr_params):
-                with cols[i % 2]:
-                    line_chart_acwr(
-                        df_view,
-                        p,
-                        group_label=group_label,
-                        highlight_week=acwr_highlight_key,
+                cols = st.columns(2)
+                for i, p in enumerate(acwr_params):
+                    with cols[i % 2]:
+                        line_chart_acwr(
+                            df_view,
+                            p,
+                            group_label=group_label,
+                            highlight_week=acwr_highlight_key,
+                        )
+            else:
+                if acwr_compare_week_key is None:
+                    st.info("Geen week beschikbaar voor het kolomoverzicht.")
+                else:
+                    st.caption(
+                        "Kolommen tonen de gekozen week per speler. Boven elke kolom staat het procentuele verschil t.o.v. de vorige beschikbare week."
                     )
+                    cols = st.columns(2)
+                    for i, p in enumerate(acwr_params):
+                        with cols[i % 2]:
+                            bar_chart_acwr_week_all_players(
+                                df_acwr_players,
+                                p,
+                                selected_week_key=int(acwr_compare_week_key),
+                            )
 
     # ========================================================
     # TAB 2: Threshold planner
