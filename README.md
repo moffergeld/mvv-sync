@@ -137,19 +137,35 @@ De GitHub-check `Supabase Preview` wordt dus niet vanuit deze repo zelf aangestu
 Om onnodige preview-checks te voorkomen is de `keep-awake` workflow aangepast:
 
 - geen lege commits meer naar `main`
-- alleen nog een periodieke health ping naar de live app
+- een periodiek bezoek aan de live Streamlit-apps
 
 Optioneel kun je hiervoor GitHub repository variables instellen:
 
+- `KEEP_AWAKE_URLS`
 - `KEEP_AWAKE_URL`
 - `KEEP_AWAKE_SECONDARY_URL`
 
-Als `KEEP_AWAKE_URL` leeg blijft, gebruikt de workflow standaard:
+Aanbevolen:
 
-- `https://mvv-dashboard.streamlit.app/_stcore/health`
+- zet in `KEEP_AWAKE_URLS` alle live app-URL's, bij voorkeur een per regel
+- gebruik hiervoor de gewone app-URL, niet `/_stcore/health`
+- voeg hier dus zowel de hoofdapp als de losse `tablet_app`-deploy toe als die apart online staat
 
-Je mag in die variabelen zowel de gewone app-URL als direct de health-URL zetten.
-De workflow normaliseert beide automatisch naar de Streamlit health-check:
+Voorbeeld:
+
+```text
+https://mvv-dashboard.streamlit.app
+https://jouw-tablet-app.streamlit.app
+```
+
+Compatibiliteit:
+
+- `KEEP_AWAKE_URL` en `KEEP_AWAKE_SECONDARY_URL` blijven ondersteund
+- als `KEEP_AWAKE_URLS` leeg is, valt de workflow terug op deze oudere variabelen
+- als alles leeg is, gebruikt de workflow standaard:
+  `https://mvv-dashboard.streamlit.app`
+
+De workflow draait nu elke 4 uur en normaliseert oude health-URL's automatisch terug naar de gewone app-URL:
 
 - `https://mvv-dashboard.streamlit.app`
 - `https://mvv-dashboard.streamlit.app/_stcore/health`

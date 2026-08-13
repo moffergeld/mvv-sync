@@ -1,8 +1,8 @@
-name: Keep app awake (health ping)
+name: Keep app awake (app ping)
 
 on:
   schedule:
-    - cron: "0 */8 * * *"   # elke 8 uur (UTC)
+    - cron: "17 */4 * * *"   # elke 4 uur (UTC)
   workflow_dispatch:
 
 permissions:
@@ -18,39 +18,74 @@ jobs:
     steps:
       - name: Ping live dashboard(s)
         env:
+          KEEP_AWAKE_URLS: ${{ vars.KEEP_AWAKE_URLS }}
           KEEP_AWAKE_URL: ${{ vars.KEEP_AWAKE_URL }}
           KEEP_AWAKE_SECONDARY_URL: ${{ vars.KEEP_AWAKE_SECONDARY_URL }}
         run: |
           set -euo pipefail
 
+          url_list_raw="${KEEP_AWAKE_URLS:-}"
           primary_url="${KEEP_AWAKE_URL:-}"
           secondary_url="${KEEP_AWAKE_SECONDARY_URL:-}"
 
-          normalize_streamlit_health_url() {
+          normalize_streamlit_app_url() {
             local raw_url="$1"
             local clean_url="${raw_url%%\?*}"
             clean_url="${clean_url%/}"
-
-            if [[ "$clean_url" == *"/_stcore/health" ]]; then
-              printf '%s\n' "$clean_url"
-            else
-              printf '%s/_stcore/health\n' "$clean_url"
-            fi
+            clean_url="${clean_url%/_stcore/health}"
+            printf '%s\n' "$clean_url"
           }
 
-          if [ -z "$primary_url" ]; then
-            primary_url="https://mvv-dashboard.streamlit.app"
+          declare -a candidate_urls=()
+
+          if [ -n "$url_list_raw" ]; then
+            while IFS= read -r entry; do
+              entry="${entry//$'\r'/}"
+              if [ -n "$entry" ]; then
+                candidate_urls+=("$entry")
+              fi
+            done < <(printf '%s\n' "$url_list_raw" | tr ',' '\n')
           fi
 
-          urls=("$(normalize_streamlit_health_url "$primary_url")")
-          if [ -n "$secondary_url" ]; then
-            urls+=("$(normalize_streamlit_health_url "$secondary_url")")
+          if [ -n "$primary_url" ]; then
+            candidate_urls+=("$primary_url")
           fi
+          if [ -n "$secondary_url" ]; then
+            candidate_urls+=("$secondary_url")
+          fi
+
+          if [ "${#candidate_urls[@]}" -eq 0 ]; then
+            candidate_urls=("https://mvv-dashboard.streamlit.app")
+          fi
+
+          declare -A seen=()
+          declare -a urls=()
+          for raw_url in "${candidate_urls[@]}"; do
+            normalized_url="$(normalize_streamlit_app_url "$raw_url")"
+            if [ -z "$normalized_url" ]; then
+              continue
+            fi
+            if [ -z "${seen[$normalized_url]+x}" ]; then
+              seen["$normalized_url"]=1
+              urls+=("$normalized_url")
+            fi
+          done
 
           for url in "${urls[@]}"; do
             echo "Pinging $url"
-            curl -fsS --retry 3 --retry-delay 5 --max-time 45 \
-              -A "mvv-keep-awake/1.0" \
-              "$url" \
-              -o /dev/null
+            status_code="$(curl -sS --retry 3 --retry-delay 5 --connect-timeout 15 --max-time 45 --max-redirs 0 \
+              -A "mvv-keep-awake/1.1" \
+              -o /dev/null \
+              -w "%{http_code}" \
+              "$url")"
+
+            case "$status_code" in
+              200|301|302|303|307|308)
+                echo "HTTP $status_code OK for $url"
+                ;;
+              *)
+                echo "Unexpected HTTP $status_code for $url" >&2
+                exit 1
+                ;;
+            esac
           done
