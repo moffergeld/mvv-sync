@@ -24,7 +24,7 @@
 #    -> minder "gevoelig" op telefoon (geen zoom/pan per ongeluk).
 #
 # Aggregatie GPS per dag
-# - default: som per dag (total_distance/running/sprint/high_sprint)
+# - default: som per dag (total_distance_td/zone_4/zone_5/zone_6)
 # - max_speed: MAX per dag (niet som!)
 # ============================================================
 
@@ -42,30 +42,30 @@ CHART_H = 340
 GPS_TABLE = "v_gps_summary"
 
 GPS_METRICS: List[Tuple[str, str]] = [
-    ("Total Distance (m)", "total_distance"),
-    ("14.4–19.7 km/h", "running"),
-    ("19.8–25.1 km/h", "sprint"),
-    (">25,1 km/h", "high_sprint"),
+    ("Total Distance (m)", "total_distance_td"),
+    ("14.4–19.7 km/h", "zone_4"),
+    ("19.8–25.1 km/h", "zone_5"),
+    (">25,1 km/h", "zone_6"),
     ("Max Speed (km/u)", "max_speed"),
 ]
 
 GPS_TABLE_COLS_RAW = [
     "datum",
     "type",
-    "total_distance",
-    "running",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_4",
+    "zone_5",
+    "zone_6",
     "max_speed",
 ]
 
 GPS_RENAME = {
     "datum": "Date",
     "type": "Type",
-    "total_distance": "Total Distance (m)",
-    "running": "14.4–19.7 km/h",
-    "sprint": "19.8–25.1 km/h",
-    "high_sprint": ">25,1 km/h",
+    "total_distance_td": "Total Distance (m)",
+    "zone_4": "14.4–19.7 km/h",
+    "zone_5": "19.8–25.1 km/h",
+    "zone_6": ">25,1 km/h",
     "max_speed": "Max Speed (km/u)",
 }
 

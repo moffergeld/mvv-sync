@@ -61,10 +61,10 @@ MATCH_FILTER_REGULAR = "Normale wedstrijd"
 MATCH_FILTER_FRIENDLY = "Oefenwedstrijd"
 
 COL_PLAYER = "player_name"
-COL_TD = "total_distance"
-COL_RUN = "running"
-COL_SPR = "sprint"
-COL_HSPR = "high_sprint"
+COL_TD = "total_distance_td"
+COL_RUN = "zone_4"
+COL_SPR = "zone_5"
+COL_HSPR = "zone_6"
 COL_MAX = "max_speed"
 COL_DUR = "duration"
 
@@ -707,7 +707,7 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
     res = (
         sb.table("v_gps_match_events")
         .select(
-            "gps_id,match_id,player_id,player_name,datum,type,event,duration,total_distance,running,sprint,high_sprint,max_speed"
+            "gps_id,match_id,player_id,player_name,datum,type,event,duration,total_distance_td,zone_4,zone_5,zone_6,max_speed"
         )
         .eq("match_id", match_id)
         .execute()
@@ -760,18 +760,18 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
 
     g = dff.groupby(COL_PLAYER, as_index=False).agg(
         duration=(COL_DUR, "sum"),
-        total_distance=(COL_TD, "sum"),
-        running=(COL_RUN, "sum"),
-        sprint=(COL_SPR, "sum"),
-        high_sprint=(COL_HSPR, "sum"),
+        total_distance_td=(COL_TD, "sum"),
+        zone_4=(COL_RUN, "sum"),
+        zone_5=(COL_SPR, "sum"),
+        zone_6=(COL_HSPR, "sum"),
         max_speed=(COL_MAX, "max"),
     )
 
     dur_min = g["duration"].replace(0, np.nan)
-    g["td_per_min"] = g["total_distance"] / dur_min
-    g["run_per_min"] = g["running"] / dur_min
-    g["spr_per_min"] = g["sprint"] / dur_min
-    g["hspr_per_min"] = g["high_sprint"] / dur_min
+    g["td_per_min"] = g["total_distance_td"] / dur_min
+    g["run_per_min"] = g["zone_4"] / dur_min
+    g["spr_per_min"] = g["zone_5"] / dur_min
+    g["hspr_per_min"] = g["zone_6"] / dur_min
 
     g = g.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return g

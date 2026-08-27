@@ -1,7 +1,7 @@
 # pages/06_GPS_Import.py
 # ============================================================
 # MAIN PAGE: GPS Import (router) â€” Redesign MVV
-# - Tab: Import GPS -> subtabs: Import (Excel), Manual add, Export
+# - Tab: Import GPS -> subtabs: Import (Excel), Import (CSV), Manual add, Export
 # - Tab: Matches
 # NOTE: profiles.team column removed -> code must NOT select it.
 # ============================================================
@@ -15,6 +15,7 @@ from pages.Subscripts.gps_import_common import (
     get_profile_role,
 )
 from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
+from pages.Subscripts.gps_import_tab_csv import tab_import_csv_main
 from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
@@ -640,7 +641,7 @@ if main_page == "Import GPS":
     st.markdown('<div class="subnav-wrap">', unsafe_allow_html=True)
     sub_page = st.radio(
         "Sub",
-        options=["Import (Excel)", "Manual add", "Export"],
+        options=["Import (Excel)", "Import (CSV)", "Manual add", "Export"],
         horizontal=True,
         key="nav_gps_sub",
         label_visibility="collapsed",
@@ -651,6 +652,9 @@ if main_page == "Import GPS":
 
     if sub_page == "Import (Excel)":
         tab_import_excel_main(access_token=access_token, name_to_id=name_to_id)
+
+    elif sub_page == "Import (CSV)":
+        tab_import_csv_main(access_token=access_token, name_to_id=name_to_id)
 
     elif sub_page == "Manual add":
         tab_manual_add_main(access_token=access_token, name_to_id=name_to_id, player_options=player_options)

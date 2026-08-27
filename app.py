@@ -40,7 +40,7 @@ ASSETS_DIR = ROOT_DIR / "Assets" / "Afbeeldingen"
 TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
-ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
+ACWR_HOME_METRICS = [("total_distance_td", "ACWR TD")]
 APP_BUILD_STAMP = "MAIN-20260801A"
 HOME_RECENT_MAX_AGE_DAYS = 1
 
@@ -694,7 +694,7 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance")
+            .select("player_id,datum,total_distance_td")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()
@@ -709,10 +709,10 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
         return df
 
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
-    df["total_distance"] = pd.to_numeric(df["total_distance"], errors="coerce").fillna(0.0)
+    df["total_distance_td"] = pd.to_numeric(df["total_distance_td"], errors="coerce").fillna(0.0)
     daily = (
         df.groupby(["player_id", "datum"], as_index=False)
-        .agg(total_distance=("total_distance", "sum"))
+        .agg(total_distance_td=("total_distance_td", "sum"))
         .sort_values(["player_id", "datum"])
     )
     return daily
@@ -723,7 +723,7 @@ def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance,running,sprint,high_sprint")
+            .select("player_id,datum,total_distance_td,zone_4,zone_5,zone_6")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()
@@ -960,7 +960,7 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
     gps_recent_date, gps_is_recent, gps_lookup = build_recent_snapshot_lookup(
         gps_df,
         "datum",
-        "total_distance",
+        "total_distance_td",
         today_value=today_value,
         reference_date=previous_day_value,
         exact_reference=True,

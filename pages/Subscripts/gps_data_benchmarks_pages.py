@@ -75,9 +75,9 @@ GREF_SELECT_COLS = [
     "type",
     "event",
     "duration",
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "playerload2d",
     "total_accelerations",
     "high_accelerations",
@@ -128,9 +128,9 @@ def _prepare_match_totals(df_events: pd.DataFrame) -> pd.DataFrame:
 
     num_cols = [
         "duration",
-        "total_distance",
-        "sprint",
-        "high_sprint",
+        "total_distance_td",
+        "zone_5",
+        "zone_6",
         "playerload2d",
         "total_accelerations",
         "high_accelerations",
@@ -161,9 +161,9 @@ def compute_gref(
         return pd.DataFrame()
 
     metrics = [
-        "total_distance",
-        "sprint",
-        "high_sprint",
+        "total_distance_td",
+        "zone_5",
+        "zone_6",
         "playerload2d",
         "total_accelerations",
         "high_accelerations",
@@ -191,9 +191,9 @@ def compute_gref(
 
     out = out.rename(
         columns={
-            "total_distance": "Total Distance",
-            "sprint": "Sprint",
-            "high_sprint": "High Sprint",
+            "total_distance_td": "Total Distance",
+            "zone_5": "Sprint",
+            "zone_6": "High Sprint",
             "playerload2d": "playerload2D",
             "total_accelerations": "Total Accelerations",
             "high_accelerations": "High Accelerations",
@@ -237,9 +237,9 @@ def compute_gref_per_min(
         return pd.DataFrame()
 
     metrics = [
-        "total_distance",
-        "sprint",
-        "high_sprint",
+        "total_distance_td",
+        "zone_5",
+        "zone_6",
         "playerload2d",
         "total_accelerations",
         "high_accelerations",
@@ -265,9 +265,9 @@ def compute_gref_per_min(
 
     out = out.rename(
         columns={
-            "total_distance": "Total Distance /min",
-            "sprint": "Sprint /min",
-            "high_sprint": "High Sprint /min",
+            "total_distance_td": "Total Distance /min",
+            "zone_5": "Sprint /min",
+            "zone_6": "High Sprint /min",
             "playerload2d": "playerload2D /min",
             "total_accelerations": "Total Acc /min",
             "high_accelerations": "High Acc /min",

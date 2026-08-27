@@ -17,11 +17,11 @@ LOGO_SRC = TEAM_LOGO.relative_to(BASE_DIR).as_posix() if TEAM_LOGO.exists() else
 
 SVG_COLORS = ["#C8102E", "#6E1222", "#EA3351", "#F59E0B", "#2563EB", "#0F766E"]
 ZONE_SPECS = [
-    ("Walking", "walking", "#F5D2D8"),
-    ("Jogging", "jogging", "#F1A4B5"),
-    ("Running", "running", "#E97A93"),
-    ("Sprint", "sprint", "#D92B4D"),
-    ("High Sprint", "high_sprint", "#6E1222"),
+    ("Walking", "zone_1_2", "#F5D2D8"),
+    ("Jogging", "zone_3", "#F1A4B5"),
+    ("Running", "zone_4", "#E97A93"),
+    ("Sprint", "zone_5", "#D92B4D"),
+    ("High Sprint", "zone_6", "#6E1222"),
 ]
 ZONE_COLOR_LOOKUP = {label: color for label, _, color in ZONE_SPECS}
 
@@ -201,7 +201,7 @@ def _chart_badge(title: str) -> str:
         return "TD"
     if "speed exposure" in normalized:
         return "EXP"
-    if "sprint" in normalized:
+    if "zone_5" in normalized:
         return "SPR"
     if "accel" in normalized or "decel" in normalized:
         return "ACC"
@@ -237,6 +237,36 @@ def _append_brand_tile(parts: list[str], *, width: int, y: float = 18, accent: s
     return None
 
 
+def _normalize_index_set(length: int, indices: Sequence[int] | None) -> set[int] | None:
+    if indices is None:
+        return None
+    normalized: set[int] = set()
+    for index in indices:
+        try:
+            numeric = int(index)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= numeric < length:
+            normalized.add(numeric)
+    return normalized
+
+
+def _build_sparse_index_set(length: int, max_labels: int, *, mandatory: set[int] | None = None) -> set[int]:
+    if length <= 0:
+        return set()
+    if max_labels <= 0 or length <= max_labels:
+        return set(range(length))
+
+    indices = {0, length - 1}
+    if mandatory:
+        indices.update(index for index in mandatory if 0 <= index < length)
+
+    step = max(1, math.ceil(length / max_labels))
+    indices.update(range(0, length, step))
+    indices.add(length - 1)
+    return indices
+
+
 def _build_vertical_bar_chart_svg(
     title: str,
     labels: Sequence[object],
@@ -247,14 +277,43 @@ def _build_vertical_bar_chart_svg(
     height: int = 248,
     y_max: float | None = None,
     formatter: Callable[[object], str] = _fmt_int,
+    value_label_rotation: float = 0.0,
+    secondary_values: Sequence[object] | None = None,
+    secondary_label: str | None = None,
+    secondary_color: str = "#0F766E",
+    secondary_y_max: float | None = None,
+    secondary_formatter: Callable[[object], str] | None = None,
+    secondary_value_label_rotation: float = 0.0,
+    secondary_as_bars: bool = False,
+    subtitle: str | None = None,
+    primary_axis_label: str | None = None,
+    secondary_axis_label: str | None = None,
+    primary_avg_chip_label: str | None = None,
+    primary_peak_chip_label: str | None = None,
+    secondary_avg_chip_label: str | None = None,
+    secondary_peak_chip_label: str | None = None,
+    highlight_indices: Sequence[int] | None = None,
+    value_label_indices: Sequence[int] | None = None,
+    x_label_indices: Sequence[int] | None = None,
+    max_x_labels: int | None = None,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
     clean_values = _clean_series(values)
     if not clean_labels or not clean_values or max(clean_values, default=0) <= 0:
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
+    secondary_formatter = secondary_formatter or formatter
+    clean_secondary_values = _clean_series(secondary_values) if secondary_values is not None else []
+    use_secondary = (
+        secondary_values is not None
+        and len(clean_secondary_values) == len(clean_values)
+        and max(clean_secondary_values, default=0) > 0
+    )
     chart_max = y_max if y_max is not None else _nice_max(max(clean_values))
-    margin_left, margin_right, margin_top, margin_bottom = 56, 24, 94, 46
+    secondary_chart_max = (
+        secondary_y_max if secondary_y_max is not None else _nice_max(max(clean_secondary_values))
+    ) if use_secondary else None
+    margin_left, margin_right, margin_top, margin_bottom = 56, (62 if use_secondary else 24), 94, 46
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
     slot_width = plot_width / max(1, len(clean_values))
@@ -264,21 +323,53 @@ def _build_vertical_bar_chart_svg(
     plot_id = _chart_id(title, "trend-plot")
     area_id = _chart_id(title, "trend-area")
     line_shadow_id = _chart_id(title, "trend-line-shadow")
+    secondary_line_shadow_id = _chart_id(title, "trend-secondary-line-shadow")
     point_shadow_id = _chart_id(title, "trend-point-shadow")
     avg_value = sum(clean_values) / max(1, len(clean_values))
     peak_value = max(clean_values, default=0.0)
     peak_indices = {idx for idx, value in enumerate(clean_values) if value == peak_value}
     last_value = clean_values[-1] if clean_values else 0.0
+    secondary_avg_value = sum(clean_secondary_values) / max(1, len(clean_secondary_values)) if use_secondary else 0.0
+    secondary_peak_value = max(clean_secondary_values, default=0.0) if use_secondary else 0.0
     line_color = _blend_hex(color, "#102033", 0.18)
+    secondary_line_color = _blend_hex(secondary_color, "#102033", 0.18)
     badge = _chart_badge(title)
+    dense_series = len(clean_values) > 120
+    highlight_index_set = _normalize_index_set(len(clean_values), highlight_indices)
+    value_label_index_set = _normalize_index_set(len(clean_values), value_label_indices)
+    explicit_x_label_index_set = _normalize_index_set(len(clean_values), x_label_indices)
+    if explicit_x_label_index_set is not None:
+        x_label_index_set = explicit_x_label_index_set
+    elif max_x_labels is not None:
+        x_label_index_set = _build_sparse_index_set(
+            len(clean_values),
+            max_x_labels,
+            mandatory=highlight_index_set if dense_series else None,
+        )
+    else:
+        x_label_index_set = set(range(len(clean_values)))
+    primary_x_offset = -7.0 if use_secondary else 0.0
+    secondary_x_offset = 7.0 if use_secondary else 0.0
     line_points = [
         (
-            margin_left + slot_width * index + slot_width / 2,
+            margin_left + slot_width * index + slot_width / 2 + primary_x_offset,
             margin_top + plot_height - (0 if chart_max <= 0 else (value / chart_max) * plot_height),
         )
         for index, value in enumerate(clean_values)
     ]
-    subtitle = "Area and line view met piek, gemiddelde en laatste meetpunt"
+    secondary_line_points = [
+        (
+            margin_left + slot_width * index + slot_width / 2 + secondary_x_offset,
+            margin_top + plot_height - (0 if not secondary_chart_max or secondary_chart_max <= 0 else (value / secondary_chart_max) * plot_height),
+        )
+        for index, value in enumerate(clean_secondary_values)
+    ] if use_secondary else []
+    if subtitle is None:
+        subtitle = (
+            "Dual-axis piekview met max speed links en peak HR rechts"
+            if use_secondary
+            else "Area and line view met piek, gemiddelde en laatste meetpunt"
+        )
 
     parts: list[str] = [
         f'<svg class="chart-svg" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{escape(title)}">',
@@ -299,6 +390,9 @@ def _build_vertical_bar_chart_svg(
         f'<filter id="{line_shadow_id}" x="-10%" y="-10%" width="140%" height="150%">',
         f'<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="{_alpha_hex(color, 0.20)}" />',
         "</filter>",
+        f'<filter id="{secondary_line_shadow_id}" x="-10%" y="-10%" width="140%" height="150%">',
+        f'<feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="{_alpha_hex(secondary_color, 0.20)}" />',
+        "</filter>",
         f'<filter id="{point_shadow_id}" x="-20%" y="-20%" width="160%" height="160%">',
         '<feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="rgba(15,23,42,0.16)" />',
         "</filter>",
@@ -309,15 +403,29 @@ def _build_vertical_bar_chart_svg(
         f'<line x1="24" y1="82" x2="{width - 24}" y2="82" stroke="#E7EDF4" />',
     ]
 
-    chip_x = width - 340
-    _append_stat_chip(parts, x=chip_x, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex(color, 0.08), stroke=_alpha_hex(color, 0.20))
-    _append_stat_chip(parts, x=chip_x + 94, y=18, label="PEAK", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
-    _append_stat_chip(parts, x=chip_x + 188, y=18, label="LAST", value=formatter(last_value), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
+    if use_secondary:
+        primary_avg_chip_label = primary_avg_chip_label or "AVG SPD"
+        primary_peak_chip_label = primary_peak_chip_label or "PEAK SPD"
+        secondary_avg_chip_label = secondary_avg_chip_label or "AVG HR"
+        secondary_peak_chip_label = secondary_peak_chip_label or "PEAK HR"
+        chip_x = width - 434
+        _append_stat_chip(parts, x=chip_x, y=18, label=primary_avg_chip_label, value=formatter(avg_value), fill=_alpha_hex(color, 0.08), stroke=_alpha_hex(color, 0.20))
+        _append_stat_chip(parts, x=chip_x + 94, y=18, label=primary_peak_chip_label, value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+        _append_stat_chip(parts, x=chip_x + 188, y=18, label=secondary_avg_chip_label, value=secondary_formatter(secondary_avg_value), fill=_alpha_hex(secondary_color, 0.08), stroke=_alpha_hex(secondary_color, 0.20))
+        _append_stat_chip(parts, x=chip_x + 282, y=18, label=secondary_peak_chip_label, value=secondary_formatter(secondary_peak_value), fill=_alpha_hex(secondary_color, 0.12), stroke=_alpha_hex(secondary_color, 0.26))
+    else:
+        chip_x = width - 340
+        _append_stat_chip(parts, x=chip_x, y=18, label="AVG", value=formatter(avg_value), fill=_alpha_hex(color, 0.08), stroke=_alpha_hex(color, 0.20))
+        _append_stat_chip(parts, x=chip_x + 94, y=18, label="PEAK", value=formatter(peak_value), fill=_alpha_hex("#F59E0B", 0.10), stroke=_alpha_hex("#F59E0B", 0.24))
+        _append_stat_chip(parts, x=chip_x + 188, y=18, label="LAST", value=formatter(last_value), fill=_alpha_hex("#0F766E", 0.08), stroke=_alpha_hex("#0F766E", 0.20))
     _append_brand_tile(parts, width=width, y=18, accent=color)
 
     parts.append(
         f'<rect x="{margin_left - 8:.1f}" y="{margin_top - 8:.1f}" width="{plot_width + 16:.1f}" height="{plot_height + 16:.1f}" rx="16" fill="url(#{plot_id})" stroke="#DFE7F0" />'
     )
+    if use_secondary:
+        parts.append(f'<text x="{margin_left:.1f}" y="{margin_top - 14:.1f}" font-size="8.2" font-weight="800" fill="{line_color}">{escape((primary_axis_label or "MAX SPEED").upper())}</text>')
+        parts.append(f'<text x="{width - margin_right:.1f}" y="{margin_top - 14:.1f}" text-anchor="end" font-size="8.2" font-weight="800" fill="{secondary_line_color}">{escape((secondary_axis_label or secondary_label or "PEAK HR").upper())}</text>')
 
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
@@ -325,47 +433,165 @@ def _build_vertical_bar_chart_svg(
         axis_value = chart_max * ratio
         parts.append(f'<line x1="{margin_left:.1f}" y1="{y:.1f}" x2="{width - margin_right:.1f}" y2="{y:.1f}" stroke="#E7EDF4" stroke-dasharray="3 6" />')
         parts.append(f'<text x="{margin_left - 10:.1f}" y="{y + 3:.1f}" text-anchor="end" font-size="8.8" fill="#708199">{escape(_fmt_axis(axis_value))}</text>')
-
-    if len(line_points) >= 2:
-        peak_index = max(range(len(clean_values)), key=lambda idx: clean_values[idx])
-        peak_center = line_points[peak_index][0]
-        parts.append(
-            f'<rect x="{peak_center - slot_width * 0.42:.1f}" y="{margin_top + 6:.1f}" width="{slot_width * 0.84:.1f}" height="{plot_height - 6:.1f}" rx="14" fill="{_alpha_hex(color, 0.05)}" />'
-        )
-        area_points = [(line_points[0][0], margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
-        parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
-        parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="#FFFFFF" stroke-width="7.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />')
-        parts.append(
-            f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
-        )
-
-    if avg_value > 0 and chart_max > 0:
-        avg_y = margin_top + plot_height - (avg_value / chart_max) * plot_height
-        parts.append(
-            f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex(line_color, 0.7)}" stroke-width="1.6" stroke-dasharray="8 6" />'
-        )
-        parts.append(
-            f'<text x="{width - margin_right - 4:.1f}" y="{avg_y - 6:.1f}" text-anchor="end" font-size="8.7" font-weight="800" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
-        )
-
-    for index, (label, value) in enumerate(zip(clean_labels, clean_values, strict=False)):
-        x_center = margin_left + slot_width * index + slot_width / 2
-        y = line_points[index][1]
-        point_radius = 7.0 if index in peak_indices else 5.8
-        point_fill = "#FFF7ED" if index in peak_indices else "#FFFFFF"
-        point_stroke = "#D97706" if index in peak_indices else line_color
-        parts.append(
-            f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.1" filter="url(#{point_shadow_id})" />'
-        )
-        parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.8" fill="{line_color}" />')
-        if value > 0:
+        if use_secondary and secondary_chart_max:
+            secondary_axis_value = secondary_chart_max * ratio
             parts.append(
-                f'<text x="{x_center:.1f}" y="{max(y - 12, margin_top + 10):.1f}" text-anchor="middle" font-size="8.8" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>'
+                f'<text x="{width - margin_right + 8:.1f}" y="{y + 3:.1f}" font-size="8.8" fill="#708199">{escape(_fmt_axis(secondary_axis_value))}</text>'
             )
-        label_y = height - 34
-        parts.append(
-            f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#55657E" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
-        )
+
+    if secondary_as_bars and use_secondary:
+        dual_bar_width = max(12.0, min(18.0, slot_width * 0.22))
+        dual_bar_gap = max(4.0, min(10.0, slot_width * 0.08))
+        primary_fill = _blend_hex(color, "#FFFFFF", 0.14)
+        secondary_fill = _blend_hex(secondary_color, "#FFFFFF", 0.14)
+        for index, (label, value) in enumerate(zip(clean_labels, clean_values, strict=False)):
+            x_center = margin_left + slot_width * index + slot_width / 2
+            primary_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            primary_y = margin_top + plot_height - primary_height
+            primary_x = x_center - dual_bar_gap / 2 - dual_bar_width
+            primary_peak = index in peak_indices
+            secondary_value = clean_secondary_values[index] if index < len(clean_secondary_values) else 0.0
+            secondary_height = 0 if not secondary_chart_max or secondary_chart_max <= 0 else (secondary_value / secondary_chart_max) * plot_height
+            secondary_y = margin_top + plot_height - secondary_height
+            secondary_x = x_center + dual_bar_gap / 2
+            secondary_peak = secondary_value == secondary_peak_value
+            parts.append(
+                f'<rect x="{primary_x:.1f}" y="{primary_y:.1f}" width="{dual_bar_width:.1f}" height="{primary_height:.1f}" rx="4" fill="{primary_fill}" stroke="{("#D97706" if primary_peak else _alpha_hex(color, 0.34))}" stroke-width="{(2.0 if primary_peak else 1.0):.1f}" filter="url(#{point_shadow_id})" />'
+            )
+            parts.append(
+                f'<rect x="{secondary_x:.1f}" y="{secondary_y:.1f}" width="{dual_bar_width:.1f}" height="{secondary_height:.1f}" rx="4" fill="{secondary_fill}" stroke="{("#D97706" if secondary_peak else _alpha_hex(secondary_color, 0.34))}" stroke-width="{(2.0 if secondary_peak else 1.0):.1f}" filter="url(#{point_shadow_id})" />'
+            )
+            show_primary_value_label = value > 0 and (value_label_index_set is None or index in value_label_index_set)
+            if show_primary_value_label:
+                primary_label_x = primary_x + dual_bar_width / 2
+                primary_label_y = max(primary_y - 8, margin_top + 34)
+                value_label = escape(formatter(value))
+                if abs(value_label_rotation) >= 0.1:
+                    parts.append(
+                        f'<text x="{primary_label_x:.1f}" y="{primary_label_y:.1f}" text-anchor="start" font-size="8.3" font-weight="800" fill="#0F172A" transform="rotate({value_label_rotation:.1f} {primary_label_x:.1f} {primary_label_y:.1f})">{value_label}</text>'
+                    )
+                else:
+                    parts.append(
+                        f'<text x="{primary_label_x:.1f}" y="{primary_label_y:.1f}" text-anchor="middle" font-size="8.3" font-weight="800" fill="#0F172A">{value_label}</text>'
+                    )
+            show_secondary_value_label = secondary_value > 0 and (value_label_index_set is None or index in value_label_index_set)
+            if show_secondary_value_label:
+                secondary_label_x = secondary_x + dual_bar_width / 2
+                label_inside_bar = secondary_height >= 28
+                secondary_label_y = (
+                    min(max(secondary_y + 15, margin_top + 22), margin_top + plot_height - 8)
+                    if label_inside_bar
+                    else max(secondary_y - 8, margin_top + 34)
+                )
+                secondary_label_text = escape(secondary_formatter(secondary_value))
+                secondary_label_fill = "#FFFFFF" if label_inside_bar else secondary_line_color
+                if abs(secondary_value_label_rotation) >= 0.1 and not label_inside_bar:
+                    parts.append(
+                        f'<text x="{secondary_label_x:.1f}" y="{secondary_label_y:.1f}" text-anchor="start" font-size="8.1" font-weight="800" fill="{secondary_label_fill}" transform="rotate({secondary_value_label_rotation:.1f} {secondary_label_x:.1f} {secondary_label_y:.1f})">{secondary_label_text}</text>'
+                    )
+                else:
+                    parts.append(
+                        f'<text x="{secondary_label_x:.1f}" y="{secondary_label_y:.1f}" text-anchor="middle" font-size="8.1" font-weight="800" fill="{secondary_label_fill}">{secondary_label_text}</text>'
+                    )
+            label_y = height - 34
+            if index in x_label_index_set:
+                parts.append(
+                    f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#55657E" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
+                )
+    else:
+        if len(line_points) >= 2:
+            peak_index = max(range(len(clean_values)), key=lambda idx: clean_values[idx])
+            peak_center = margin_left + slot_width * peak_index + slot_width / 2
+            parts.append(
+                f'<rect x="{peak_center - slot_width * 0.42:.1f}" y="{margin_top + 6:.1f}" width="{slot_width * 0.84:.1f}" height="{plot_height - 6:.1f}" rx="14" fill="{_alpha_hex(color, 0.05)}" />'
+            )
+            area_points = [(line_points[0][0], margin_top + plot_height)] + line_points + [(line_points[-1][0], margin_top + plot_height)]
+            parts.append(f'<path d="{_series_path(area_points)} Z" fill="url(#{area_id})" />')
+            primary_outline_width = 4.4 if dense_series else 7.8
+            primary_line_width = 2.1 if dense_series else 4.0
+            parts.append(f'<path d="{_series_path(line_points)}" fill="none" stroke="#FFFFFF" stroke-width="{primary_outline_width:.1f}" stroke-linecap="round" stroke-linejoin="round" opacity="0.96" />')
+            parts.append(
+                f'<path d="{_series_path(line_points)}" fill="none" stroke="{line_color}" stroke-width="{primary_line_width:.1f}" stroke-linecap="round" stroke-linejoin="round" filter="url(#{line_shadow_id})" />'
+            )
+        if use_secondary and len(secondary_line_points) >= 2:
+            secondary_outline_width = 4.0 if dense_series else 6.8
+            secondary_line_width = 1.7 if dense_series else 3.0
+            parts.append(
+                f'<path d="{_series_path(secondary_line_points)}" fill="none" stroke="#FFFFFF" stroke-width="{secondary_outline_width:.1f}" stroke-linecap="round" stroke-linejoin="round" opacity="0.94" />'
+            )
+            parts.append(
+                f'<path d="{_series_path(secondary_line_points)}" fill="none" stroke="{secondary_line_color}" stroke-width="{secondary_line_width:.1f}" stroke-linecap="round" stroke-linejoin="round" filter="url(#{secondary_line_shadow_id})" />'
+            )
+
+        if avg_value > 0 and chart_max > 0:
+            avg_y = margin_top + plot_height - (avg_value / chart_max) * plot_height
+            parts.append(
+                f'<line x1="{margin_left:.1f}" y1="{avg_y:.1f}" x2="{width - margin_right:.1f}" y2="{avg_y:.1f}" stroke="{_alpha_hex(line_color, 0.7)}" stroke-width="1.6" stroke-dasharray="8 6" />'
+            )
+            parts.append(
+                f'<text x="{width - margin_right - 4:.1f}" y="{avg_y - 6:.1f}" text-anchor="end" font-size="8.7" font-weight="800" fill="{line_color}">Avg {escape(formatter(avg_value))}</text>'
+            )
+
+        for index, (label, value) in enumerate(zip(clean_labels, clean_values, strict=False)):
+            x_center = margin_left + slot_width * index + slot_width / 2
+            y = line_points[index][1]
+            show_primary_marker = highlight_index_set is None or index in highlight_index_set
+            show_primary_value_label = (
+                value > 0
+                and (
+                    value_label_index_set is None
+                    or index in value_label_index_set
+                )
+            )
+            if show_primary_marker:
+                point_radius = 7.0 if index in peak_indices else 5.8
+                point_fill = "#FFF7ED" if index in peak_indices else "#FFFFFF"
+                point_stroke = "#D97706" if index in peak_indices else line_color
+                parts.append(
+                    f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="{point_radius:.1f}" fill="{point_fill}" stroke="{point_stroke}" stroke-width="2.1" filter="url(#{point_shadow_id})" />'
+                )
+                parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.8" fill="{line_color}" />')
+            if show_primary_value_label:
+                value_label = escape(formatter(value))
+                if abs(value_label_rotation) >= 0.1:
+                    value_label_y = max(y - 8, margin_top + 34)
+                    parts.append(
+                        f'<text x="{x_center:.1f}" y="{value_label_y:.1f}" text-anchor="start" font-size="8.8" font-weight="800" fill="#0F172A" transform="rotate({value_label_rotation:.1f} {x_center:.1f} {value_label_y:.1f})">{value_label}</text>'
+                    )
+                else:
+                    parts.append(
+                        f'<text x="{x_center:.1f}" y="{max(y - 12, margin_top + 10):.1f}" text-anchor="middle" font-size="8.8" font-weight="800" fill="#0F172A">{value_label}</text>'
+                    )
+            label_y = height - 34
+            if index in x_label_index_set:
+                parts.append(
+                    f'<text x="{x_center:.1f}" y="{label_y}" font-size="{label_font}" fill="#55657E" text-anchor="end" transform="rotate(-28 {x_center:.1f} {label_y})">{escape(label)}</text>'
+                )
+            if use_secondary and index < len(clean_secondary_values) and index < len(secondary_line_points):
+                secondary_value = clean_secondary_values[index]
+                secondary_x, secondary_y = secondary_line_points[index]
+                secondary_peak = secondary_value == secondary_peak_value
+                show_secondary_marker = highlight_index_set is None or index in highlight_index_set
+                show_secondary_value_label = value_label_index_set is None or index in value_label_index_set
+                if show_secondary_marker:
+                    secondary_radius = 7.0 if secondary_peak else 5.8
+                    secondary_fill = "#FFF7ED" if secondary_peak else "#FFFFFF"
+                    secondary_stroke = "#D97706" if secondary_peak else secondary_line_color
+                    parts.append(
+                        f'<circle cx="{secondary_x:.1f}" cy="{secondary_y:.1f}" r="{secondary_radius:.1f}" fill="{secondary_fill}" stroke="{secondary_stroke}" stroke-width="2.1" filter="url(#{point_shadow_id})" />'
+                    )
+                    parts.append(f'<circle cx="{secondary_x:.1f}" cy="{secondary_y:.1f}" r="2.8" fill="{secondary_line_color}" />')
+                if show_secondary_value_label:
+                    secondary_label_text = escape(secondary_formatter(secondary_value))
+                    if abs(secondary_value_label_rotation) >= 0.1:
+                        secondary_label_y = min(max(secondary_y + 14, margin_top + 20), margin_top + plot_height - 6)
+                        parts.append(
+                            f'<text x="{secondary_x:.1f}" y="{secondary_label_y:.1f}" text-anchor="start" font-size="8.1" font-weight="800" fill="{secondary_line_color}" transform="rotate({secondary_value_label_rotation:.1f} {secondary_x:.1f} {secondary_label_y:.1f})">{secondary_label_text}</text>'
+                        )
+                    else:
+                        parts.append(
+                            f'<text x="{secondary_x:.1f}" y="{min(max(secondary_y + 16, margin_top + 20), margin_top + plot_height - 6):.1f}" text-anchor="middle" font-size="8.1" font-weight="800" fill="{secondary_line_color}">{secondary_label_text}</text>'
+                        )
 
     _append_chart_footer(parts, width=width, height=height, accent=color)
     parts.append("</svg>")
@@ -380,6 +606,12 @@ def _build_grouped_bar_chart_svg(
     width: int = 860,
     height: int = 224,
     y_max: float | None = None,
+    y_min: float | None = None,
+    formatter: Callable[[object], str] = _fmt_axis,
+    show_value_labels: bool = False,
+    show_pair_deltas: bool = False,
+    delta_suffix: str = "",
+    show_trend_lines: bool = True,
 ) -> str:
     clean_labels = [_fmt_text(label) for label in labels]
     if not clean_labels or not series:
@@ -398,6 +630,10 @@ def _build_grouped_bar_chart_svg(
         return _empty_svg(title, "Geen data beschikbaar.", width=width, height=height)
 
     chart_max = y_max if y_max is not None else _nice_max(max(flat_values))
+    chart_min = float(y_min) if y_min is not None else 0.0
+    if chart_min >= chart_max:
+        chart_min = 0.0
+    chart_span = max(chart_max - chart_min, 1.0)
     margin_left, margin_right, margin_top, margin_bottom = 48, 16, 44, 44
     plot_width = width - margin_left - margin_right
     plot_height = height - margin_top - margin_bottom
@@ -453,7 +689,7 @@ def _build_grouped_bar_chart_svg(
     for step in range(grid_lines + 1):
         ratio = step / grid_lines
         y = margin_top + plot_height - ratio * plot_height
-        axis_value = chart_max * ratio
+        axis_value = chart_min + chart_span * ratio
         if step < grid_lines:
             band_y = margin_top + plot_height - ((step + 1) / grid_lines) * plot_height
             parts.append(
@@ -465,15 +701,39 @@ def _build_grouped_bar_chart_svg(
     for label_index, label in enumerate(clean_labels):
         x_slot = margin_left + slot_width * label_index
         x_start = x_slot + (slot_width - series_width) / 2
+        bar_tops: list[tuple[float, float, float]] = []
         for series_index, item in enumerate(clean_series):
             value = item["values"][label_index] if label_index < len(item["values"]) else 0.0
-            bar_height = 0 if chart_max <= 0 else (value / chart_max) * plot_height
+            clamped_value = min(chart_max, max(chart_min, value))
+            bar_height = 0 if chart_span <= 0 else ((clamped_value - chart_min) / chart_span) * plot_height
             x = x_start + series_index * bar_width
             y = margin_top + plot_height - bar_height
             x_center = x + (bar_width - 2) / 2
             series_points[series_index].append((x_center, y))
+            bar_tops.append((x_center, y, value))
             parts.append(
                 f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_width - 2:.1f}" height="{bar_height:.1f}" rx="4" fill="url(#{gradient_ids[series_index]})" filter="url(#{shadow_id})" />'
+            )
+            if show_value_labels and value > 0:
+                parts.append(
+                    f'<text x="{x_center:.1f}" y="{max(y - 6, margin_top + 12):.1f}" text-anchor="middle" font-size="8.0" font-weight="800" fill="#0F172A">{escape(formatter(value))}</text>'
+                )
+        if show_pair_deltas and len(bar_tops) == 2:
+            left_x, left_y, left_value = bar_tops[0]
+            right_x, right_y, right_value = bar_tops[1]
+            delta_value = right_value - left_value
+            if delta_value > 0.4:
+                delta_color = "#B91C1C"
+            elif delta_value < -0.4:
+                delta_color = "#0F766E"
+            else:
+                delta_color = "#64748B"
+            parts.append(
+                f'<line x1="{left_x:.1f}" y1="{left_y:.1f}" x2="{right_x:.1f}" y2="{right_y:.1f}" stroke="{_alpha_hex(delta_color, 0.45)}" stroke-width="1.3" />'
+            )
+            delta_label = f"{delta_value:+.0f}{delta_suffix}"
+            parts.append(
+                f'<text x="{(left_x + right_x) / 2:.1f}" y="{max(min(left_y, right_y) - 12, margin_top + 12):.1f}" text-anchor="middle" font-size="8.1" font-weight="800" fill="{delta_color}">{escape(delta_label)}</text>'
             )
         label_x = x_slot + slot_width / 2
         label_y = height - 12
@@ -481,15 +741,16 @@ def _build_grouped_bar_chart_svg(
             f'<text x="{label_x:.1f}" y="{label_y}" font-size="{label_font}" fill="#475569" text-anchor="end" transform="rotate(-28 {label_x:.1f} {label_y})">{escape(label)}</text>'
         )
 
-    for series_index, item in enumerate(clean_series):
-        if len(series_points[series_index]) < 2:
-            continue
-        trend_color = _blend_hex(item["color"], "#274060", 0.45)
-        parts.append(
-            f'<path d="{_series_path(series_points[series_index])}" fill="none" stroke="{trend_color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />'
-        )
-        for x_center, y in series_points[series_index]:
-            parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.8" fill="#FFFFFF" stroke="{trend_color}" stroke-width="1.4" />')
+    if show_trend_lines:
+        for series_index, item in enumerate(clean_series):
+            if len(series_points[series_index]) < 2:
+                continue
+            trend_color = _blend_hex(item["color"], "#274060", 0.45)
+            parts.append(
+                f'<path d="{_series_path(series_points[series_index])}" fill="none" stroke="{trend_color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />'
+            )
+            for x_center, y in series_points[series_index]:
+                parts.append(f'<circle cx="{x_center:.1f}" cy="{y:.1f}" r="2.8" fill="#FFFFFF" stroke="{trend_color}" stroke-width="1.4" />')
 
     avg_chip_x = width - 14
     for item, avg_value in reversed(list(zip(clean_series, series_avg, strict=False))):
@@ -1637,15 +1898,15 @@ def _build_week_focus_cards(
 def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
     if not isinstance(day_table, pd.DataFrame) or day_table.empty:
         return []
-    peak_distance = pd.to_numeric(day_table.get("total_distance"), errors="coerce").max()
+    peak_distance = pd.to_numeric(day_table.get("total_distance_td"), errors="coerce").max()
     cards: list[dict[str, object]] = []
     for _, row in day_table.sort_values("datum").iterrows():
-        total_distance = row.get("total_distance")
-        tone = "accent" if pd.notna(total_distance) and pd.notna(peak_distance) and float(total_distance) == float(peak_distance) else "neutral"
+        total_distance_td = row.get("total_distance_td")
+        tone = "accent" if pd.notna(total_distance_td) and pd.notna(peak_distance) and float(total_distance_td) == float(peak_distance) else "neutral"
         cards.append(
             {
                 "label": _weekday_label(row.get("datum")),
-                "value": _fmt_distance(total_distance),
+                "value": _fmt_distance(total_distance_td),
                 "subvalue": f"{_fmt_distance(row.get('distance_per_player'))} per speler",
                 "meta": f"{_fmt_int(row.get('active_players'))} spelers | {_fmt_int(row.get('player_sessions'))} sessies",
                 "stats": [
@@ -1704,11 +1965,11 @@ def _build_week_leader_cards(player_table: pd.DataFrame) -> list[dict[str, str]]
         return []
 
     leader_specs: list[tuple[str, str, Callable[[object], str], Callable[[pd.Series], str]]] = [
-        ("TD leader", "total_distance", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
+        ("TD leader", "total_distance_td", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
         ("HSR leader", "hsr_hsd", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
-        ("Sprint leader", "sprints", _fmt_int, lambda row: _fmt_distance(row.get("total_distance"))),
+        ("Sprint leader", "sprints", _fmt_int, lambda row: _fmt_distance(row.get("total_distance_td"))),
         ("Top speed", "max_speed", _fmt_speed, lambda row: _fmt_distance(row.get("hsr_hsd"))),
-        ("Intensity", "distance_per_min", lambda value: f"{_fmt_dec(value, 1)} m/min", lambda row: _fmt_distance(row.get("total_distance"))),
+        ("Intensity", "distance_per_min", lambda value: f"{_fmt_dec(value, 1)} m/min", lambda row: _fmt_distance(row.get("total_distance_td"))),
     ]
     cards: list[dict[str, str]] = []
     for label, column, formatter, foot_factory in leader_specs:
@@ -1751,7 +2012,7 @@ def build_week_report_html_pdf_bytes(
     report_revision: str | None = None,
 ) -> bytes:
     top_players = (
-        player_table.sort_values("total_distance", ascending=False)
+        player_table.sort_values("total_distance_td", ascending=False)
         .head(12)
         .assign(distance_per_min=lambda frame: pd.to_numeric(frame.get("distance_per_min"), errors="coerce"))
         if isinstance(player_table, pd.DataFrame) and not player_table.empty
@@ -1825,7 +2086,7 @@ def build_week_report_html_pdf_bytes(
         "report_header_meta": [],
         "badges": [],
         "cards": [
-            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": ""},
+            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance_td")), "foot": ""},
             {"label": "HSR", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": ""},
             {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": ""},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": ""},
@@ -1841,7 +2102,7 @@ def build_week_report_html_pdf_bytes(
                     "svg": _build_session_metric_chart_svg(
                         "Daily Team Distance",
                         session_flow,
-                        "total_distance",
+                        "total_distance_td",
                         height=196,
                         formatter=_fmt_distance,
                         footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
@@ -2023,7 +2284,7 @@ def build_week_report_html_pdf_bytes(
                             ("day_label", "Dag", None),
                             ("session_code_display", "Event", None),
                             ("session_display", "Type", None),
-                            ("total_distance", "TD", _fmt_distance),
+                            ("total_distance_td", "TD", _fmt_distance),
                             ("distance_per_player", "Dist / Player", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
@@ -2040,7 +2301,7 @@ def build_week_report_html_pdf_bytes(
                             ("session_category", "Type", None),
                             ("active_players", "Players", _fmt_int),
                             ("player_sessions", "Sessions", _fmt_int),
-                            ("total_distance", "TD", _fmt_distance),
+                            ("total_distance_td", "TD", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("max_speed", "Top Speed", _fmt_speed),
@@ -2061,7 +2322,7 @@ def build_week_report_html_pdf_bytes(
                         [
                             ("player_name", "Speler", None),
                             ("sessions", "Sessies", _fmt_int),
-                            ("total_distance", "TD", _fmt_distance),
+                            ("total_distance_td", "TD", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
@@ -2157,7 +2418,7 @@ def build_player_report_html_pdf_bytes(
     recent_sessions = sessions_df.copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
     recent_sessions = recent_sessions.head(12).copy() if not recent_sessions.empty else recent_sessions
 
-    workload_values = period_table.get("total_distance", pd.Series(dtype=float)).tolist()
+    workload_values = period_table.get("total_distance_td", pd.Series(dtype=float)).tolist()
     intensity_values = period_table.get("distance_per_min", pd.Series(dtype=float)).tolist()
 
     context = {
@@ -2171,8 +2432,8 @@ def build_player_report_html_pdf_bytes(
         "cards": [
             {"label": "Sessions", "value": _fmt_int(summary.get("sessions")), "foot": "Summary-sessies binnen de huidige scope"},
             {"label": "Active Days", "value": _fmt_int(summary.get("active_days")), "foot": "Dagen met GPS-activiteit"},
-            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Totale afstand in de huidige scope"},
-            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high sprint distance"},
+            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance_td")), "foot": "Totale afstand in de huidige scope"},
+            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high zone_5 distance"},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totaal aantal sprintacties"},
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
         ],
@@ -2209,7 +2470,7 @@ def build_player_report_html_pdf_bytes(
                     "svg": _build_horizontal_bar_chart_svg(
                         "Recent Sessions by Distance",
                         recent_sessions.get("datum_label", pd.Series(dtype=str)).tolist(),
-                        recent_sessions.get("total_distance", pd.Series(dtype=float)).tolist(),
+                        recent_sessions.get("total_distance_td", pd.Series(dtype=float)).tolist(),
                         color="#C8102E",
                         formatter=_fmt_distance,
                     )
@@ -2262,7 +2523,7 @@ def build_player_report_html_pdf_bytes(
                     [
                         ("label", "Periode", None),
                         ("sessions", "Sessies", _fmt_int),
-                        ("total_distance", "Distance", _fmt_distance),
+                        ("total_distance_td", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("number_of_sprints", "Sprints", _fmt_int),
                         ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
@@ -2277,7 +2538,7 @@ def build_player_report_html_pdf_bytes(
                     [
                         ("session_category", "Type", None),
                         ("sessions", "Sessies", _fmt_int),
-                        ("total_distance", "Distance", _fmt_distance),
+                        ("total_distance_td", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("sprints", "Sprints", _fmt_int),
                         ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
@@ -2295,7 +2556,7 @@ def build_player_report_html_pdf_bytes(
                         ("datum_label", "Datum", None),
                         ("type", "Type", None),
                         ("event", "Event", None),
-                        ("total_distance", "Distance", _fmt_distance),
+                        ("total_distance_td", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("number_of_sprints", "Sprints", _fmt_int),
                         ("duration", "Duur", _fmt_minutes),

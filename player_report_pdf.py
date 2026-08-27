@@ -352,8 +352,8 @@ def build_player_report_pdf_bytes(
     visual_cards = [
         build_metric_card("Sessies", _fmt_int(summary.get("sessions")), "Summary-sessies in deze selectie", "#FBFCFE", "#D7DEE8"),
         build_metric_card("Actieve dagen", _fmt_int(summary.get("active_days")), "Unieke trainings- of wedstrijddagen", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Totale loopbelasting binnen scope", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance_td")), "Totale loopbelasting binnen scope", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high zone_5 distance", "#FBFCFE", "#D7DEE8"),
         build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totaal aantal sprintacties", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Accelerations", _fmt_int(summary.get("total_accelerations")), "Totale acceleraties in scope", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Decelerations", _fmt_int(summary.get("total_decelerations")), "Totale deceleraties in scope", "#FFF7F8", "#E8C5CB"),
@@ -389,7 +389,7 @@ def build_player_report_pdf_bytes(
         session_distance_chart = build_bar_chart_drawing(
             "Session Distance per sessie",
             session_labels,
-            [pd.to_numeric(chart_sessions_df["total_distance"], errors="coerce").fillna(0).tolist()],
+            [pd.to_numeric(chart_sessions_df["total_distance_td"], errors="coerce").fillna(0).tolist()],
             ["#6E1222"],
             ["Total Distance"],
         )
@@ -455,7 +455,7 @@ def build_player_report_pdf_bytes(
     summary_rows = [
         ["Metriek", "Waarde", "Metriek", "Waarde"],
         ["Sessies", _fmt_int(summary.get("sessions")), "Actieve dagen", _fmt_int(summary.get("active_days"))],
-        ["Total Distance", _fmt_distance(summary.get("total_distance")), "HSR / HSD", _fmt_distance(summary.get("hsr_hsd"))],
+        ["Total Distance", _fmt_distance(summary.get("total_distance_td")), "HSR / HSD", _fmt_distance(summary.get("hsr_hsd"))],
         ["Sprints", _fmt_int(summary.get("sprints")), "Duur", _fmt_minutes(summary.get("duration_min"))],
         ["Accelerations", _fmt_int(summary.get("total_accelerations")), "Decelerations", _fmt_int(summary.get("total_decelerations"))],
         [
@@ -539,7 +539,7 @@ def build_player_report_pdf_bytes(
                     str(row.get("datum_label") or "--"),
                     str(row.get("type") or "--"),
                     str(row.get("event") or "--"),
-                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("total_distance_td")),
                     _fmt_distance(row.get("hsr_hsd")),
                     _fmt_int(row.get("number_of_sprints")),
                     _fmt_int(row.get("total_accelerations")),

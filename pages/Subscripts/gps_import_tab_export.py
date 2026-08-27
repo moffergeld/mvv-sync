@@ -28,17 +28,17 @@ from speed_outlier_utils import sanitize_progressive_max_speed
 # Helpers for scouting export
 # ------------------------------------------------------------
 METRIC_ALIASES = {
-    "total_distance": [
-        "total_distance", "total distance", "distance_total", "distance covered",
+    "total_distance_td": [
+        "total_distance_td", "total distance", "distance_total", "distance covered",
         "totaldistance", "distance",
     ],
     "sprint_distance": [
-        "sprint_distance", "sprint distance", "sprintdistance", "sprint",
+        "sprint_distance", "zone_5 distance", "sprintdistance", "zone_5",
     ],
     "high_sprint_distance": [
-        "high_sprint_distance", "high sprint distance", "highsprintdistance",
-        "high sprint", "high_speed_running_distance", "high speed running distance",
-        "high_sprint",
+        "high_sprint_distance", "high zone_5 distance", "highsprintdistance",
+        "high zone_5", "high_speed_running_distance", "high speed zone_4 distance",
+        "zone_6",
     ],
     "playerload2d": [
         "playerload2d", "player_load2d", "player load2d", "playerload 2d",
@@ -78,7 +78,7 @@ SESSION_TYPE_CANDIDATES = [
 
 
 TOP3_METRIC_KEYS = [
-    "total_distance",
+    "total_distance_td",
     "sprint_distance",
     "high_sprint_distance",
     "playerload2d",
@@ -86,7 +86,7 @@ TOP3_METRIC_KEYS = [
 
 WEEKLY_METRIC_KEYS = [
     "duration",
-    "total_distance",
+    "total_distance_td",
     "sprint_distance",
     "high_sprint_distance",
     "playerload2d",
@@ -179,7 +179,7 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
     work["_event"] = work[mapping["event"]].astype(str).str.strip()
 
     for metric in [
-        "total_distance", "sprint_distance", "high_sprint_distance",
+        "total_distance_td", "sprint_distance", "high_sprint_distance",
         "playerload2d", "max_speed",
     ]:
         if metric in mapping:
@@ -304,7 +304,7 @@ def _build_top3_match_export(
         "_date": "match_date",
         "_match_key": "match_key",
         "_duration_minutes": "duration_minutes",
-        "_total_distance": "total_distance",
+        "_total_distance": "total_distance_td",
         "_sprint_distance": "sprint_distance",
         "_high_sprint_distance": "high_sprint_distance",
         "_playerload2d": "playerload2d",
@@ -349,7 +349,7 @@ def _build_top3_match_export(
     summary_order = [
         "player_name",
         "Qualified Matches",
-        _display_name(mapping, "total_distance"),
+        _display_name(mapping, "total_distance_td"),
         _display_name(mapping, "sprint_distance"),
         _display_name(mapping, "high_sprint_distance"),
         _display_name(mapping, "playerload2d"),
@@ -393,7 +393,7 @@ def _build_weekly_export(prepared_df: pd.DataFrame, mapping: dict[str, str]) -> 
 
         metric_series_map = {
             "duration": g["_duration_minutes"],
-            "total_distance": g["_total_distance"],
+            "total_distance_td": g["_total_distance"],
             "sprint_distance": g["_sprint_distance"],
             "high_sprint_distance": g["_high_sprint_distance"],
             "playerload2d": g["_playerload2d"],

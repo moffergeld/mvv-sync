@@ -50,12 +50,12 @@ GPS_SELECT_COLS = [
     "type",
     "event",
     "duration",
-    "total_distance",
-    "walking",
-    "jogging",
-    "running",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_1_2",
+    "zone_3",
+    "zone_4",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
     "playerload2d",
     "playerload3d",
@@ -71,21 +71,21 @@ GPS_INDEX_SELECT_COLS = [
     "player_name",
     "datum",
     "type",
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
     "max_speed",
 ]
 
 SUM_COLUMNS = [
     "duration",
-    "total_distance",
-    "walking",
-    "jogging",
-    "running",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_1_2",
+    "zone_3",
+    "zone_4",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
     "playerload2d",
     "playerload3d",
@@ -95,9 +95,9 @@ SUM_COLUMNS = [
 ]
 
 INDEX_SUM_COLUMNS = [
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
 ]
 
@@ -522,7 +522,7 @@ def _prepare_summary_index_df(raw: pd.DataFrame) -> pd.DataFrame:
     df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
     df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
-    df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
+    df["hsr_hsd"] = df["zone_5"].fillna(0.0) + df["zone_6"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
@@ -547,7 +547,7 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
     df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
-    df["hsr_hsd"] = df["sprint"].fillna(0.0) + df["high_sprint"].fillna(0.0)
+    df["hsr_hsd"] = df["zone_5"].fillna(0.0) + df["zone_6"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
@@ -598,12 +598,12 @@ def build_season_dataset(season_df: pd.DataFrame, acwr_mode: str) -> pd.DataFram
         .agg(
             active_players=("player_name", "nunique"),
             sessions=("datum", "size"),
-            total_distance=("total_distance", "sum"),
-            walking=("walking", "sum"),
-            jogging=("jogging", "sum"),
-            running=("running", "sum"),
-            sprint=("sprint", "sum"),
-            high_sprint=("high_sprint", "sum"),
+            total_distance_td=("total_distance_td", "sum"),
+            zone_1_2=("zone_1_2", "sum"),
+            zone_3=("zone_3", "sum"),
+            zone_4=("zone_4", "sum"),
+            zone_5=("zone_5", "sum"),
+            zone_6=("zone_6", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             duration=("duration", "sum"),
             number_of_sprints=("number_of_sprints", "sum"),
@@ -620,13 +620,13 @@ def build_season_dataset(season_df: pd.DataFrame, acwr_mode: str) -> pd.DataFram
         .reset_index(drop=True)
     )
     weekly_df["week_label"] = weekly_df["week_start"].dt.strftime("%d/%m")
-    weekly_df["distance_per_player"] = _safe_divide(weekly_df["total_distance"], weekly_df["active_players"])
+    weekly_df["distance_per_player"] = _safe_divide(weekly_df["total_distance_td"], weekly_df["active_players"])
     weekly_df["sprints_per_player"] = _safe_divide(weekly_df["number_of_sprints"], weekly_df["active_players"])
     weekly_df["accel_density"] = _safe_divide(weekly_df["total_accelerations"], weekly_df["duration"], multiplier=10)
-    weekly_df["total_distance_rolling4"] = pd.to_numeric(weekly_df["total_distance"], errors="coerce").rolling(4, min_periods=1).mean()
+    weekly_df["total_distance_rolling4"] = pd.to_numeric(weekly_df["total_distance_td"], errors="coerce").rolling(4, min_periods=1).mean()
     weekly_df["total_distance_acwr"] = _safe_divide(
-        pd.to_numeric(weekly_df["total_distance"], errors="coerce"),
-        compute_chronic_series(weekly_df["total_distance"], acwr_mode),
+        pd.to_numeric(weekly_df["total_distance_td"], errors="coerce"),
+        compute_chronic_series(weekly_df["total_distance_td"], acwr_mode),
     )
     weekly_df["hsr_hsd_acwr"] = _safe_divide(
         pd.to_numeric(weekly_df["hsr_hsd"], errors="coerce"),
@@ -644,7 +644,7 @@ def build_category_summary(season_df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             sessions=("datum", "size"),
             active_players=("player_name", "nunique"),
-            total_distance=("total_distance", "sum"),
+            total_distance_td=("total_distance_td", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             number_of_sprints=("number_of_sprints", "sum"),
             speed_exposures=("speed_exposure_flag", "sum"),
@@ -664,7 +664,7 @@ def calculate_season_kpis(season_df: pd.DataFrame, weekly_df: pd.DataFrame) -> d
         return {
             "players": float("nan"),
             "weeks": float("nan"),
-            "total_distance": float("nan"),
+            "total_distance_td": float("nan"),
             "hsr_hsd": float("nan"),
             "sprints": float("nan"),
             "duration_hours": float("nan"),
@@ -675,11 +675,11 @@ def calculate_season_kpis(season_df: pd.DataFrame, weekly_df: pd.DataFrame) -> d
     return {
         "players": float(season_df["player_name"].nunique()),
         "weeks": float(weekly_df["week_start"].nunique()) if not weekly_df.empty else float("nan"),
-        "total_distance": float(season_df["total_distance"].sum()),
+        "total_distance_td": float(season_df["total_distance_td"].sum()),
         "hsr_hsd": float(season_df["hsr_hsd"].sum()),
         "sprints": float(season_df["number_of_sprints"].sum()),
         "duration_hours": float(season_df["duration"].sum() / 60.0),
-        "peak_week": float(weekly_df["total_distance"].max()) if not weekly_df.empty else float("nan"),
+        "peak_week": float(weekly_df["total_distance_td"].max()) if not weekly_df.empty else float("nan"),
         "top_speed": float(season_df["max_speed"].max()) if not season_df["max_speed"].dropna().empty else float("nan"),
         "speed_exposures": float(season_df["speed_exposure_flag"].sum()),
     }
@@ -704,8 +704,8 @@ def build_team_alerts(weekly_df: pd.DataFrame, acwr_meta: dict[str, object]) -> 
     if pd.notna(latest.get("speed_exposures")):
         lines.append(f"Laatste week speed exposures >=90% max: {_format_int(latest['speed_exposures'])}.")
 
-    peak_week = weekly_df.loc[pd.to_numeric(weekly_df["total_distance"], errors="coerce").idxmax()]
-    lines.append(f"Hoogste teamvolume: {_format_int(peak_week['total_distance'])} m in week {peak_week['week_start']:%d/%m/%Y}.")
+    peak_week = weekly_df.loc[pd.to_numeric(weekly_df["total_distance_td"], errors="coerce").idxmax()]
+    lines.append(f"Hoogste teamvolume: {_format_int(peak_week['total_distance_td'])} m in week {peak_week['week_start']:%d/%m/%Y}.")
 
     peak_hsr = weekly_df.loc[pd.to_numeric(weekly_df["hsr_hsd"], errors="coerce").idxmax()]
     lines.append(f"Hoogste team HSR/HSD: {_format_int(peak_hsr['hsr_hsd'])} m in week {peak_hsr['week_start']:%d/%m/%Y}.")
@@ -855,13 +855,13 @@ def build_stacked_percentage_chart(df: pd.DataFrame) -> go.Figure:
     if df.empty:
         return fig
     zone_columns = [
-        ("walking", "Walking", "#F5D2D8"),
-        ("jogging", "Jogging", "#F1A4B5"),
-        ("running", "Running", "#E97A93"),
-        ("sprint", "Z5", "#D92B4D"),
-        ("high_sprint", "Z6", "#6E1222"),
+        ("zone_1_2", "Walking", "#F5D2D8"),
+        ("zone_3", "Jogging", "#F1A4B5"),
+        ("zone_4", "Running", "#E97A93"),
+        ("zone_5", "Z5", "#D92B4D"),
+        ("zone_6", "Z6", "#6E1222"),
     ]
-    totals = pd.to_numeric(df["total_distance"], errors="coerce").replace(0, pd.NA)
+    totals = pd.to_numeric(df["total_distance_td"], errors="coerce").replace(0, pd.NA)
     fig = go.Figure()
     for column, label, color in zone_columns:
         pct = pd.to_numeric(df[column], errors="coerce").div(totals).mul(100).fillna(0)
@@ -934,8 +934,8 @@ def build_cards_html(kpis: dict[str, object], monitoring_summary: dict[str, obje
     cards = [
         ("Players", _format_int(kpis["players"]), "Aantal unieke spelers met geldige GPS-data"),
         ("Weeks", _format_int(kpis["weeks"]), "Actieve GPS-weken in deze selectie"),
-        ("Total Distance", _format_distance(kpis["total_distance"]), "Totaal teamvolume over de selectie"),
-        ("HSR / HSD", _format_distance(kpis["hsr_hsd"]), "Sprint plus high sprint over de selectie"),
+        ("Total Distance", _format_distance(kpis["total_distance_td"]), "Totaal teamvolume over de selectie"),
+        ("HSR / HSD", _format_distance(kpis["hsr_hsd"]), "Sprint plus high zone_5 over de selectie"),
         ("Sprints", _format_int(kpis["sprints"]), "Totale sprintacties in de selectie"),
         ("Total Duration", _format_hours(kpis["duration_hours"]), "Opgetelde trainings- en matchduur"),
         ("Peak Week", _format_distance(kpis["peak_week"]), "Hoogste teamweek op total distance"),
@@ -1161,7 +1161,7 @@ def main() -> None:
                 build_bar_line_chart(
                     weekly_df,
                     title="Weekly Team Total Distance and 4-Week Trend",
-                    bar_column="total_distance",
+                    bar_column="total_distance_td",
                     bar_label="Team Distance",
                     bar_color=MVV_RED_DEEP,
                     line_column="total_distance_rolling4",
@@ -1191,7 +1191,7 @@ def main() -> None:
                 build_bar_line_chart(
                     weekly_df,
                     title="Team Distance and Distance per Player",
-                    bar_column="total_distance",
+                    bar_column="total_distance_td",
                     bar_label="Team Distance",
                     bar_color=MVV_RED_DEEP,
                     line_column="distance_per_player",
@@ -1202,7 +1202,7 @@ def main() -> None:
         with trend_row_two[1]:
             render_plot_panel(
                 "Top Weeks",
-                build_leaderboard_chart(weekly_df, "total_distance", "Top Team Weeks by Total Distance", _format_distance),
+                build_leaderboard_chart(weekly_df, "total_distance_td", "Top Team Weeks by Total Distance", _format_distance),
                 "Sterkste weken op basis van total distance",
             )
 
@@ -1214,16 +1214,16 @@ def main() -> None:
                 build_grouped_bars_with_line_chart(
                     weekly_df,
                     title="Weekly Team Speed Load",
-                    left_column="sprint",
+                    left_column="zone_5",
                     left_label="Dist. Z5",
                     left_color=MVV_RED_BRIGHT,
-                    right_column="high_sprint",
+                    right_column="zone_6",
                     right_label="Dist. Z6",
                     right_color=MVV_RED_DEEP,
                     line_column="hsr_hsd",
                     line_label="HSR / HSD",
                 ),
-                "Sprint- en high sprint-volume met gecombineerde high-speed load",
+                "Sprint- en high zone_5-volume met gecombineerde high-speed load",
             )
         with load_row_one[1]:
             render_plot_panel(
@@ -1245,7 +1245,7 @@ def main() -> None:
             render_plot_panel(
                 "Team Load Profile",
                 build_stacked_percentage_chart(weekly_df),
-                "Zoneverdeling van team distance over walking, jogging, running, Z5 en Z6",
+                "Zoneverdeling van team distance over zone_1_2, zone_3, zone_4, Z5 en Z6",
             )
         with load_row_two[1]:
             render_plot_panel(
@@ -1344,7 +1344,7 @@ def main() -> None:
                 build_bar_line_chart(
                     weekly_df,
                     title="Team Total Distance and ACWR",
-                    bar_column="total_distance",
+                    bar_column="total_distance_td",
                     bar_label="Team Distance",
                     bar_color=MVV_RED_DEEP,
                     line_column="total_distance_acwr",
@@ -1377,7 +1377,7 @@ def main() -> None:
                         ("session_category", "Type", None),
                         ("active_players", "Players", _format_int),
                         ("sessions", "Sessions", _format_int),
-                        ("total_distance", "Distance", _format_distance),
+                        ("total_distance_td", "Distance", _format_distance),
                         ("hsr_hsd", "HSR/HSD", _format_distance),
                         ("number_of_sprints", "Sprints", _format_int),
                         ("speed_exposures", "90% Speed", _format_int),

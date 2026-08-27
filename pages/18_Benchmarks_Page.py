@@ -132,17 +132,17 @@ COMPARE_MATCH_SCOPE_OPTIONS = {
 }
 
 MATCH_EVENT_SELECT_VARIANTS = [
-    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,number_of_sprints,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
-    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
-    "gps_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,number_of_sprints,playerload2d,total_accelerations,total_decelerations",
-    "gps_id,datum,player_id,player_name,type,event,duration,total_distance,sprint,high_sprint,playerload2d,total_accelerations,total_decelerations",
+    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance_td,zone_5,zone_6,number_of_sprints,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
+    "gps_id,match_id,datum,player_id,player_name,type,event,duration,total_distance_td,zone_5,zone_6,playerload2d,total_accelerations,high_accelerations,total_decelerations,high_decelerations",
+    "gps_id,datum,player_id,player_name,type,event,duration,total_distance_td,zone_5,zone_6,number_of_sprints,playerload2d,total_accelerations,total_decelerations",
+    "gps_id,datum,player_id,player_name,type,event,duration,total_distance_td,zone_5,zone_6,playerload2d,total_accelerations,total_decelerations",
 ]
 
 MATCH_NUMERIC_COLS = [
     "duration",
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
     "playerload2d",
     "total_accelerations",
@@ -213,17 +213,17 @@ GPS_SELECT_COLS = [
     "type",
     "event",
     "duration",
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
 ]
 
 NUMERIC_GPS_COLS = [
     "duration",
-    "total_distance",
-    "sprint",
-    "high_sprint",
+    "total_distance_td",
+    "zone_5",
+    "zone_6",
     "number_of_sprints",
 ]
 
@@ -711,9 +711,9 @@ def build_position_snapshot(
         .agg(
             session_count=("gps_id", "size"),
             duration=("duration", "sum"),
-            total_distance=("total_distance", "sum"),
-            sprint=("sprint", "sum"),
-            high_sprint=("high_sprint", "sum"),
+            total_distance_td=("total_distance_td", "sum"),
+            zone_5=("zone_5", "sum"),
+            zone_6=("zone_6", "sum"),
             number_of_sprints=("number_of_sprints", "sum"),
         )
     )
@@ -721,13 +721,13 @@ def build_position_snapshot(
     if player_totals.empty:
         return pd.DataFrame()
 
-    player_totals["hsr_hsd"] = player_totals["sprint"] + player_totals["high_sprint"]
-    player_totals["total_distance_90"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"], 90.0)
+    player_totals["hsr_hsd"] = player_totals["zone_5"] + player_totals["zone_6"]
+    player_totals["total_distance_90"] = _safe_divide_series(player_totals["total_distance_td"], player_totals["duration"], 90.0)
     player_totals["hsr_hsd_90"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["duration"], 90.0)
-    player_totals["sprint_distance_90"] = _safe_divide_series(player_totals["high_sprint"], player_totals["duration"], 90.0)
+    player_totals["sprint_distance_90"] = _safe_divide_series(player_totals["zone_6"], player_totals["duration"], 90.0)
     player_totals["sprint_count_90"] = _safe_divide_series(player_totals["number_of_sprints"], player_totals["duration"], 90.0)
-    player_totals["total_distance_per_min"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"])
-    player_totals["intensity_pct"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["total_distance"], 100.0)
+    player_totals["total_distance_per_min"] = _safe_divide_series(player_totals["total_distance_td"], player_totals["duration"])
+    player_totals["intensity_pct"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["total_distance_td"], 100.0)
 
     position_snapshot = (
         player_totals.groupby("Positie", as_index=False)
@@ -777,9 +777,9 @@ def build_player_snapshot(
         .agg(
             session_count=("gps_id", "size"),
             duration=("duration", "sum"),
-            total_distance=("total_distance", "sum"),
-            sprint=("sprint", "sum"),
-            high_sprint=("high_sprint", "sum"),
+            total_distance_td=("total_distance_td", "sum"),
+            zone_5=("zone_5", "sum"),
+            zone_6=("zone_6", "sum"),
             number_of_sprints=("number_of_sprints", "sum"),
         )
     )
@@ -787,13 +787,13 @@ def build_player_snapshot(
     if player_totals.empty:
         return pd.DataFrame()
 
-    player_totals["hsr_hsd"] = player_totals["sprint"] + player_totals["high_sprint"]
-    player_totals["total_distance_90"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"], 90.0)
+    player_totals["hsr_hsd"] = player_totals["zone_5"] + player_totals["zone_6"]
+    player_totals["total_distance_90"] = _safe_divide_series(player_totals["total_distance_td"], player_totals["duration"], 90.0)
     player_totals["hsr_hsd_90"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["duration"], 90.0)
-    player_totals["sprint_distance_90"] = _safe_divide_series(player_totals["high_sprint"], player_totals["duration"], 90.0)
+    player_totals["sprint_distance_90"] = _safe_divide_series(player_totals["zone_6"], player_totals["duration"], 90.0)
     player_totals["sprint_count_90"] = _safe_divide_series(player_totals["number_of_sprints"], player_totals["duration"], 90.0)
-    player_totals["total_distance_per_min"] = _safe_divide_series(player_totals["total_distance"], player_totals["duration"])
-    player_totals["intensity_pct"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["total_distance"], 100.0)
+    player_totals["total_distance_per_min"] = _safe_divide_series(player_totals["total_distance_td"], player_totals["duration"])
+    player_totals["intensity_pct"] = _safe_divide_series(player_totals["hsr_hsd"], player_totals["total_distance_td"], 100.0)
     return player_totals
 
 
@@ -1599,18 +1599,18 @@ def prepare_match_totals_for_compare(
         return pd.DataFrame()
 
     match_totals["hsr_hsd"] = (
-        pd.to_numeric(match_totals.get("sprint"), errors="coerce").fillna(0.0)
-        + pd.to_numeric(match_totals.get("high_sprint"), errors="coerce").fillna(0.0)
+        pd.to_numeric(match_totals.get("zone_5"), errors="coerce").fillna(0.0)
+        + pd.to_numeric(match_totals.get("zone_6"), errors="coerce").fillna(0.0)
     )
-    match_totals["total_distance_90"] = _safe_divide_series(match_totals["total_distance"], match_totals["duration"], 90.0)
+    match_totals["total_distance_90"] = _safe_divide_series(match_totals["total_distance_td"], match_totals["duration"], 90.0)
     match_totals["hsr_hsd_90"] = _safe_divide_series(match_totals["hsr_hsd"], match_totals["duration"], 90.0)
-    match_totals["sprint_distance_90"] = _safe_divide_series(match_totals["high_sprint"], match_totals["duration"], 90.0)
+    match_totals["sprint_distance_90"] = _safe_divide_series(match_totals["zone_6"], match_totals["duration"], 90.0)
     if "number_of_sprints" in match_totals.columns:
         match_totals["sprint_count_90"] = _safe_divide_series(match_totals["number_of_sprints"], match_totals["duration"], 90.0)
     else:
         match_totals["sprint_count_90"] = pd.NA
-    match_totals["total_distance_per_min"] = _safe_divide_series(match_totals["total_distance"], match_totals["duration"])
-    match_totals["intensity_pct"] = _safe_divide_series(match_totals["hsr_hsd"], match_totals["total_distance"], 100.0)
+    match_totals["total_distance_per_min"] = _safe_divide_series(match_totals["total_distance_td"], match_totals["duration"])
+    match_totals["intensity_pct"] = _safe_divide_series(match_totals["hsr_hsd"], match_totals["total_distance_td"], 100.0)
     match_totals = match_totals.sort_values(["player_name", "datum"], ascending=[True, False]).reset_index(drop=True)
     return match_totals
 

@@ -20,6 +20,7 @@ from pages.Subscripts.gps_import_common import (
     rest_headers,
 )
 from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
+from pages.Subscripts.gps_import_tab_csv import tab_import_csv_main
 from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
@@ -561,7 +562,7 @@ def render_quality_tab(access_token: str) -> None:
             [
                 ("Rol", "Staff", "Autorisatie voor import, export en matchbeheer"),
                 ("Spelers", str(len(player_options)), "Beschikbare spelers voor handmatige invoer"),
-                ("Modules", "4", "Import, Manual add, Export en Matches"),
+                ("Modules", "5", "Excel-import, CSV-import, Manual add, Export en Matches"),
                 ("Workflow", "GPS Import", "Dagelijkse data-ingang voor de performance-omgeving"),
             ]
         )
@@ -585,13 +586,16 @@ def render_import_export_tab(access_token: str, role_ui: str) -> None:
     name_to_id, player_options = get_players_map(access_token)
     workflow = st.radio(
         "Workflow",
-        options=["Import (Excel)", "Manual add", "Export", "Matches"],
+        options=["Import (Excel)", "Import (CSV)", "Manual add", "Export", "Matches"],
         horizontal=True,
         key="management_workflow",
     )
 
     if workflow == "Import (Excel)":
         tab_import_excel_main(access_token=access_token, name_to_id=name_to_id)
+
+    elif workflow == "Import (CSV)":
+        tab_import_csv_main(access_token=access_token, name_to_id=name_to_id)
 
     elif workflow == "Manual add":
         tab_manual_add_main(

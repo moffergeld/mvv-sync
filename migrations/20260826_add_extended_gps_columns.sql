@@ -1,0 +1,31 @@
+alter table public.gps_records
+    add column if not exists distance_per_min numeric,
+    add column if not exists high_sprint_relative numeric,
+    add column if not exists sprint_relative numeric,
+    add column if not exists accelerations_relative numeric,
+    add column if not exists decelerations_relative numeric,
+    add column if not exists acceleration_impulse numeric,
+    add column if not exists total_acceleration_loading numeric,
+    add column if not exists total_deceleration_loading numeric,
+    add column if not exists max_acceleration numeric,
+    add column if not exists max_deceleration numeric,
+    add column if not exists explosive_distance numeric,
+    add column if not exists metabolic_distance_relative numeric,
+    add column if not exists hml_distance numeric,
+    add column if not exists hml_efforts_maximum_speed numeric,
+    add column if not exists lower_speed_loading numeric,
+    add column if not exists total_loading numeric,
+    add column if not exists player_max_speed numeric,
+    add column if not exists heart_rate_load numeric,
+    add column if not exists heart_rate_exertion numeric,
+    add column if not exists heart_rate_recovery_pct numeric,
+    add column if not exists heart_rate_recovery_beats integer,
+    add column if not exists heart_rate_variability numeric,
+    add column if not exists min_hr numeric,
+    add column if not exists acute_load numeric,
+    add column if not exists chronic_load numeric,
+    add column if not exists acwr numeric,
+    add column if not exists steps integer;
+
+comment on column public.gps_records.extra_metrics is
+    'Additional vendor metrics from broad GPS/player exports that are not mapped to the canonical gps_records columns.';

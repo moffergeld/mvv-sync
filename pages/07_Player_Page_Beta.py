@@ -177,12 +177,12 @@ def latest_gps_summary(sb, player_id: str) -> tuple[Optional[float], Optional[da
     if df.empty:
         return None, None
 
-    daily = gps_daily_aggregate(df, "total_distance")
+    daily = gps_daily_aggregate(df, "total_distance_td")
     if daily.empty:
         return None, None
 
     latest_row = daily.sort_values("datum").tail(1)
-    return float(latest_row["total_distance"].iloc[0]), latest_row["datum"].iloc[0]
+    return float(latest_row["total_distance_td"].iloc[0]), latest_row["datum"].iloc[0]
 
 
 def render_css() -> None:

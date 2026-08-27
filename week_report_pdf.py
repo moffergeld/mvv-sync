@@ -656,8 +656,8 @@ def build_week_report_pdf_bytes(
     story.append(Spacer(1, 10))
 
     cards = [
-        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high sprint distance", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance_td")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high zone_5 distance", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
         build_metric_card("Dist / Player", _fmt_distance(summary.get("dist_per_player")), "Teamload gedeeld door actieve spelers", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
         build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totale sprintacties in deze week", "#FFF7F8", "#E8C5CB", width=doc.width / 5.0),
         build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
@@ -898,7 +898,7 @@ def build_week_report_pdf_bytes(
         story.append(Spacer(1, 8))
 
     if isinstance(player_table, pd.DataFrame) and not player_table.empty:
-        top_distance = player_table.nlargest(10, "total_distance").sort_values("total_distance", ascending=True)
+        top_distance = player_table.nlargest(10, "total_distance_td").sort_values("total_distance_td", ascending=True)
         top_hsr = player_table.nlargest(10, "hsr_hsd").sort_values("hsr_hsd", ascending=True)
         top_sprints = player_table.nlargest(10, "sprints").sort_values("sprints", ascending=True)
         leader_row = Table(
@@ -906,7 +906,7 @@ def build_week_report_pdf_bytes(
                 build_horizontal_bar_chart_drawing(
                     "Top 10 Total Distance",
                     [str(value) for value in top_distance["player_name"].fillna("--").tolist()],
-                    _series_to_floats(top_distance["total_distance"]),
+                    _series_to_floats(top_distance["total_distance_td"]),
                     "#6E1222",
                 ),
                 build_horizontal_bar_chart_drawing(
@@ -955,7 +955,7 @@ def build_week_report_pdf_bytes(
                     str(row.get("label") or "--"),
                     _fmt_int(row.get("active_players")),
                     _fmt_int(row.get("player_sessions")),
-                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("total_distance_td")),
                     _fmt_distance(row.get("hsr_hsd")),
                     _fmt_int(row.get("sprints")),
                     _fmt_distance(row.get("distance_per_player")),
@@ -985,7 +985,7 @@ def build_week_report_pdf_bytes(
                     str(row.get("session_category") or "--"),
                     _fmt_int(row.get("active_players")),
                     _fmt_int(row.get("player_sessions")),
-                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("total_distance_td")),
                     _fmt_distance(row.get("hsr_hsd")),
                     _fmt_int(row.get("sprints")),
                     _fmt_speed(row.get("max_speed")),
@@ -1015,7 +1015,7 @@ def build_week_report_pdf_bytes(
                 [
                     str(row.get("player_name") or "--"),
                     _fmt_int(row.get("sessions")),
-                    _fmt_distance(row.get("total_distance")),
+                    _fmt_distance(row.get("total_distance_td")),
                     _fmt_distance(row.get("hsr_hsd")),
                     _fmt_int(row.get("sprints")),
                     _fmt_int(row.get("total_accelerations")),

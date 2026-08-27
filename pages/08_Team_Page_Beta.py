@@ -44,10 +44,10 @@ GROUP_ORDER = [
 ]
 
 ACWR_METRICS = [
-    ("total_distance", "TD"),
-    ("running", "Run"),
-    ("sprint", "Sprint"),
-    ("high_sprint", "HS"),
+    ("total_distance_td", "TD"),
+    ("zone_4", "Run"),
+    ("zone_5", "Sprint"),
+    ("zone_6", "HS"),
 ]
 
 ACWR_LIST_LABELS = {
@@ -978,7 +978,7 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance")
+            .select("player_id,datum,total_distance_td")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()
@@ -993,10 +993,10 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
         return df
 
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
-    df["total_distance"] = pd.to_numeric(df["total_distance"], errors="coerce").fillna(0.0)
+    df["total_distance_td"] = pd.to_numeric(df["total_distance_td"], errors="coerce").fillna(0.0)
     daily = (
         df.groupby(["player_id", "datum"], as_index=False)
-        .agg(total_distance=("total_distance", "sum"))
+        .agg(total_distance_td=("total_distance_td", "sum"))
         .sort_values(["player_id", "datum"])
     )
     return daily
@@ -1007,7 +1007,7 @@ def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance,running,sprint,high_sprint")
+            .select("player_id,datum,total_distance_td,zone_4,zone_5,zone_6")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()
@@ -1122,7 +1122,7 @@ def assemble_team_rows(sb, access_scope: str) -> pd.DataFrame:
 
     wellness_lookup = build_wellness_snapshot_lookup(wellness_df, "entry_date")
     rpe_lookup = build_snapshot_lookup(rpe_df, "entry_date", "rpe_avg")
-    gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance")
+    gps_lookup = build_snapshot_lookup(gps_df, "datum", "total_distance_td")
     current_week_label, acwr_lookup = build_current_week_acwr_lookup(acwr_weekly_df)
 
     rows: List[Dict[str, Any]] = []
@@ -1215,7 +1215,7 @@ def render_hero(df: pd.DataFrame) -> None:
               </div>
               <div class="team-pill-row">
                 <span class="team-pill">Readiness op basis van fysieke + mentale wellness-invoer</span>
-                <span class="team-pill">ACWR {acwr_meta['short_label']} week {current_week_label} op TD, running, sprint en high sprint</span>
+                <span class="team-pill">ACWR {acwr_meta['short_label']} week {current_week_label} op TD, zone_4, zone_5 en high zone_5</span>
               </div>
             </div>
           </div>
