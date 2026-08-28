@@ -688,8 +688,8 @@ def build_zone_totals(scope_df: pd.DataFrame) -> pd.DataFrame:
         ("zone_1_2", "Walking"),
         ("zone_3", "Jogging"),
         ("zone_4", "Running"),
-        ("zone_5", "Sprint"),
-        ("zone_6", "High Sprint"),
+        ("zone_5", "Zone 5"),
+        ("zone_6", "Zone 6"),
     ]
     rows = []
     for column, label in zone_map:

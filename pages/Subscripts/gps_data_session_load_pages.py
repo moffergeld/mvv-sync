@@ -15,8 +15,8 @@ COL_EVENT = "Event"
 COL_TYPE = "Type"
 
 COL_TD = "Total Distance"
-COL_SPRINT = "Sprint"
-COL_HS = "High Sprint"
+COL_SPRINT = "Zone 5"
+COL_HS = "Zone 6"
 COL_ACC_TOT = "Total Accelerations"
 COL_ACC_HI = "High Accelerations"
 COL_DEC_TOT = "Total Decelerations"
@@ -386,7 +386,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
 
 def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
-        st.info("Sprint / High Sprint kolommen niet compleet.")
+        st.info("Zone 5 / Zone 6 kolommen niet compleet.")
         return
 
     data = df_agg.sort_values(COL_SPRINT, ascending=False).reset_index(drop=True)
@@ -397,22 +397,22 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
 
     fig = go.Figure()
     fig.add_bar(
-        x=x - 0.19, y=sprint_vals, width=0.36, name="Sprint",
+        x=x - 0.19, y=sprint_vals, width=0.36, name="Zone 5",
         marker=dict(color=MVV_RED, line=dict(color="rgba(255,255,255,0.14)", width=1.2)),
-        hovertemplate="<b>%{x}</b><br>Sprint: %{y:,.0f} m<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Zone 5: %{y:,.0f} m<extra></extra>",
     )
     fig.add_bar(
-        x=x + 0.19, y=hs_vals, width=0.36, name="High Sprint",
+        x=x + 0.19, y=hs_vals, width=0.36, name="Zone 6",
         marker=dict(color=MVV_RED_LIGHT, line=dict(color="rgba(255,255,255,0.14)", width=1.2)),
-        hovertemplate="<b>%{x}</b><br>High Sprint: %{y:,.0f} m<extra></extra>",
+        hovertemplate="<b>%{x}</b><br>Zone 6: %{y:,.0f} m<extra></extra>",
     )
 
     ms = _median_safe(sprint_vals)
     mh = _median_safe(hs_vals)
     if ms is not None:
-        _add_median_line(fig, ms, f"Mediaan Sprint: {ms:,.0f} m".replace(",", " "))
+        _add_median_line(fig, ms, f"Mediaan Zone 5: {ms:,.0f} m".replace(",", " "))
     if mh is not None:
-        _add_median_line(fig, mh, f"Mediaan High Sprint: {mh:,.0f} m".replace(",", " "))
+        _add_median_line(fig, mh, f"Mediaan Zone 6: {mh:,.0f} m".replace(",", " "))
 
     if groups:
         for gname, gplayers in groups.items():
@@ -424,7 +424,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
                 _add_median_line(fig, m2, f"{gname} HS: {m2:,.0f} m".replace(",", " "))
 
     fig.update_xaxes(tickvals=x, ticktext=players)
-    _style_fig(fig, title="Sprint & High Sprint", y_title="Meters")
+    _style_fig(fig, title="Zone 5 & Zone 6", y_title="Meters")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
@@ -600,7 +600,7 @@ def session_load_pages_main(
     with c2:
         _metric_card("Mediaan TD", f"{median_td:,.0f} m".replace(",", " ") if median_td is not None else "–")
     with c3:
-        _metric_card("Mediaan Sprint", f"{median_sprint:,.0f} m".replace(",", " ") if median_sprint is not None else "–")
+        _metric_card("Mediaan Zone 5", f"{median_sprint:,.0f} m".replace(",", " ") if median_sprint is not None else "–")
     with c4:
         _metric_card("Mediaan TRIMP", f"{median_trimp:,.1f}".replace(",", " ") if median_trimp is not None else "–")
 

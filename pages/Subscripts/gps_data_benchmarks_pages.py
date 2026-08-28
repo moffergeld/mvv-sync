@@ -192,8 +192,8 @@ def compute_gref(
     out = out.rename(
         columns={
             "total_distance_td": "Total Distance",
-            "zone_5": "Sprint",
-            "zone_6": "High Sprint",
+            "zone_5": "Zone 5",
+            "zone_6": "Zone 6",
             "playerload2d": "playerload2D",
             "total_accelerations": "Total Accelerations",
             "high_accelerations": "High Accelerations",
@@ -205,8 +205,8 @@ def compute_gref(
     col_order = [
         "Speler",
         "Total Distance",
-        "Sprint",
-        "High Sprint",
+        "Zone 5",
+        "Zone 6",
         "playerload2D",
         "Total Accelerations",
         "High Accelerations",
@@ -266,8 +266,8 @@ def compute_gref_per_min(
     out = out.rename(
         columns={
             "total_distance_td": "Total Distance /min",
-            "zone_5": "Sprint /min",
-            "zone_6": "High Sprint /min",
+            "zone_5": "Zone 5 /min",
+            "zone_6": "Zone 6 /min",
             "playerload2d": "playerload2D /min",
             "total_accelerations": "Total Acc /min",
             "high_accelerations": "High Acc /min",
@@ -279,8 +279,8 @@ def compute_gref_per_min(
     col_order = [
         "Speler",
         "Total Distance /min",
-        "Sprint /min",
-        "High Sprint /min",
+        "Zone 5 /min",
+        "Zone 6 /min",
         "playerload2D /min",
         "Total Acc /min",
         "High Acc /min",
@@ -307,8 +307,8 @@ def compute_gref_for_minutes(df_gref_per_min: pd.DataFrame, minutes: float) -> p
     out = df_gref_per_min.copy()
     rename_map = {
         "Total Distance /min": "Total Distance",
-        "Sprint /min": "Sprint",
-        "High Sprint /min": "High Sprint",
+        "Zone 5 /min": "Zone 5",
+        "Zone 6 /min": "Zone 6",
         "playerload2D /min": "playerload2D",
         "Total Acc /min": "Total Accelerations",
         "High Acc /min": "High Accelerations",

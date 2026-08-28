@@ -795,7 +795,7 @@ def render_kpi_row(df_phase: pd.DataFrame) -> None:
     with c2:
         _kpi_card("Mediaan TD", f"{_fmt_int0(med_td)} m")
     with c3:
-        _kpi_card("Mediaan Sprint", f"{_fmt_int0(med_spr)} m")
+        _kpi_card("Mediaan Zone 5", f"{_fmt_int0(med_spr)} m")
     with c4:
         _kpi_card("Peak Speed", f"{_fmt_max_speed2(peak_speed)}")
 
@@ -914,24 +914,24 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
         go.Bar(
             x=dff[COL_PLAYER],
             y=dff[COL_SPR],
-            name="Sprint",
+            name="Zone 5",
             marker=dict(
                 color="rgba(232,33,63,0.92)",
                 line=dict(color="rgba(255,255,255,0.14)", width=1),
             ),
-            hovertemplate="<b>%{x}</b><br>Sprint: <b>%{y:,.0f} m</b><extra></extra>",
+            hovertemplate="<b>%{x}</b><br>Zone 5: <b>%{y:,.0f} m</b><extra></extra>",
         )
     )
     fig.add_trace(
         go.Bar(
             x=dff[COL_PLAYER],
             y=dff[COL_HSPR],
-            name="High Sprint",
+            name="Zone 6",
             marker=dict(
                 color="rgba(255,110,130,0.60)",
                 line=dict(color="rgba(255,255,255,0.12)", width=1),
             ),
-            hovertemplate="<b>%{x}</b><br>High Sprint: <b>%{y:,.0f} m</b><extra></extra>",
+            hovertemplate="<b>%{x}</b><br>Zone 6: <b>%{y:,.0f} m</b><extra></extra>",
         )
     )
 
@@ -940,7 +940,7 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
         line_width=1.2,
         line_dash="dot",
         line_color="rgba(255,255,255,0.36)",
-        annotation_text=f"Mediaan Sprint: {_fmt_int0(sprint_med)} m",
+        annotation_text=f"Mediaan Zone 5: {_fmt_int0(sprint_med)} m",
         annotation_position="top left",
         annotation_font=dict(size=10, color="rgba(255,255,255,0.68)"),
     )
@@ -949,7 +949,7 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
         line_width=1.2,
         line_dash="dash",
         line_color="rgba(255,180,190,0.40)",
-        annotation_text=f"Mediaan High Sprint: {_fmt_int0(hs_med)} m",
+        annotation_text=f"Mediaan Zone 6: {_fmt_int0(hs_med)} m",
         annotation_position="top right",
         annotation_font=dict(size=10, color="rgba(255,255,255,0.68)"),
     )
@@ -1077,7 +1077,7 @@ def render_tables_row(df_phase: pd.DataFrame) -> None:
     t5 = t5.sort_values(LABEL_MAX, ascending=False)
 
     tab_td, tab_run, tab_spr, tab_hspr, tab_max = st.tabs(
-        ["TD", "Running", "Sprint", "High Sprint", "Max Speed"]
+        ["TD", "Running", "Zone 5", "Zone 6", "Max Speed"]
     )
 
     with tab_td:
@@ -1336,7 +1336,7 @@ def main() -> None:
     with chart_l:
         plot_td_bar(df_phase, title=f"Total Distance ({phase})")
     with chart_r:
-        plot_sprint_vs_high(df_phase, title=f"Sprint vs High Sprint ({phase})")
+        plot_sprint_vs_high(df_phase, title=f"Zone 5 vs Zone 6 ({phase})")
 
     st.markdown("### Tables")
     render_tables_row(df_phase)

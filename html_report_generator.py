@@ -20,8 +20,8 @@ ZONE_SPECS = [
     ("Walking", "zone_1_2", "#F5D2D8"),
     ("Jogging", "zone_3", "#F1A4B5"),
     ("Running", "zone_4", "#E97A93"),
-    ("Sprint", "zone_5", "#D92B4D"),
-    ("High Sprint", "zone_6", "#6E1222"),
+    ("Zone 5", "zone_5", "#D92B4D"),
+    ("Zone 6", "zone_6", "#6E1222"),
 ]
 ZONE_COLOR_LOOKUP = {label: color for label, _, color in ZONE_SPECS}
 

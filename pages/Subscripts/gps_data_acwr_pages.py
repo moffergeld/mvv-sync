@@ -61,7 +61,7 @@ EXCLUDE_METRICS = {
 }
 EXCLUDE_SUFFIXES = ("/min",)
 
-DEFAULT_PREF_METRICS = ["Total Distance", "Sprint", "High Sprint", "playerload2D"]
+DEFAULT_PREF_METRICS = ["Total Distance", "Zone 5", "Zone 6", "playerload2D"]
 
 
 # ------------------------------------------------------------

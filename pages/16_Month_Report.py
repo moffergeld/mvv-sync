@@ -734,8 +734,8 @@ def build_zone_totals(month_df: pd.DataFrame) -> pd.DataFrame:
         ("Walking", float(month_df["zone_1_2"].sum())),
         ("Jogging", float(month_df["zone_3"].sum())),
         ("Running", float(month_df["zone_4"].sum())),
-        ("Sprint", float(month_df["zone_5"].sum())),
-        ("High Sprint", float(month_df["zone_6"].sum())),
+        ("Zone 5", float(month_df["zone_5"].sum())),
+        ("Zone 6", float(month_df["zone_6"].sum())),
     ]
     zone_df = pd.DataFrame(zone_rows, columns=["zone", "value"])
     return zone_df[zone_df["value"] > 0].reset_index(drop=True)

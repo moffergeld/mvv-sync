@@ -46,8 +46,8 @@ GROUP_ORDER = [
 ACWR_METRICS = [
     ("total_distance_td", "TD"),
     ("zone_4", "Run"),
-    ("zone_5", "Sprint"),
-    ("zone_6", "HS"),
+    ("zone_5", "Zone 5"),
+    ("zone_6", "Zone 6"),
 ]
 
 ACWR_LIST_LABELS = {
