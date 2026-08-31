@@ -360,14 +360,15 @@ def fetch_active_players_cached(sb_url_key: str, _sb, ttl_salt: str = "") -> pd.
     attempts = [
         lambda: (
             _sb.table("players")
-            .select("player_id,full_name,is_active")
+            .select("player_id,full_name,is_active,forms_status")
             .eq("is_active", True)
+            .eq("forms_status", "actief")
             .order("full_name")
             .execute()
         ),
         lambda: (
             _sb.table("players")
-            .select("player_id,full_name,is_active")
+            .select("player_id,full_name,is_active,forms_status")
             .order("full_name")
             .execute()
         ),
@@ -417,6 +418,10 @@ def fetch_active_players_cached(sb_url_key: str, _sb, ttl_salt: str = "") -> pd.
         active_mask = _bool_mask(df["is_active"])
         if active_mask.any():
             df = df.loc[active_mask].copy()
+
+    if "forms_status" in df.columns:
+        forms_mask = df["forms_status"].fillna("actief").astype(str).str.strip().str.lower().eq("actief")
+        df = df.loc[forms_mask].copy()
 
     df["player_id"] = df["player_id"].astype(str)
     df["full_name"] = df["full_name"].astype(str)

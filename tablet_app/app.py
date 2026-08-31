@@ -1409,15 +1409,28 @@ def fetch_active_players(_sb) -> List[Dict[str, str]]:
     try:
         rows = (
             _sb.table("players")
-            .select("player_id,full_name")
+            .select("player_id,full_name,forms_status")
             .eq("is_active", True)
+            .eq("forms_status", "actief")
             .order("full_name")
             .execute()
             .data
             or []
         )
     except Exception:
-        rows = []
+        # Keeps the tablet usable while a newly deployed schema is still reloading.
+        try:
+            rows = (
+                _sb.table("players")
+                .select("player_id,full_name")
+                .eq("is_active", True)
+                .order("full_name")
+                .execute()
+                .data
+                or []
+            )
+        except Exception:
+            rows = []
 
     out: List[Dict[str, str]] = []
     for row in rows:

@@ -74,6 +74,23 @@ def fetch_player_name_cached(_sb, player_id: str) -> str:
 
 
 @st.cache_data(show_spinner=False, ttl=300)
+def fetch_forms_status_cached(_sb, player_id: str) -> str:
+    try:
+        row = (
+            _sb.table("players")
+            .select("forms_status")
+            .eq("player_id", player_id)
+            .maybe_single()
+            .execute()
+            .data
+            or {}
+        )
+        return str(row.get("forms_status") or "actief").strip().lower()
+    except Exception:
+        return "actief"
+
+
+@st.cache_data(show_spinner=False, ttl=300)
 def build_player_image_index() -> Dict[str, str]:
     out: Dict[str, str] = {}
     if not PLAYER_IMG_DIR.exists():
@@ -510,7 +527,10 @@ def main() -> None:
         render_data_tab(sb, target_player_id)
 
     with tabs[2]:
-        render_forms_tab(sb, target_player_id)
+        if fetch_forms_status_cached(sb, target_player_id) == "actief":
+            render_forms_tab(sb, target_player_id)
+        else:
+            st.info("Forms staan voor deze speler op inactief.")
 
     render_sidebar_footer(profile)
 
