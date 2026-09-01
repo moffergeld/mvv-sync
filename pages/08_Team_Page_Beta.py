@@ -45,9 +45,9 @@ GROUP_ORDER = [
 
 ACWR_METRICS = [
     ("total_distance_td", "TD"),
-    ("zone_4", "Run"),
-    ("zone_5", "Zone 5"),
-    ("zone_6", "Zone 6"),
+    ("td_zone_4", "Zone 4"),
+    ("td_zone_5", "Zone 5"),
+    ("td_zone_6", "Zone 6"),
 ]
 
 ACWR_LIST_LABELS = {
@@ -1007,7 +1007,7 @@ def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance_td,zone_4,zone_5,zone_6")
+            .select("player_id,datum,total_distance_td,td_zone_4,td_zone_5,td_zone_6")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()

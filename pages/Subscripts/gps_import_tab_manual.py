@@ -1,7 +1,7 @@
 # gps_import_tab_manual.py
 # ============================================================
 # Manual add (cards v3)
-# - Default metrics = 4 (duration, total_distance_td, zone_5, zone_6)
+# - Default metrics = 4 (duration, total_distance_td, td_zone_5, td_zone_6)
 # - Load existing records by (player_id + datum + type)  ✅ NOT filtered on event
 # - Per player: pick which event-record you want to edit (dropdown from existing events)
 # - Day mean/median: compute from current UI values; apply to chosen players; optional source-event filter
@@ -77,11 +77,11 @@ TEMPLATE_COLS = [
     "match_id",
     "duration",
     "total_distance_td",
-    "zone_1_2",
-    "zone_3",
-    "zone_4",
-    "zone_5",
-    "zone_6",
+    "td_zone_1_2",
+    "td_zone_3",
+    "td_zone_4",
+    "td_zone_5",
+    "td_zone_6",
     "number_of_sprints",
     "number_of_high_sprints",
     "number_of_repeated_sprints",
@@ -109,7 +109,7 @@ BASIC_KEYS = ["player_name", "datum", "type", "event", "match_id", "source_file"
 METRIC_KEYS = [c for c in TEMPLATE_COLS if c not in BASIC_KEYS]
 
 # ✅ jouw wens: standaard = 4 metrics
-DEFAULT_METRICS = ["duration", "total_distance_td", "zone_5", "zone_6"]
+DEFAULT_METRICS = ["duration", "total_distance_td", "td_zone_5", "td_zone_6"]
 
 
 # ------------------------------------------------------------

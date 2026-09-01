@@ -723,7 +723,7 @@ def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) 
     try:
         rows = (
             _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance_td,zone_4,zone_5,zone_6")
+            .select("player_id,datum,total_distance_td,td_zone_4,td_zone_5,td_zone_6")
             .gte("datum", start_iso)
             .lte("datum", end_iso)
             .execute()

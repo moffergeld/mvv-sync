@@ -62,17 +62,17 @@ MATCH_FILTER_FRIENDLY = "Oefenwedstrijd"
 
 COL_PLAYER = "player_name"
 COL_TD = "total_distance_td"
-COL_RUN = "zone_4"
-COL_SPR = "zone_5"
-COL_HSPR = "zone_6"
+COL_RUN = "td_zone_4"
+COL_SPR = "td_zone_5"
+COL_HSPR = "td_zone_6"
 COL_MAX = "max_speed"
 COL_DUR = "duration"
 
 LABEL_PLAYER = "Player"
 LABEL_TD = "TD"
-LABEL_RUN = "14.4â€“19.7"
-LABEL_SPR = "19.8â€“25.1"
-LABEL_HSPR = "25.2+"
+LABEL_RUN = "Zone 4"
+LABEL_SPR = "Zone 5"
+LABEL_HSPR = "Zone 6"
 LABEL_MAX = "Max Speed"
 LABEL_PERMIN = "/min"
 
@@ -707,7 +707,7 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
     res = (
         sb.table("v_gps_match_events")
         .select(
-            "gps_id,match_id,player_id,player_name,datum,type,event,duration,total_distance_td,zone_4,zone_5,zone_6,max_speed"
+            "gps_id,match_id,player_id,player_name,datum,type,event,duration,total_distance_td,td_zone_4,td_zone_5,td_zone_6,max_speed"
         )
         .eq("match_id", match_id)
         .execute()
