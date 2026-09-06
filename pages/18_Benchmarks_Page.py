@@ -2860,6 +2860,7 @@ def render_match_averages_tab(sb) -> None:
         st.markdown('<div class="bench-empty">Nog geen Match Summary-data van actieve spelers beschikbaar.</div>', unsafe_allow_html=True)
         return
 
+    active_players = apply_benchmark_position_overrides(active_players)
     active_ids = set(active_players["player_id"].astype(str))
     match_df = match_df.loc[match_df["player_id"].isin(active_ids)].copy()
     if match_df.empty:
@@ -2892,6 +2893,14 @@ def render_match_averages_tab(sb) -> None:
         )
         .sort_values("player_name")
     )
+    player_averages = player_averages.merge(
+        active_players[["player_id", "benchmark_position_source"]].rename(
+            columns={"benchmark_position_source": "Subpositie"}
+        ),
+        on="player_id",
+        how="left",
+    )
+    player_averages["Subpositie"] = player_averages["Subpositie"].fillna("").replace("", "Onbekend")
     team_averages = player_averages[metric_keys].mean(numeric_only=True)
     latest_match = scoped_df["datum"].max()
     card_note = f"{len(player_averages)} actieve spelers | {scoped_df['match_key'].nunique()} wedstrijden"
@@ -2899,8 +2908,42 @@ def render_match_averages_tab(sb) -> None:
         (label, _format_match_average_metric(metric, team_averages.get(metric)), card_note)
         for metric, label in MATCH_AVERAGE_METRICS.items()
     ]
-    render_stat_cards(cards, columns_per_row=4)
-    st.caption(f"Meest recente wedstrijd in de selectie: {latest_match:%d-%m-%Y}. HSR = Zone 5 + Zone 6.")
+    position_averages = (
+        player_averages.groupby("Subpositie", as_index=False)
+        .agg(
+            Spelers=("player_id", "nunique"),
+            Wedstrijden=("wedstrijden", "sum"),
+            **{metric: (metric, "mean") for metric in metric_keys},
+        )
+        .sort_values("Subpositie")
+    )
+
+    team_tab, position_tab, player_tab = st.tabs(["Team", "Subposities", "Individueel"])
+    with team_tab:
+        render_stat_cards(cards, columns_per_row=4)
+        st.caption(f"Meest recente wedstrijd in de selectie: {latest_match:%d-%m-%Y}. HSR = Zone 5 + Zone 6.")
+
+    def format_average_table(frame: pd.DataFrame) -> pd.DataFrame:
+        formatted = frame.copy()
+        for metric in ["total_distance_td", "td_zone_5", "td_zone_6", "hsr"]:
+            formatted[metric] = formatted[metric].map(_format_distance)
+        for metric in ["heart_rate_exertion", "csv_hmld_per_minute", "csv_fatigue_index", "csv_dynamic_stress_load"]:
+            formatted[metric] = formatted[metric].map(lambda value: _format_decimal(value, 1))
+        return formatted
+
+    with position_tab:
+        position_display = format_average_table(position_averages).rename(columns={
+            "total_distance_td": "TD",
+            "td_zone_5": "Zone 5",
+            "td_zone_6": "Zone 6",
+            "hsr": "HSR (Zone 5 + 6)",
+            "heart_rate_exertion": "HR Exertion",
+            "csv_hmld_per_minute": "HMLD / min",
+            "csv_fatigue_index": "Fatigue Index",
+            "csv_dynamic_stress_load": "Dynamic Stress Load",
+        })
+        st.dataframe(position_display, width="stretch", hide_index=True)
+        st.caption("Subpositie is de ingestelde subpositie; zonder instelling wordt de hoofdpositie gebruikt.")
 
     display_df = player_averages.rename(columns={
         "player_name": "Speler",
@@ -2914,15 +2957,16 @@ def render_match_averages_tab(sb) -> None:
         "csv_fatigue_index": "Fatigue Index",
         "csv_dynamic_stress_load": "Dynamic Stress Load",
     })
-    for metric in ["TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)"]:
-        display_df[metric] = display_df[metric].map(_format_distance)
-    for metric in ["HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]:
-        display_df[metric] = display_df[metric].map(lambda value: _format_decimal(value, 1))
-    st.dataframe(
-        display_df[["Speler", "Wedstrijden", "TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)", "HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]],
-        width="stretch",
-        hide_index=True,
-    )
+    with player_tab:
+        for metric in ["TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)"]:
+            display_df[metric] = display_df[metric].map(_format_distance)
+        for metric in ["HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]:
+            display_df[metric] = display_df[metric].map(lambda value: _format_decimal(value, 1))
+        st.dataframe(
+            display_df[["Speler", "Subpositie", "Wedstrijden", "TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)", "HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]],
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def main() -> None:
