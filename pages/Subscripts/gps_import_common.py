@@ -1074,6 +1074,9 @@ CSV_SOURCE_COLUMN_MAP.update({
     # Keep the time string out of the numeric percentage column.
     "ballinplaytime": "csv_ball_in_play_time",
     "ballinplaypercentage": "csv_ball_in_play_time_pct",
+    # Compact exports abbreviate these dashboard metrics differently than full exports.
+    "dsl": "csv_dynamic_stress_load",
+    "hmldpermin": "csv_hmld_per_minute",
     "distancez1abs": "csv_distance_zone_1_absolute",
     "distancez1rel": "csv_distance_zone_1_relative",
     "distancez2abs": "csv_distance_zone_2_absolute",
