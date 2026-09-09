@@ -99,17 +99,33 @@ Daarnaast blijft de bestaande dependency voor de legacy-PDF bestaan:
 
 - `reportlab`
 
-## WeasyPrint systeembibliotheken
+## Cloud-installatie en WeasyPrint systeembibliotheken
 
-Afhankelijk van de omgeving heeft WeasyPrint extra systeembibliotheken nodig.
-Voor de cloud-deploy staat de Linux-lijst nu in:
+Streamlit Community Cloud gebruikt `environment.yml`. Deze installeert Python 3.11
+(gelijk aan de developmentcontainer) en WeasyPrint via `conda-forge`, inclusief de
+benodigde Pango-, HarfBuzz- en Fontconfig-bibliotheken. Daarna installeert pip de
+bestaande Python-dependencies uit `requirements.txt` in dezelfde omgeving.
+`requirements.txt` blijft zo de gedeelde lijst voor de app; de cloud kiest bewust
+`environment.yml` als bovenliggende installatieconfiguratie.
 
-- `packages.txt`
+Er staat geen `packages.txt` in de repository-root. Daardoor vraagt deze app geen
+APT-installatie aan tijdens de cloud-build. Op 9 september 2026 mislukte die stap
+door een verlopen `bullseye-security/InRelease` in de Streamlit-serveromgeving,
+voordat de Python-dependencies werden geinstalleerd. De Conda-installatie levert
+de PDF-bibliotheken zonder deze Debian-packagebron te gebruiken.
 
-Voor lokale Windows-omgevingen kan een extra GTK/Pango/Cairo-runtime nodig zijn.
-Voor Linux-deployments is meestal een set renderbibliotheken nodig die door het platform beschikbaar moet zijn.
+De Debian-pakketten voor de lokale developmentcontainer staan in
+`.devcontainer/packages.txt`; de container installeert deze zelf op Debian Bookworm.
+Voor lokale Windows-omgevingen kan een extra GTK/Pango-runtime nodig zijn.
 
-Als `report_style="html"` een dependencyfout geeft, blijft `report_style="legacy"` altijd als fallback beschikbaar.
+Na publicatie van deze wijziging moet de cloud-build `environment.yml` verwerken.
+Controleer daarna of het dashboard start en zowel een weekrapport als een
+spelersrapport als PDF kan worden gedownload. Als de oude build zichtbaar blijft,
+gebruik dan `Manage app` > `Reboot app`. Een geslaagde lokale controle bewijst nog
+niet dat de cloud-deploy is hersteld.
+
+Bronnen: [Streamlit dependencyselectie](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies)
+en [WeasyPrint via Conda](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#conda).
 
 ## Secrets en Supabase
 

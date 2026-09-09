@@ -1,0 +1,13 @@
+# Streamlit Community Cloud uses this file before requirements.txt.
+# Conda supplies WeasyPrint's native libraries without invoking Debian apt.
+name: mvv-sync
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # Match the development container's Python version.
+  - python=3.11
+  - pip
+  - weasyprint
+  - pip:
+      - -r requirements.txt
