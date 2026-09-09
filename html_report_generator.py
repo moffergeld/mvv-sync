@@ -26,9 +26,8 @@ ZONE_SPECS = [
 ZONE_COLOR_LOOKUP = {label: color for label, _, color in ZONE_SPECS}
 
 HTML_RUNTIME_UNAVAILABLE_MESSAGE = (
-    "PDF-export voor dit rapport is op deze server nog niet beschikbaar. "
-    "De WeasyPrint runtime mist nog Linux-systeembibliotheken. "
-    "Na redeploy met de packages uit packages.txt moet deze export weer werken."
+    "PDF-export voor dit rapport is op deze server niet beschikbaar. "
+    "Neem contact op met de beheerder."
 )
 
 
