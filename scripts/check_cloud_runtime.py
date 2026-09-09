@@ -6,8 +6,8 @@ import sys
 
 def main() -> None:
     print(f"Checking cloud runtime: {sys.executable} ({sys.version.split()[0]})")
-    if sys.version_info[:2] != (3, 13):
-        raise RuntimeError("The cloud dependency check requires Python 3.13.")
+    if sys.version_info[:2] != (3, 14):
+        raise RuntimeError("The cloud dependency check requires Python 3.14.")
 
     modules = (
         "streamlit",

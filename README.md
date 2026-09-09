@@ -102,7 +102,7 @@ Daarnaast blijft de bestaande dependency voor de legacy-PDF bestaan:
 ## Cloud-installatie en WeasyPrint systeembibliotheken
 
 Streamlit Community Cloud gebruikt `environment.yml`. Deze richt zich op de
-`base`-omgeving met Python 3.13, waar de cloud de Streamlit-server start, en
+`base`-omgeving met Python 3.14, waar de cloud de Streamlit-server start, en
 installeert WeasyPrint via `conda-forge`, inclusief de benodigde Pango-, HarfBuzz-
 en Fontconfig-bibliotheken. De overige Python-dependencies staan expliciet in
 het `pip`-gedeelte van dezelfde file. Zo zijn deze niet afhankelijk van de

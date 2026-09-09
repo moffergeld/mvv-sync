@@ -6,8 +6,8 @@ channels:
   - conda-forge
   - nodefaults
 dependencies:
-  # Match the Python version shown in the Community Cloud runtime logs.
-  - python=3.13
+  # Community Cloud's current Conda base packages require Python 3.14.
+  - python=3.14
   - pip
   # Keep base compatible with Conda's own Python dependency requirement.
   - ruamel.yaml<0.19
