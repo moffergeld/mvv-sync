@@ -101,12 +101,20 @@ Daarnaast blijft de bestaande dependency voor de legacy-PDF bestaan:
 
 ## Cloud-installatie en WeasyPrint systeembibliotheken
 
-Streamlit Community Cloud gebruikt `environment.yml`. Deze installeert Python 3.11
-(gelijk aan de developmentcontainer) en WeasyPrint via `conda-forge`, inclusief de
-benodigde Pango-, HarfBuzz- en Fontconfig-bibliotheken. Daarna installeert pip de
-bestaande Python-dependencies uit `requirements.txt` in dezelfde omgeving.
-`requirements.txt` blijft zo de gedeelde lijst voor de app; de cloud kiest bewust
-`environment.yml` als bovenliggende installatieconfiguratie.
+Streamlit Community Cloud gebruikt `environment.yml`. Deze richt zich op de
+`base`-omgeving met Python 3.13, waar de cloud de Streamlit-server start, en
+installeert WeasyPrint via `conda-forge`, inclusief de benodigde Pango-, HarfBuzz-
+en Fontconfig-bibliotheken. De overige Python-dependencies staan expliciet in
+het `pip`-gedeelte van dezelfde file. Zo zijn deze niet afhankelijk van de
+werkdirectory waarmee de cloud-installer een geneste requirementsfile opent.
+Houd deze lijst gelijk aan `requirements.txt`, behalve WeasyPrint dat Conda levert.
+De lokale developmentcontainer gebruikt `requirements.txt` met Python 3.11.
+
+De GitHub Actions-workflow `Check cloud runtime` installeert deze configuratie in
+een Linux Conda-baseomgeving. De controle importeert alle app-dependencies,
+waaronder `extra_streamlit_components`, en rendert een kleine PDF met WeasyPrint.
+Dit controleert de daadwerkelijke installatie; een dependency-solve alleen
+bewijst niet dat de modules beschikbaar zijn in de interpreter van de server.
 
 Er staat geen `packages.txt` in de repository-root. Daardoor vraagt deze app geen
 APT-installatie aan tijdens de cloud-build. Op 9 september 2026 mislukte die stap
