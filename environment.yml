@@ -9,6 +9,8 @@ dependencies:
   # Match the Python version shown in the Community Cloud runtime logs.
   - python=3.13
   - pip
+  # Keep base compatible with Conda's own Python dependency requirement.
+  - ruamel.yaml<0.19
   - weasyprint
   - pip:
       # List packages explicitly so cloud installation does not depend on
