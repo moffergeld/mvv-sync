@@ -157,12 +157,6 @@ MATCH_AVERAGE_SELECT = (
     "csv_hmld_per_minute,csv_fatigue_index,csv_dynamic_stress_load"
 )
 
-SESSION_TREND_SELECT = (
-    "gps_id,datum,player_id,player_name,type,event,duration,total_distance_td,"
-    "td_zone_5,td_zone_6,heart_rate_exertion,csv_hmld_per_minute,"
-    "csv_fatigue_index,csv_dynamic_stress_load"
-)
-
 MATCH_AVERAGE_METRICS = {
     "total_distance_td": "TD",
     "td_zone_5": "Zone 5",
@@ -172,17 +166,6 @@ MATCH_AVERAGE_METRICS = {
     "csv_hmld_per_minute": "HMLD / min",
     "csv_fatigue_index": "Fatigue Index",
     "csv_dynamic_stress_load": "Dynamic Stress Load",
-}
-
-SESSION_TREND_METRICS = {
-    "total_distance_td": ("TD", "m"),
-    "td_zone_5": ("Zone 5", "m"),
-    "td_zone_6": ("Zone 6", "m"),
-    "hsr": ("HSR (Zone 5 + 6)", "m"),
-    "heart_rate_exertion": ("HR Exertion", ""),
-    "csv_hmld_per_minute": ("HMLD / min", ""),
-    "csv_fatigue_index": ("Fatigue Index", ""),
-    "csv_dynamic_stress_load": ("Dynamic Stress Load", ""),
 }
 
 METRIC_SPECS = {
@@ -1604,31 +1587,6 @@ def fetch_match_summary_averages_cached(_access_token: str) -> pd.DataFrame:
     return df.dropna(subset=["datum"]).copy()
 
 
-@st.cache_data(show_spinner=False, ttl=300)
-def fetch_session_trend_history_cached(_access_token: str, start_iso: str) -> pd.DataFrame:
-    raw = rest_get_paged(
-        _access_token,
-        "gps_records",
-        f"select={SESSION_TREND_SELECT}&event=eq.Summary&datum=gte.{start_iso}&order=datum.asc,gps_id.asc",
-    )
-    if raw.empty:
-        return raw
-
-    df = raw.copy()
-    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
-    df["player_id"] = df["player_id"].fillna("").astype(str)
-    df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
-    df["type"] = df["type"].fillna("").astype(str).str.strip()
-    for column in SESSION_TREND_METRICS:
-        if column in df.columns:
-            df[column] = pd.to_numeric(df[column], errors="coerce")
-    for column in ("td_zone_5", "td_zone_6"):
-        if column not in df.columns:
-            df[column] = 0.0
-    df["hsr"] = df["td_zone_5"].fillna(0.0) + df["td_zone_6"].fillna(0.0)
-    return df.dropna(subset=["datum"]).copy()
-
-
 def _select_match_event_rows(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -2881,45 +2839,6 @@ def _format_match_average_metric(metric_key: str, value: object) -> str:
     return _format_decimal(value, 1)
 
 
-def build_subposition_trend_chart(
-    player_weekly: pd.DataFrame,
-    peer_weekly: pd.DataFrame,
-    player_name: str,
-    metric_key: str,
-) -> go.Figure:
-    metric_label, unit = SESSION_TREND_METRICS[metric_key]
-    suffix = f" {unit}" if unit else ""
-    fig = go.Figure()
-    fig.update_layout(**_chart_layout(f"{player_name} | {metric_label}", height=350))
-    fig.update_xaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT))
-    fig.update_yaxes(gridcolor=MVV_GRID, tickfont=dict(color=MVV_TEXT_SOFT), ticksuffix=suffix)
-    fig.add_trace(
-        go.Scatter(
-            x=player_weekly["week_start"],
-            y=player_weekly[metric_key],
-            name=player_name,
-            mode="lines+markers",
-            line=dict(color=MVV_RED, width=3),
-            marker=dict(size=8),
-            customdata=player_weekly[["sessions"]],
-            hovertemplate=f"<b>{player_name}</b><br>%{{x|%d-%m}}<br>{metric_label}: %{{y:.1f}}{suffix}<br>Sessies: %{{customdata[0]}}<extra></extra>",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=peer_weekly["week_start"],
-            y=peer_weekly[metric_key],
-            name="Overige CM",
-            mode="lines+markers",
-            line=dict(color=MVV_GOLD, width=2, dash="dash"),
-            marker=dict(size=7),
-            customdata=peer_weekly[["players"]],
-            hovertemplate=f"<b>Overige CM</b><br>%{{x|%d-%m}}<br>{metric_label}: %{{y:.1f}}{suffix}<br>Spelers: %{{customdata[0]}}<extra></extra>",
-        )
-    )
-    return fig
-
-
 def render_match_averages_tab(sb) -> None:
     st.markdown(
         '<div class="bench-section-copy">Gemiddelde wedstrijdload van actieve spelers. Eerst wordt per speler het gemiddelde over zijn wedstrijden berekend; daarna het teamgemiddelde. Zo telt iedere actieve speler even zwaar mee.</div>',
@@ -2999,7 +2918,7 @@ def render_match_averages_tab(sb) -> None:
         .sort_values("Subpositie")
     )
 
-    team_tab, position_tab, player_tab, trend_tab = st.tabs(["Team", "Subposities", "Individueel", "Verloop"])
+    team_tab, position_tab, player_tab = st.tabs(["Team", "Subposities", "Individueel"])
     with team_tab:
         render_stat_cards(cards, columns_per_row=4)
         st.caption(f"Meest recente wedstrijd in de selectie: {latest_match:%d-%m-%Y}. HSR = Zone 5 + Zone 6.")
@@ -3048,63 +2967,6 @@ def render_match_averages_tab(sb) -> None:
             width="stretch",
             hide_index=True,
         )
-
-    with trend_tab:
-        st.caption("Weekgemiddelde per sessie. De referentielijn is steeds het gemiddelde van de overige actieve CM-spelers, zonder de geselecteerde speler.")
-        try:
-            trend_df = fetch_session_trend_history_cached(
-                get_access_token(),
-                (date.today() - timedelta(days=41)).isoformat(),
-            )
-        except Exception as exc:
-            st.markdown(f'<div class="bench-empty">Kon het verloop niet laden: {exc}</div>', unsafe_allow_html=True)
-            return
-
-        cm_ids = set(
-            active_players.loc[
-                active_players["compare_position_source"].eq("CM"), "player_id"
-            ].astype(str)
-        )
-        trend_df = trend_df.loc[
-            trend_df["player_id"].isin(cm_ids)
-            & (trend_df["type"].eq("Match") | trend_df["type"].str.startswith("Practice"))
-        ].copy()
-        if trend_df.empty:
-            st.markdown('<div class="bench-empty">Geen Summary-sessies voor actieve CM-spelers in de afgelopen zes weken.</div>', unsafe_allow_html=True)
-            return
-
-        trend_df["week_start"] = trend_df["datum"] - pd.to_timedelta(trend_df["datum"].dt.weekday, unit="D")
-        trend_metric = st.selectbox(
-            "Verloopmetric",
-            options=list(SESSION_TREND_METRICS),
-            format_func=lambda metric: SESSION_TREND_METRICS[metric][0],
-            key="bench_cm_trend_metric",
-        )
-        weekly = (
-            trend_df.groupby(["player_id", "player_name", "week_start"], as_index=False)
-            .agg(
-                sessions=("gps_id", "size"),
-                **{metric: (metric, "mean") for metric in SESSION_TREND_METRICS},
-            )
-        )
-        target_names = [name for name in ("Amine Amgar", "Adriano Mpudi") if name in set(weekly["player_name"])]
-        chart_columns = st.columns(len(target_names), gap="large") if target_names else []
-        for column, target_name in zip(chart_columns, target_names):
-            target_weekly = weekly.loc[weekly["player_name"].eq(target_name)].copy()
-            peer_weekly = (
-                weekly.loc[~weekly["player_name"].eq(target_name)]
-                .groupby("week_start", as_index=False)
-                .agg(
-                    players=("player_id", "nunique"),
-                    **{metric: (metric, "mean") for metric in SESSION_TREND_METRICS},
-                )
-            )
-            with column:
-                st.plotly_chart(
-                    build_subposition_trend_chart(target_weekly, peer_weekly, target_name, trend_metric),
-                    width="stretch",
-                    config={"displayModeBar": False, "responsive": True},
-                )
 
 
 def main() -> None:
