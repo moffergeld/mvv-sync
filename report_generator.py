@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
@@ -48,6 +49,34 @@ def _resolve_builder(report_kind: str, report_style: str) -> ReportBuilder:
     return builders[key]
 
 
+def _resolve_reportlab_builder(report_kind: str) -> ReportBuilder:
+    kind = report_kind.strip().lower()
+    modules_and_builders = {
+        "week": ("week_report_pdf", "build_week_report_pdf_bytes"),
+        "player": ("player_report_pdf", "build_player_report_pdf_bytes"),
+    }
+    if kind not in modules_and_builders:
+        raise ValueError(f"Onbekend rapporttype '{report_kind}'.")
+    module_name, builder_name = modules_and_builders[kind]
+    module = importlib.import_module(module_name)
+    return getattr(module, builder_name)
+
+
+def _is_html_runtime_error(exc: BaseException) -> bool:
+    if isinstance(exc, (ImportError, OSError)):
+        return True
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "weasyprint",
+            "systeembibliotheken",
+            "pdf-export voor dit rapport",
+            "html/css pdf-export",
+        )
+    )
+
+
 def generate_report(
     report_kind: str,
     data: Mapping[str, Any] | None = None,
@@ -60,8 +89,18 @@ def generate_report(
         payload.update(dict(data))
     payload.update(kwargs)
     style = normalize_report_style(report_style)
-    builder = _resolve_builder(report_kind, style)
-    pdf_bytes = _call_builder(builder, payload)
+    try:
+        builder = _resolve_builder(report_kind, style)
+        pdf_bytes = _call_builder(builder, payload)
+    except Exception as exc:
+        if style != "html" or not _is_html_runtime_error(exc):
+            raise
+        warnings.warn(
+            "WeasyPrint is niet beschikbaar; het rapport wordt met de ingebouwde PDF-engine gemaakt.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        pdf_bytes = _call_builder(_resolve_reportlab_builder(report_kind), payload)
     if output_path is not None:
         Path(output_path).expanduser().resolve().write_bytes(pdf_bytes)
     return pdf_bytes

@@ -99,41 +99,39 @@ Daarnaast blijft de bestaande dependency voor de legacy-PDF bestaan:
 
 - `reportlab`
 
-## Cloud-installatie en WeasyPrint systeembibliotheken
+## Cloud-installatie en PDF-export
 
-Streamlit Community Cloud gebruikt `environment.yml`. Deze richt zich op de
-`base`-omgeving met Python 3.14, waar de cloud de Streamlit-server start, en
-installeert WeasyPrint via `conda-forge`, inclusief de benodigde Pango-, HarfBuzz-
-en Fontconfig-bibliotheken. De overige Python-dependencies staan expliciet in
-het `pip`-gedeelte van dezelfde file. Zo zijn deze niet afhankelijk van de
-werkdirectory waarmee de cloud-installer een geneste requirementsfile opent.
-Houd deze lijst gelijk aan `requirements.txt`, behalve WeasyPrint dat Conda levert.
-De lokale developmentcontainer gebruikt `requirements.txt` met Python 3.11.
+Streamlit Community Cloud installeert de app vanuit `requirements.txt` in de
+bestaande Python 3.13-runtime van de app. Er staat bewust geen `environment.yml`
+in de repository-root. Daardoor komen alle dependencies, waaronder de
+cookiecomponent voor login en FORMS, in dezelfde Python-runtime als Streamlit.
+De versies van Streamlit en `extra-streamlit-components` zijn vastgezet om de
+werkende formulier- en cookie-integratie stabiel te houden.
 
-De GitHub Actions-workflow `Check cloud runtime` installeert deze configuratie in
-een Linux Conda-baseomgeving. De controle importeert alle app-dependencies,
-waaronder `extra_streamlit_components`, en rendert een kleine PDF met WeasyPrint.
-Dit controleert de daadwerkelijke installatie; een dependency-solve alleen
-bewijst niet dat de modules beschikbaar zijn in de interpreter van de server.
+De GitHub Actions-workflow `Check cloud runtime` gebruikt eveneens Python 3.13,
+importeert alle app-dependencies en controleert de login-, spelers- en
+tablet-FORMS zonder secrets of gegevens te openen. Ook wordt een kleine PDF met
+ReportLab gerenderd. WeasyPrint wordt gebruikt wanneer de server de benodigde
+systeembibliotheken heeft. Anders schakelt de rapportgenerator automatisch over
+op de bestaande ReportLab-PDF.
 
 Er staat geen `packages.txt` in de repository-root. Daardoor vraagt deze app geen
 APT-installatie aan tijdens de cloud-build. Op 9 september 2026 mislukte die stap
 door een verlopen `bullseye-security/InRelease` in de Streamlit-serveromgeving,
-voordat de Python-dependencies werden geinstalleerd. De Conda-installatie levert
-de PDF-bibliotheken zonder deze Debian-packagebron te gebruiken.
+voordat de Python-dependencies werden geinstalleerd. De dependencies worden nu
+rechtstreeks met pip geinstalleerd.
 
 De Debian-pakketten voor de lokale developmentcontainer staan in
 `.devcontainer/packages.txt`; de container installeert deze zelf op Debian Bookworm.
 Voor lokale Windows-omgevingen kan een extra GTK/Pango-runtime nodig zijn.
 
-Na publicatie van deze wijziging moet de cloud-build `environment.yml` verwerken.
+Na publicatie van deze wijziging moet de cloud-build `requirements.txt` verwerken.
 Controleer daarna of het dashboard start en zowel een weekrapport als een
 spelersrapport als PDF kan worden gedownload. Als de oude build zichtbaar blijft,
 gebruik dan `Manage app` > `Reboot app`. Een geslaagde lokale controle bewijst nog
 niet dat de cloud-deploy is hersteld.
 
-Bronnen: [Streamlit dependencyselectie](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies)
-en [WeasyPrint via Conda](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#conda).
+Bron: [Streamlit dependencyselectie](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies).
 
 ## Secrets en Supabase
 
