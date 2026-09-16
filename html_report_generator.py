@@ -2432,7 +2432,7 @@ def build_player_report_html_pdf_bytes(
             {"label": "Sessions", "value": _fmt_int(summary.get("sessions")), "foot": "Summary-sessies binnen de huidige scope"},
             {"label": "Active Days", "value": _fmt_int(summary.get("active_days")), "foot": "Dagen met GPS-activiteit"},
             {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Totale afstand in de huidige scope"},
-            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high total_distance_zone_5 distance"},
+            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Afstand in snelheidszones 5 en 6"},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totaal aantal sprintacties"},
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
         ],

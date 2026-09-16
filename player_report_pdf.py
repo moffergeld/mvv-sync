@@ -353,7 +353,7 @@ def build_player_report_pdf_bytes(
         build_metric_card("Sessies", _fmt_int(summary.get("sessions")), "Summary-sessies in deze selectie", "#FBFCFE", "#D7DEE8"),
         build_metric_card("Actieve dagen", _fmt_int(summary.get("active_days")), "Unieke trainings- of wedstrijddagen", "#FBFCFE", "#D7DEE8"),
         build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Totale loopbelasting binnen scope", "#FBFCFE", "#D7DEE8"),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high total_distance_zone_5 distance", "#FBFCFE", "#D7DEE8"),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Afstand in snelheidszones 5 en 6", "#FBFCFE", "#D7DEE8"),
         build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totaal aantal sprintacties", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Accelerations", _fmt_int(summary.get("total_accelerations")), "Totale acceleraties in scope", "#FFF7F8", "#E8C5CB"),
         build_metric_card("Decelerations", _fmt_int(summary.get("total_decelerations")), "Totale deceleraties in scope", "#FFF7F8", "#E8C5CB"),

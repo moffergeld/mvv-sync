@@ -657,7 +657,7 @@ def build_week_report_pdf_bytes(
 
     cards = [
         build_metric_card("Total Distance", _fmt_distance(summary.get("total_distance")), "Opgetelde teamload in de week", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
-        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Sprint plus high total_distance_zone_5 distance", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
+        build_metric_card("HSR / HSD", _fmt_distance(summary.get("hsr_hsd")), "Afstand in snelheidszones 5 en 6", "#FBFCFE", "#D7DEE8", width=doc.width / 5.0),
         build_metric_card("Dist / Player", _fmt_distance(summary.get("dist_per_player")), "Teamload gedeeld door actieve spelers", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
         build_metric_card("Sprints", _fmt_int(summary.get("sprints")), "Totale sprintacties in deze week", "#FFF7F8", "#E8C5CB", width=doc.width / 5.0),
         build_metric_card("Top Speed", _fmt_speed(summary.get("top_speed")), "Hoogste gemeten snelheid", "#F8FAFC", "#D7DEE8", width=doc.width / 5.0),
