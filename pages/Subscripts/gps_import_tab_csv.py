@@ -36,8 +36,8 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
     st.subheader("Import CSV → gps_records")
     st.caption(
         "Voor brede speler-/sessie-exports. Kernmetrics blijven gekoppeld aan de bestaande "
-        "GPS-kolommen; alle overige bronvelden krijgen een volledig uitgeschreven parameternaam en onbekende toekomstige "
-        "velden blijven veilig beschikbaar in extra_metrics."
+        "GPS-kolommen; alleen de gekozen STATSports-parameters worden bewaard. Niet-geselecteerde "
+        "velden worden overgeslagen, inclusief relatieve parameters behalve het percentage tijd in de rode zone."
     )
 
     uploaded = st.file_uploader(
@@ -91,7 +91,7 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
     st.dataframe(parsed[visible_columns].head(80), width="stretch", hide_index=True)
 
     if extra_columns:
-        with st.expander(f"Onbekende toekomstige velden naar extra_metrics ({len(extra_columns)})"):
+        with st.expander(f"Niet-geselecteerde velden worden overgeslagen ({len(extra_columns)})"):
             st.write(", ".join(extra_columns))
 
     st.warning(
