@@ -10,7 +10,7 @@ def sanitize_progressive_max_speed(
     df: pd.DataFrame,
     *,
     group_cols: Sequence[str],
-    speed_col: str = "max_speed",
+    speed_col: str = "maximum_speed",
     date_col: str = "datum",
     order_cols: Sequence[str] | None = None,
     multiplier: float = 1.30,

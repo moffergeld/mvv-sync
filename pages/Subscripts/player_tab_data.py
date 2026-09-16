@@ -24,8 +24,8 @@
 #    -> minder "gevoelig" op telefoon (geen zoom/pan per ongeluk).
 #
 # Aggregatie GPS per dag
-# - default: som per dag (total_distance_td/zone_4/zone_5/zone_6)
-# - max_speed: MAX per dag (niet som!)
+# - default: som per dag (total_distance/total_distance_zone_4/total_distance_zone_5/total_distance_zone_6)
+# - maximum_speed: MAX per dag (niet som!)
 # ============================================================
 
 from __future__ import annotations
@@ -42,31 +42,31 @@ CHART_H = 340
 GPS_TABLE = "v_gps_summary"
 
 GPS_METRICS: List[Tuple[str, str]] = [
-    ("Total Distance (m)", "total_distance_td"),
-    ("14.4–19.7 km/h", "zone_4"),
-    ("19.8–25.1 km/h", "zone_5"),
-    (">25,1 km/h", "zone_6"),
-    ("Max Speed (km/u)", "max_speed"),
+    ("Total Distance (m)", "total_distance"),
+    ("14.4–19.7 km/h", "total_distance_zone_4"),
+    ("19.8–25.1 km/h", "total_distance_zone_5"),
+    (">25,1 km/h", "total_distance_zone_6"),
+    ("Max Speed (km/u)", "maximum_speed"),
 ]
 
 GPS_TABLE_COLS_RAW = [
     "datum",
     "type",
-    "total_distance_td",
-    "zone_4",
-    "zone_5",
-    "zone_6",
-    "max_speed",
+    "total_distance",
+    "total_distance_zone_4",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
+    "maximum_speed",
 ]
 
 GPS_RENAME = {
     "datum": "Date",
     "type": "Type",
-    "total_distance_td": "Total Distance (m)",
-    "zone_4": "14.4–19.7 km/h",
-    "zone_5": "19.8–25.1 km/h",
-    "zone_6": ">25,1 km/h",
-    "max_speed": "Max Speed (km/u)",
+    "total_distance": "Total Distance (m)",
+    "total_distance_zone_4": "14.4–19.7 km/h",
+    "total_distance_zone_5": "19.8–25.1 km/h",
+    "total_distance_zone_6": ">25,1 km/h",
+    "maximum_speed": "Max Speed (km/u)",
 }
 
 ASRM_COLS: List[Tuple[str, str]] = [
@@ -207,7 +207,7 @@ def gps_daily_aggregate(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
     """
     Aggregatie per dag:
     - alle metrics: som per dag
-    - max_speed: MAX per dag (belangrijk!)
+    - maximum_speed: MAX per dag (belangrijk!)
     """
     if df_raw.empty:
         return df_raw
@@ -216,7 +216,7 @@ def gps_daily_aggregate(df_raw: pd.DataFrame, metric_key: str) -> pd.DataFrame:
     df["datum"] = _to_date_series(df["datum"])
     df[metric_key] = pd.to_numeric(df[metric_key], errors="coerce")
 
-    if metric_key == "max_speed":
+    if metric_key == "maximum_speed":
         out = df.groupby("datum", as_index=False)[metric_key].max()
     else:
         df[metric_key] = df[metric_key].fillna(0.0)

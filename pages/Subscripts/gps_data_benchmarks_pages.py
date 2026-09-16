@@ -75,10 +75,10 @@ GREF_SELECT_COLS = [
     "type",
     "event",
     "duration",
-    "total_distance_td",
-    "zone_5",
-    "zone_6",
-    "playerload2d",
+    "total_distance",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
+    "player_load_two_dimensional",
     "total_accelerations",
     "high_accelerations",
     "total_decelerations",
@@ -128,10 +128,10 @@ def _prepare_match_totals(df_events: pd.DataFrame) -> pd.DataFrame:
 
     num_cols = [
         "duration",
-        "total_distance_td",
-        "zone_5",
-        "zone_6",
-        "playerload2d",
+        "total_distance",
+        "total_distance_zone_5",
+        "total_distance_zone_6",
+        "player_load_two_dimensional",
         "total_accelerations",
         "high_accelerations",
         "total_decelerations",
@@ -161,10 +161,10 @@ def compute_gref(
         return pd.DataFrame()
 
     metrics = [
-        "total_distance_td",
-        "zone_5",
-        "zone_6",
-        "playerload2d",
+        "total_distance",
+        "total_distance_zone_5",
+        "total_distance_zone_6",
+        "player_load_two_dimensional",
         "total_accelerations",
         "high_accelerations",
         "total_decelerations",
@@ -191,10 +191,10 @@ def compute_gref(
 
     out = out.rename(
         columns={
-            "total_distance_td": "Total Distance",
-            "zone_5": "Zone 5",
-            "zone_6": "Zone 6",
-            "playerload2d": "playerload2D",
+            "total_distance": "Total Distance",
+            "total_distance_zone_5": "Zone 5",
+            "total_distance_zone_6": "Zone 6",
+            "player_load_two_dimensional": "playerload2D",
             "total_accelerations": "Total Accelerations",
             "high_accelerations": "High Accelerations",
             "total_decelerations": "Total Decelerations",
@@ -237,10 +237,10 @@ def compute_gref_per_min(
         return pd.DataFrame()
 
     metrics = [
-        "total_distance_td",
-        "zone_5",
-        "zone_6",
-        "playerload2d",
+        "total_distance",
+        "total_distance_zone_5",
+        "total_distance_zone_6",
+        "player_load_two_dimensional",
         "total_accelerations",
         "high_accelerations",
         "total_decelerations",
@@ -265,10 +265,10 @@ def compute_gref_per_min(
 
     out = out.rename(
         columns={
-            "total_distance_td": "Total Distance /min",
-            "zone_5": "Zone 5 /min",
-            "zone_6": "Zone 6 /min",
-            "playerload2d": "playerload2D /min",
+            "total_distance": "Total Distance /min",
+            "total_distance_zone_5": "Zone 5 /min",
+            "total_distance_zone_6": "Zone 6 /min",
+            "player_load_two_dimensional": "playerload2D /min",
             "total_accelerations": "Total Acc /min",
             "high_accelerations": "High Acc /min",
             "total_decelerations": "Total Dec /min",

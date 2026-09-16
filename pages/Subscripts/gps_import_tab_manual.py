@@ -1,7 +1,7 @@
 # gps_import_tab_manual.py
 # ============================================================
 # Manual add (cards v3)
-# - Default metrics = 4 (duration, total_distance_td, zone_5, zone_6)
+# - Default metrics = 4 (duration, total_distance, total_distance_zone_5, total_distance_zone_6)
 # - Load existing records by (player_id + datum + type)  ✅ NOT filtered on event
 # - Per player: pick which event-record you want to edit (dropdown from existing events)
 # - Day mean/median: compute from current UI values; apply to chosen players; optional source-event filter
@@ -76,40 +76,40 @@ TEMPLATE_COLS = [
     "event",
     "match_id",
     "duration",
-    "total_distance_td",
-    "zone_1_2",
-    "zone_3",
-    "zone_4",
-    "zone_5",
-    "zone_6",
+    "total_distance",
+    "total_distance_zone_1_and_2",
+    "total_distance_zone_3",
+    "total_distance_zone_4",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
     "number_of_sprints",
     "number_of_high_sprints",
     "number_of_repeated_sprints",
-    "max_speed",
-    "avg_speed",
-    "playerload3d",
-    "playerload2d",
+    "maximum_speed",
+    "average_speed",
+    "player_load_three_dimensional",
+    "player_load_two_dimensional",
     "total_accelerations",
     "high_accelerations",
     "total_decelerations",
     "high_decelerations",
-    "hrzone1",
-    "hrzone2",
-    "hrzone3",
-    "hrzone4",
-    "hrzone5",
-    "hrtrimp",
-    "hrzoneanaerobic",
-    "avg_hr",
-    "max_hr",
-    "source_file",
+    "heart_rate_zone_1",
+    "heart_rate_zone_2",
+    "heart_rate_zone_3",
+    "heart_rate_zone_4",
+    "heart_rate_zone_5",
+    "heart_rate_training_impulse",
+    "heart_rate_anaerobic_zone",
+    "average_heart_rate",
+    "maximum_heart_rate",
+
 ]
 
-BASIC_KEYS = ["player_name", "datum", "type", "event", "match_id", "source_file"]
+BASIC_KEYS = ["player_name", "datum", "type", "event", "match_id"]
 METRIC_KEYS = [c for c in TEMPLATE_COLS if c not in BASIC_KEYS]
 
 # ✅ jouw wens: standaard = 4 metrics
-DEFAULT_METRICS = ["duration", "total_distance_td", "zone_5", "zone_6"]
+DEFAULT_METRICS = ["duration", "total_distance", "total_distance_zone_5", "total_distance_zone_6"]
 
 
 # ------------------------------------------------------------
@@ -124,7 +124,7 @@ def _blank_record(player_name: str, d: date, t: str, e: str) -> dict[str, Any]:
     row["type"] = t
     row["event"] = e
     row["match_id"] = None
-    row["source_file"] = "manual"
+
     return row
 
 
@@ -194,7 +194,7 @@ def _fetch_existing_for_day_type(
     pid_in = "in.(" + ",".join([str(x) for x in player_ids]) + ")"
     params = {
         "select": ",".join(
-            ["player_id", "player_name", "datum", "type", "event", "match_id", "source_file"] + METRIC_KEYS
+            ["player_id", "player_name", "datum", "type", "event", "match_id"] + METRIC_KEYS
         ),
         "player_id": pid_in,
         "datum": f"eq.{d_iso}",
@@ -224,7 +224,7 @@ def _get_current_row_from_ui(pid: str, nm: str, d_iso: str, t: str, ev: str, met
         "datum": d_iso,
         "type": t,
         "event": ev,
-        "source_file": "manual",
+
     }
     errs: list[str] = []
     for m in metrics:
@@ -588,7 +588,7 @@ def _render_player_card(
                 rec2["datum"] = d
                 rec2["type"] = t
                 rec2["event"] = chosen_event
-                rec2["source_file"] = "manual"
+
                 cards[pid] = rec2
                 st.session_state["manual_cards"] = cards
                 for m in metrics:
@@ -655,7 +655,7 @@ def _render_player_card(
             rec["datum"] = d
             rec["type"] = t
             rec["event"] = chosen_event
-            rec["source_file"] = "manual"
+
             cards[pid] = rec
             st.session_state["manual_cards"] = cards
 
@@ -759,7 +759,7 @@ def tab_manual_add_main(access_token: str, name_to_id: dict, player_options: lis
                     rec["datum"] = d
                     rec["type"] = t
                     rec["event"] = ev
-                    rec["source_file"] = "manual"
+
                     cards[pid] = rec
                 else:
                     cards[pid] = _blank_record(nm, d, t, default_event or "Summary")
@@ -882,7 +882,7 @@ def tab_manual_add_main(access_token: str, name_to_id: dict, player_options: lis
             rec["datum"] = d_iso
             rec["type"] = t
             rec["event"] = ev
-            rec["source_file"] = "manual"
+
 
             dt = pd.to_datetime(rec["datum"], errors="coerce")
             if pd.isna(dt):
@@ -947,7 +947,7 @@ def tab_manual_add_main(access_token: str, name_to_id: dict, player_options: lis
                 "type": json_safe(r.get("type")),
                 "event": json_safe(r.get("event")),
                 "match_id": json_safe(int(r.get("match_id")) if pd.notna(r.get("match_id")) else None),
-                "source_file": json_safe(r.get("source_file") or "manual"),
+
             }
 
             for k in METRIC_KEYS:

@@ -48,21 +48,21 @@ GPS_SELECT_COLS = [
     "type",
     "event",
     "duration",
-    "total_distance_td",
-    "zone_1_2",
-    "zone_3",
-    "zone_4",
-    "zone_5",
-    "zone_6",
+    "total_distance",
+    "total_distance_zone_1_and_2",
+    "total_distance_zone_3",
+    "total_distance_zone_4",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
     "number_of_sprints",
-    "playerload2d",
-    "playerload3d",
+    "player_load_two_dimensional",
+    "player_load_three_dimensional",
     "total_accelerations",
     "total_decelerations",
     "number_of_repeated_sprints",
-    "hrtrimp",
-    "avg_hr",
-    "max_speed",
+    "heart_rate_training_impulse",
+    "average_heart_rate",
+    "maximum_speed",
 ]
 
 GPS_INDEX_SELECT_COLS = [
@@ -71,35 +71,35 @@ GPS_INDEX_SELECT_COLS = [
     "player_name",
     "datum",
     "type",
-    "total_distance_td",
-    "zone_5",
-    "zone_6",
+    "total_distance",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
     "number_of_sprints",
-    "max_speed",
+    "maximum_speed",
 ]
 
 SUM_COLUMNS = [
     "duration",
-    "total_distance_td",
-    "zone_1_2",
-    "zone_3",
-    "zone_4",
-    "zone_5",
-    "zone_6",
+    "total_distance",
+    "total_distance_zone_1_and_2",
+    "total_distance_zone_3",
+    "total_distance_zone_4",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
     "number_of_sprints",
-    "playerload2d",
-    "playerload3d",
+    "player_load_two_dimensional",
+    "player_load_three_dimensional",
     "total_accelerations",
     "total_decelerations",
     "number_of_repeated_sprints",
-    "hrtrimp",
-    "avg_hr",
+    "heart_rate_training_impulse",
+    "average_heart_rate",
 ]
 
 INDEX_SUM_COLUMNS = [
-    "total_distance_td",
-    "zone_5",
-    "zone_6",
+    "total_distance",
+    "total_distance_zone_5",
+    "total_distance_zone_6",
     "number_of_sprints",
 ]
 
@@ -496,17 +496,17 @@ def _prepare_summary_index_df(raw: pd.DataFrame) -> pd.DataFrame:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
 
-    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
+    df["maximum_speed"] = pd.to_numeric(df["maximum_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
-    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
-    df["hsr_hsd"] = df["zone_5"].fillna(0.0) + df["zone_6"].fillna(0.0)
+    df["maximum_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
+    df["hsr_hsd"] = df["total_distance_zone_5"].fillna(0.0) + df["total_distance_zone_6"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     df["month_start"] = df["datum"].dt.to_period("M").dt.to_timestamp()
     df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
     df["season_label"] = df["season_start_year"].astype(int).astype(str) + "/" + (df["season_start_year"] + 1).astype(int).astype(str)
-    season_max_speed = df.groupby("player_id")["max_speed"].transform("max")
-    df["speed_exposure_flag"] = season_max_speed.gt(0) & df["max_speed"].ge(season_max_speed * 0.9)
+    season_max_speed = df.groupby("player_id")["maximum_speed"].transform("max")
+    df["speed_exposure_flag"] = season_max_speed.gt(0) & df["maximum_speed"].ge(season_max_speed * 0.9)
     return df
 
 
@@ -525,17 +525,17 @@ def _prepare_player_summary_df(raw: pd.DataFrame) -> pd.DataFrame:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
 
-    df["max_speed"] = pd.to_numeric(df["max_speed"], errors="coerce")
+    df["maximum_speed"] = pd.to_numeric(df["maximum_speed"], errors="coerce")
     df = df.dropna(subset=["datum"]).copy()
-    df["max_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
-    df["hsr_hsd"] = df["zone_5"].fillna(0.0) + df["zone_6"].fillna(0.0)
+    df["maximum_speed"] = sanitize_progressive_max_speed(df, group_cols=["player_id", "player_name"], order_cols=["gps_id"])
+    df["hsr_hsd"] = df["total_distance_zone_5"].fillna(0.0) + df["total_distance_zone_6"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     df["month_start"] = df["datum"].dt.to_period("M").dt.to_timestamp()
     df["season_start_year"] = df["datum"].dt.year.where(df["datum"].dt.month >= 7, df["datum"].dt.year - 1)
     df["season_label"] = df["season_start_year"].astype(int).astype(str) + "/" + (df["season_start_year"] + 1).astype(int).astype(str)
-    season_max_speed = df.groupby("player_id")["max_speed"].transform("max")
-    df["speed_exposure_flag"] = season_max_speed.gt(0) & df["max_speed"].ge(season_max_speed * 0.9)
+    season_max_speed = df.groupby("player_id")["maximum_speed"].transform("max")
+    df["speed_exposure_flag"] = season_max_speed.gt(0) & df["maximum_speed"].ge(season_max_speed * 0.9)
     return df
 
 
@@ -585,20 +585,20 @@ def build_scope_summary(scope_df: pd.DataFrame) -> dict[str, object]:
             "active_days": float("nan"),
             "training_sessions": float("nan"),
             "match_sessions": float("nan"),
-            "total_distance_td": float("nan"),
+            "total_distance": float("nan"),
             "hsr_hsd": float("nan"),
             "sprints": float("nan"),
             "total_accelerations": float("nan"),
             "total_decelerations": float("nan"),
             "duration_min": float("nan"),
-            "distance_per_min": float("nan"),
+            "distance_per_minute": float("nan"),
             "top_speed": float("nan"),
             "speed_exposures": float("nan"),
             "accel_density": float("nan"),
         }
 
     total_duration = float(scope_df["duration"].sum())
-    total_distance_td = float(scope_df["total_distance_td"].sum())
+    total_distance = float(scope_df["total_distance"].sum())
     total_accelerations = float(scope_df["total_accelerations"].sum())
     total_decelerations = float(scope_df["total_decelerations"].sum())
     return {
@@ -606,14 +606,14 @@ def build_scope_summary(scope_df: pd.DataFrame) -> dict[str, object]:
         "active_days": float(scope_df["datum"].nunique()),
         "training_sessions": float(scope_df["session_category"].eq("Training").sum()),
         "match_sessions": float(scope_df["session_category"].eq("Match").sum()),
-        "total_distance_td": total_distance_td,
+        "total_distance": total_distance,
         "hsr_hsd": float(scope_df["hsr_hsd"].sum()),
         "sprints": float(scope_df["number_of_sprints"].sum()),
         "total_accelerations": total_accelerations,
         "total_decelerations": total_decelerations,
         "duration_min": total_duration,
-        "distance_per_min": (total_distance_td / total_duration) if total_duration > 0 else float("nan"),
-        "top_speed": float(scope_df["max_speed"].max()) if scope_df["max_speed"].notna().any() else float("nan"),
+        "distance_per_minute": (total_distance / total_duration) if total_duration > 0 else float("nan"),
+        "top_speed": float(scope_df["maximum_speed"].max()) if scope_df["maximum_speed"].notna().any() else float("nan"),
         "speed_exposures": float(scope_df["speed_exposure_flag"].sum()),
         "accel_density": (total_accelerations / total_duration * 10) if total_duration > 0 else float("nan"),
     }
@@ -628,28 +628,28 @@ def build_period_table(scope_df: pd.DataFrame, scope_mode: str) -> pd.DataFrame:
             scope_df.groupby("week_start", dropna=False)
             .agg(
                 sessions=("datum", "size"),
-                total_distance_td=("total_distance_td", "sum"),
+                total_distance=("total_distance", "sum"),
                 hsr_hsd=("hsr_hsd", "sum"),
                 number_of_sprints=("number_of_sprints", "sum"),
                 duration=("duration", "sum"),
-                max_speed=("max_speed", "max"),
+                maximum_speed=("maximum_speed", "max"),
             )
             .reset_index()
             .sort_values("week_start")
             .reset_index(drop=True)
         )
         grouped["label"] = grouped["week_start"].apply(lambda value: f"W{int(pd.Timestamp(value).isocalendar().week):02d} | {pd.Timestamp(value):%d/%m}")
-        grouped["total_distance_rolling4"] = pd.to_numeric(grouped["total_distance_td"], errors="coerce").rolling(4, min_periods=1).mean()
+        grouped["total_distance_rolling4"] = pd.to_numeric(grouped["total_distance"], errors="coerce").rolling(4, min_periods=1).mean()
     else:
         grouped = (
             scope_df.groupby("datum", dropna=False)
             .agg(
                 sessions=("datum", "size"),
-                total_distance_td=("total_distance_td", "sum"),
+                total_distance=("total_distance", "sum"),
                 hsr_hsd=("hsr_hsd", "sum"),
                 number_of_sprints=("number_of_sprints", "sum"),
                 duration=("duration", "sum"),
-                max_speed=("max_speed", "max"),
+                maximum_speed=("maximum_speed", "max"),
             )
             .reset_index()
             .sort_values("datum")
@@ -658,7 +658,7 @@ def build_period_table(scope_df: pd.DataFrame, scope_mode: str) -> pd.DataFrame:
         grouped["label"] = grouped["datum"].dt.strftime("%d/%m")
         grouped["total_distance_rolling4"] = pd.NA
 
-    grouped["distance_per_min"] = _safe_divide(grouped["total_distance_td"], grouped["duration"])
+    grouped["distance_per_minute"] = _safe_divide(grouped["total_distance"], grouped["duration"])
     return grouped
 
 
@@ -669,27 +669,27 @@ def build_type_table(scope_df: pd.DataFrame) -> pd.DataFrame:
         scope_df.groupby("session_category", dropna=False)
         .agg(
             sessions=("datum", "size"),
-            total_distance_td=("total_distance_td", "sum"),
+            total_distance=("total_distance", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             sprints=("number_of_sprints", "sum"),
-            max_speed=("max_speed", "max"),
+            maximum_speed=("maximum_speed", "max"),
             duration=("duration", "sum"),
         )
         .reset_index()
         .sort_values("session_category")
         .reset_index(drop=True)
     )
-    grouped["distance_per_min"] = _safe_divide(grouped["total_distance_td"], grouped["duration"])
+    grouped["distance_per_minute"] = _safe_divide(grouped["total_distance"], grouped["duration"])
     return grouped
 
 
 def build_zone_totals(scope_df: pd.DataFrame) -> pd.DataFrame:
     zone_map = [
-        ("zone_1_2", "Walking"),
-        ("zone_3", "Jogging"),
-        ("zone_4", "Running"),
-        ("zone_5", "Zone 5"),
-        ("zone_6", "Zone 6"),
+        ("total_distance_zone_1_and_2", "Walking"),
+        ("total_distance_zone_3", "Jogging"),
+        ("total_distance_zone_4", "Running"),
+        ("total_distance_zone_5", "Zone 5"),
+        ("total_distance_zone_6", "Zone 6"),
     ]
     rows = []
     for column, label in zone_map:
@@ -700,20 +700,20 @@ def build_zone_totals(scope_df: pd.DataFrame) -> pd.DataFrame:
 def build_sessions_table(scope_df: pd.DataFrame) -> pd.DataFrame:
     if scope_df.empty:
         return pd.DataFrame()
-    out = scope_df.copy().sort_values(["datum", "total_distance_td"], ascending=[False, False]).reset_index(drop=True)
+    out = scope_df.copy().sort_values(["datum", "total_distance"], ascending=[False, False]).reset_index(drop=True)
     out["datum_label"] = out["datum"].dt.strftime("%d/%m/%Y")
     return out[
         [
             "datum_label",
             "type",
             "event",
-            "total_distance_td",
+            "total_distance",
             "hsr_hsd",
             "number_of_sprints",
             "total_accelerations",
             "total_decelerations",
             "duration",
-            "max_speed",
+            "maximum_speed",
         ]
     ]
 
@@ -758,14 +758,14 @@ def build_player_notes(
         f"In deze {scope_label} staan {_format_int(summary['sessions'])} Summary-sessies over {_format_int(summary['active_days'])} actieve dagen."
     )
     notes.append(
-        f"Totale belasting: {_format_distance(summary['total_distance_td'])}, HSR/HSD {_format_distance(summary['hsr_hsd'])}, sprints {_format_int(summary['sprints'])} en gemiddelde intensiteit {_format_decimal(summary['distance_per_min'], 1)} m/min."
+        f"Totale belasting: {_format_distance(summary['total_distance'])}, HSR/HSD {_format_distance(summary['hsr_hsd'])}, sprints {_format_int(summary['sprints'])} en gemiddelde intensiteit {_format_decimal(summary['distance_per_minute'], 1)} m/min."
     )
 
-    peak_row = scope_df.sort_values("total_distance_td", ascending=False).head(1)
+    peak_row = scope_df.sort_values("total_distance", ascending=False).head(1)
     if not peak_row.empty:
         row = peak_row.iloc[0]
         notes.append(
-            f"Piekmoment: {row['datum']:%d-%m-%Y} ({row.get('type') or 'Sessie'}) met {_format_distance(row.get('total_distance_td'))} en topsnelheid {_format_speed(row.get('max_speed'))}."
+            f"Piekmoment: {row['datum']:%d-%m-%Y} ({row.get('type') or 'Sessie'}) met {_format_distance(row.get('total_distance'))} en topsnelheid {_format_speed(row.get('maximum_speed'))}."
         )
 
     if monitoring_summary["wellness_entries"]:
@@ -862,7 +862,7 @@ def build_bar_line_chart(period_df: pd.DataFrame, scope_mode: str) -> go.Figure:
         go.Bar(
             name="Total Distance",
             x=period_df["label"],
-            y=period_df["total_distance_td"],
+            y=period_df["total_distance"],
             marker_color=MVV_RED_DEEP,
         ),
         secondary_y=False,
@@ -911,14 +911,14 @@ def build_leaderboard_chart(df: pd.DataFrame, title: str) -> go.Figure:
     fig = base_figure(title, height=360)
     if df.empty:
         return fig
-    top_df = df.nlargest(10, "total_distance_td").sort_values("total_distance_td", ascending=True)
+    top_df = df.nlargest(10, "total_distance").sort_values("total_distance", ascending=True)
     fig.add_trace(
         go.Bar(
-            x=top_df["total_distance_td"],
+            x=top_df["total_distance"],
             y=top_df["datum_label"] + " | " + top_df["type"].fillna("").astype(str),
             orientation="h",
             marker_color=MVV_RED_DEEP,
-            text=[_format_distance(value) for value in top_df["total_distance_td"]],
+            text=[_format_distance(value) for value in top_df["total_distance"]],
             textposition="outside",
             cliponaxis=False,
             hovertemplate="%{y}<br>%{x:,.0f} m<extra></extra>",
@@ -941,11 +941,11 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
     cards = [
         ("Sessies", _format_int(summary["sessions"]), "Aantal Summary-sessies in de selectie"),
         ("Actieve dagen", _format_int(summary["active_days"]), "Unieke dagen met GPS-data"),
-        ("Total Distance", _format_distance(summary["total_distance_td"]), "Opgeteld volume binnen de selectie"),
-        ("HSR / HSD", _format_distance(summary["hsr_hsd"]), "Sprint + high zone_5 distance"),
+        ("Total Distance", _format_distance(summary["total_distance"]), "Opgeteld volume binnen de selectie"),
+        ("HSR / HSD", _format_distance(summary["hsr_hsd"]), "Sprint + high total_distance_zone_5 distance"),
         ("Sprints", _format_int(summary["sprints"]), "Totale sprintacties in de selectie"),
         ("Duur", _format_minutes(summary["duration_min"]), "Opgetelde sessieduur"),
-        ("Avg Intensity", _format_decimal(summary["distance_per_min"], 1), "Gemiddelde meters per minuut"),
+        ("Avg Intensity", _format_decimal(summary["distance_per_minute"], 1), "Gemiddelde meters per minuut"),
         ("Top Speed", _format_speed(summary["top_speed"]), "Hoogste geregistreerde topsnelheid"),
         *wellness_cards,
         ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde RPE"),
@@ -1201,8 +1201,8 @@ def main() -> None:
         f"{_format_int(summary['sessions'])} sessies",
         f"{_format_int(summary['active_days'])} actieve dagen",
     ]
-    if pd.notna(summary["distance_per_min"]):
-        badges.append(f"Intensiteit: {_format_decimal(summary['distance_per_min'], 1)} m/min")
+    if pd.notna(summary["distance_per_minute"]):
+        badges.append(f"Intensiteit: {_format_decimal(summary['distance_per_minute'], 1)} m/min")
     if pd.notna(summary["top_speed"]):
         badges.append(f"Top speed: {_format_speed(summary['top_speed'])}")
     st.markdown(
@@ -1275,7 +1275,7 @@ def main() -> None:
                 build_bar_chart(
                     period_df,
                     "label",
-                    "distance_per_min",
+                    "distance_per_minute",
                     "Distance per Minute",
                     MVV_RED_BRIGHT,
                     _format_decimal,
@@ -1291,11 +1291,11 @@ def main() -> None:
                 [
                     ("label", "Periode", None),
                     ("sessions", "Sessies", _format_int),
-                    ("total_distance_td", "Distance", _format_distance),
+                    ("total_distance", "Distance", _format_distance),
                     ("hsr_hsd", "HSR/HSD", _format_distance),
                     ("number_of_sprints", "Sprints", _format_int),
-                    ("distance_per_min", "m/min", _format_decimal),
-                    ("max_speed", "Top Speed", _format_speed),
+                    ("distance_per_minute", "m/min", _format_decimal),
+                    ("maximum_speed", "Top Speed", _format_speed),
                 ],
             ),
             "Belangrijkste GPS-uitkomsten per dag of week",
@@ -1307,7 +1307,7 @@ def main() -> None:
             render_plot_panel(
                 "Distance Zone Share",
                 build_zone_share_chart(zone_df),
-                "Verdeling van zone_1_2, zone_3, zone_4, zone_5 en high zone_5",
+                "Verdeling van total_distance_zone_1_and_2, total_distance_zone_3, total_distance_zone_4, total_distance_zone_5 en high total_distance_zone_5",
             )
         with load_right:
             render_html_panel(
@@ -1317,11 +1317,11 @@ def main() -> None:
                     [
                         ("session_category", "Type", None),
                         ("sessions", "Sessies", _format_int),
-                        ("total_distance_td", "Distance", _format_distance),
+                        ("total_distance", "Distance", _format_distance),
                         ("hsr_hsd", "HSR/HSD", _format_distance),
                         ("sprints", "Sprints", _format_int),
-                        ("distance_per_min", "m/min", _format_decimal),
-                        ("max_speed", "Top Speed", _format_speed),
+                        ("distance_per_minute", "m/min", _format_decimal),
+                        ("maximum_speed", "Top Speed", _format_speed),
                     ],
                 ),
                 "Vergelijking tussen trainings- en wedstrijdbelasting voor deze speler",
@@ -1420,11 +1420,11 @@ def main() -> None:
                         ("datum_label", "Datum", None),
                         ("type", "Type", None),
                         ("event", "Event", None),
-                        ("total_distance_td", "Distance", _format_distance),
+                        ("total_distance", "Distance", _format_distance),
                         ("hsr_hsd", "HSR/HSD", _format_distance),
                         ("number_of_sprints", "Sprints", _format_int),
                         ("duration", "Duur", _format_minutes),
-                        ("max_speed", "Top Speed", _format_speed),
+                        ("maximum_speed", "Top Speed", _format_speed),
                     ],
                 ),
                 recent_sessions_subtitle,

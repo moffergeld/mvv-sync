@@ -11,7 +11,6 @@ from pages.Subscripts.gps_import_common import (
     CSV_SOURCE_COLUMN_MAP,
     ID_COLS_IN_PARSER,
     METRIC_MAP,
-    TYPE_OPTIONS,
     apply_auto_match_ids_to_rows,
     df_to_db_rows,
     normalize_key,
@@ -37,17 +36,10 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
     st.subheader("Import CSV → gps_records")
     st.caption(
         "Voor brede speler-/sessie-exports. Kernmetrics blijven gekoppeld aan de bestaande "
-        "GPS-kolommen; alle overige bronvelden krijgen een csv_-kolom en onbekende toekomstige "
+        "GPS-kolommen; alle overige bronvelden krijgen een volledig uitgeschreven parameternaam en onbekende toekomstige "
         "velden blijven veilig beschikbaar in extra_metrics."
     )
 
-    selected_type = st.selectbox(
-        "Importeer als",
-        TYPE_OPTIONS,
-        index=0,
-        key="gps_csv_import_type",
-        help="De leverancierstype-naam, zoals Match Day +3, wordt niet automatisch als dashboardtype gebruikt. Kies hier Practice, Match of Practice Match.",
-    )
     uploaded = st.file_uploader(
         "Upload speler-metrics CSV",
         type=["csv"],
@@ -59,14 +51,14 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
         return
 
     file_bytes = uploaded.getvalue()
-    signature = f"{uploaded.name}:{len(file_bytes)}:{selected_type}"
+    signature = f"{uploaded.name}:{len(file_bytes)}:automatic"
     if st.session_state.get("gps_csv_preview_signature") != signature:
         st.session_state.pop("gps_csv_preview", None)
         st.session_state["gps_csv_preview_signature"] = signature
 
     if st.button("Preview CSV", type="secondary", key="gps_csv_preview_button"):
         try:
-            parsed = parse_player_metrics_csv(file_bytes, selected_type=selected_type)
+            parsed = parse_player_metrics_csv(file_bytes, selected_type="Practice")
             st.session_state["gps_csv_preview"] = {
                 "filename": uploaded.name,
                 "df": parsed,
@@ -91,7 +83,7 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
     c3.metric("Events", event_count)
     c4.metric("Directe CSV-velden", len(CSV_DIRECT_COLS))
 
-    st.markdown(f"**{preview['filename']}** — type: **{selected_type}**")
+    st.markdown(f"**{preview['filename']}** — type automatisch bepaald via `sessionTitle` en `sessionType`")
     visible_columns = ["Speler", "Datum", "Type", "Event"]
     for column in parsed.columns:
         if column not in visible_columns and normalize_key(column) in METRIC_MAP:
@@ -113,6 +105,9 @@ def tab_import_csv_main(access_token: str, name_to_id: dict) -> None:
                 source_file=preview["filename"],
                 name_to_id=name_to_id,
             )
+            destination_keys = [(row.get("player_name"), row.get("datum"), row.get("type"), row.get("event")) for row in rows]
+            if len(destination_keys) != len(set(destination_keys)):
+                raise ValueError("Dubbele importregels gevonden; import afgebroken voordat er iets wordt opgeslagen.")
             rows = apply_auto_match_ids_to_rows(
                 access_token,
                 rows,

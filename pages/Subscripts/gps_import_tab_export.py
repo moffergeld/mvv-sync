@@ -28,23 +28,23 @@ from speed_outlier_utils import sanitize_progressive_max_speed
 # Helpers for scouting export
 # ------------------------------------------------------------
 METRIC_ALIASES = {
-    "total_distance_td": [
-        "total_distance_td", "total distance", "distance_total", "distance covered",
+    "total_distance": [
+        "total_distance", "total distance", "distance_total", "distance covered",
         "totaldistance", "distance",
     ],
     "sprint_distance": [
-        "sprint_distance", "zone_5 distance", "sprintdistance", "zone_5",
+        "sprint_distance", "total_distance_zone_5 distance", "sprintdistance", "total_distance_zone_5",
     ],
     "high_sprint_distance": [
-        "high_sprint_distance", "high zone_5 distance", "highsprintdistance",
-        "high zone_5", "high_speed_running_distance", "high speed zone_4 distance",
-        "zone_6",
+        "high_sprint_distance", "high total_distance_zone_5 distance", "highsprintdistance",
+        "high total_distance_zone_5", "high_speed_running_distance", "high speed total_distance_zone_4 distance",
+        "total_distance_zone_6",
     ],
-    "playerload2d": [
-        "playerload2d", "player_load2d", "player load2d", "playerload 2d",
+    "player_load_two_dimensional": [
+        "player_load_two_dimensional", "player_load2d", "player load2d", "playerload 2d",
     ],
-    "max_speed": [
-        "max_speed", "max speed", "maximum_speed", "maximum speed",
+    "maximum_speed": [
+        "maximum_speed", "max speed", "maximum_speed", "maximum speed",
         "top_speed", "top speed", "topspeed",
     ],
     "duration": [
@@ -78,18 +78,18 @@ SESSION_TYPE_CANDIDATES = [
 
 
 TOP3_METRIC_KEYS = [
-    "total_distance_td",
+    "total_distance",
     "sprint_distance",
     "high_sprint_distance",
-    "playerload2d",
+    "player_load_two_dimensional",
 ]
 
 WEEKLY_METRIC_KEYS = [
     "duration",
-    "total_distance_td",
+    "total_distance",
     "sprint_distance",
     "high_sprint_distance",
-    "playerload2d",
+    "player_load_two_dimensional",
 ]
 
 
@@ -179,8 +179,8 @@ def _prepare_export_df(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
     work["_event"] = work[mapping["event"]].astype(str).str.strip()
 
     for metric in [
-        "total_distance_td", "sprint_distance", "high_sprint_distance",
-        "playerload2d", "max_speed",
+        "total_distance", "sprint_distance", "high_sprint_distance",
+        "player_load_two_dimensional", "maximum_speed",
     ]:
         if metric in mapping:
             work[f"_{metric}"] = _ensure_numeric(work[mapping[metric]])
@@ -295,8 +295,8 @@ def _build_top3_match_export(
         "_total_distance": "sum",
         "_sprint_distance": "sum",
         "_high_sprint_distance": "sum",
-        "_playerload2d": "sum",
-        "_max_speed": "max",
+        "_player_load_two_dimensional": "sum",
+        "_maximum_speed": "max",
     }
     match_df = half_df.groupby(match_group_cols, dropna=False, as_index=False).agg(agg)
     match_df = match_df.rename(columns={
@@ -304,11 +304,11 @@ def _build_top3_match_export(
         "_date": "match_date",
         "_match_key": "match_key",
         "_duration_minutes": "duration_minutes",
-        "_total_distance": "total_distance_td",
+        "_total_distance": "total_distance",
         "_sprint_distance": "sprint_distance",
         "_high_sprint_distance": "high_sprint_distance",
-        "_playerload2d": "playerload2d",
-        "_max_speed": "max_speed",
+        "_player_load_two_dimensional": "player_load_two_dimensional",
+        "_maximum_speed": "maximum_speed",
     })
 
     match_df = match_df[match_df["duration_minutes"].fillna(0) >= 30].copy()
@@ -321,7 +321,7 @@ def _build_top3_match_export(
         match_df[metric_90] = (match_df[metric_key] / match_df["duration_minutes"]) * 90.0
         metric_90_map[metric_key] = metric_90
 
-    match_df["max_speed"] = sanitize_progressive_max_speed(
+    match_df["maximum_speed"] = sanitize_progressive_max_speed(
         match_df,
         group_cols=["player_name"],
         date_col="match_date",
@@ -335,8 +335,8 @@ def _build_top3_match_export(
             "Qualified Matches": len(g),
         }
 
-        valid_speed = g.loc[g["max_speed"].notna(), "max_speed"]
-        row[_display_name(mapping, "max_speed")] = valid_speed.max() if not valid_speed.empty else pd.NA
+        valid_speed = g.loc[g["maximum_speed"].notna(), "maximum_speed"]
+        row[_display_name(mapping, "maximum_speed")] = valid_speed.max() if not valid_speed.empty else pd.NA
 
         for metric_key in TOP3_METRIC_KEYS:
             metric_90 = metric_90_map[metric_key]
@@ -349,11 +349,11 @@ def _build_top3_match_export(
     summary_order = [
         "player_name",
         "Qualified Matches",
-        _display_name(mapping, "total_distance_td"),
+        _display_name(mapping, "total_distance"),
         _display_name(mapping, "sprint_distance"),
         _display_name(mapping, "high_sprint_distance"),
-        _display_name(mapping, "playerload2d"),
-        _display_name(mapping, "max_speed"),
+        _display_name(mapping, "player_load_two_dimensional"),
+        _display_name(mapping, "maximum_speed"),
     ]
     summary_order = [c for c in summary_order if c in summary_df.columns]
     summary_df = summary_df[summary_order]
@@ -393,10 +393,10 @@ def _build_weekly_export(prepared_df: pd.DataFrame, mapping: dict[str, str]) -> 
 
         metric_series_map = {
             "duration": g["_duration_minutes"],
-            "total_distance_td": g["_total_distance"],
+            "total_distance": g["_total_distance"],
             "sprint_distance": g["_sprint_distance"],
             "high_sprint_distance": g["_high_sprint_distance"],
-            "playerload2d": g["_playerload2d"],
+            "player_load_two_dimensional": g["_player_load_two_dimensional"],
         }
 
         for metric_key in WEEKLY_METRIC_KEYS:
@@ -439,7 +439,7 @@ def _build_info_sheet(prepared_df: pd.DataFrame, mapping: dict[str, str]) -> pd.
         ["Scouting export", "Top-3 matchgemiddelden + weektotalen"],
         ["Top-3 bron", "Alleen events First Half / Second Half, niet Summary"],
         ["Top-3 drempel", "Alleen wedstrijden met totale duur >= 30 minuten"],
-        ["Top-3 output", f"Kolommen tonen parameternamen: {top3_metric_names} + max_speed"],
+        ["Top-3 output", f"Kolommen tonen parameternamen: {top3_metric_names} + maximum_speed"],
         ["Normalisatie Top-3", "Top-3 waarden voor load-metrics zijn genormaliseerd naar 90 minuten"],
         ["Max speed", "Hoogste geldige waarde <= 37; waarden boven 37 worden genegeerd"],
         ["Weekexport bron", "Alle Summary events"],

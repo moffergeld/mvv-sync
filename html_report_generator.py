@@ -17,11 +17,11 @@ LOGO_SRC = TEAM_LOGO.relative_to(BASE_DIR).as_posix() if TEAM_LOGO.exists() else
 
 SVG_COLORS = ["#C8102E", "#6E1222", "#EA3351", "#F59E0B", "#2563EB", "#0F766E"]
 ZONE_SPECS = [
-    ("Walking", "zone_1_2", "#F5D2D8"),
-    ("Jogging", "zone_3", "#F1A4B5"),
-    ("Running", "zone_4", "#E97A93"),
-    ("Zone 5", "zone_5", "#D92B4D"),
-    ("Zone 6", "zone_6", "#6E1222"),
+    ("Walking", "total_distance_zone_1_and_2", "#F5D2D8"),
+    ("Jogging", "total_distance_zone_3", "#F1A4B5"),
+    ("Running", "total_distance_zone_4", "#E97A93"),
+    ("Zone 5", "total_distance_zone_5", "#D92B4D"),
+    ("Zone 6", "total_distance_zone_6", "#6E1222"),
 ]
 ZONE_COLOR_LOOKUP = {label: color for label, _, color in ZONE_SPECS}
 
@@ -200,7 +200,7 @@ def _chart_badge(title: str) -> str:
         return "TD"
     if "speed exposure" in normalized:
         return "EXP"
-    if "zone_5" in normalized:
+    if "total_distance_zone_5" in normalized:
         return "SPR"
     if "accel" in normalized or "decel" in normalized:
         return "ACC"
@@ -1897,22 +1897,22 @@ def _build_week_focus_cards(
 def _build_week_day_cards(day_table: pd.DataFrame) -> list[dict[str, object]]:
     if not isinstance(day_table, pd.DataFrame) or day_table.empty:
         return []
-    peak_distance = pd.to_numeric(day_table.get("total_distance_td"), errors="coerce").max()
+    peak_distance = pd.to_numeric(day_table.get("total_distance"), errors="coerce").max()
     cards: list[dict[str, object]] = []
     for _, row in day_table.sort_values("datum").iterrows():
-        total_distance_td = row.get("total_distance_td")
-        tone = "accent" if pd.notna(total_distance_td) and pd.notna(peak_distance) and float(total_distance_td) == float(peak_distance) else "neutral"
+        total_distance = row.get("total_distance")
+        tone = "accent" if pd.notna(total_distance) and pd.notna(peak_distance) and float(total_distance) == float(peak_distance) else "neutral"
         cards.append(
             {
                 "label": _weekday_label(row.get("datum")),
-                "value": _fmt_distance(total_distance_td),
+                "value": _fmt_distance(total_distance),
                 "subvalue": f"{_fmt_distance(row.get('distance_per_player'))} per speler",
                 "meta": f"{_fmt_int(row.get('active_players'))} spelers | {_fmt_int(row.get('player_sessions'))} sessies",
                 "stats": [
                     {"label": "HSR", "value": _fmt_distance(row.get("hsr_hsd"))},
                     {"label": "Spr", "value": _fmt_int(row.get("sprints"))},
                     {"label": "Exp", "value": _fmt_int(row.get("speed_exposures"))},
-                    {"label": "Top", "value": _fmt_speed(row.get("max_speed"))},
+                    {"label": "Top", "value": _fmt_speed(row.get("maximum_speed"))},
                 ],
                 "tone": tone,
             }
@@ -1964,11 +1964,11 @@ def _build_week_leader_cards(player_table: pd.DataFrame) -> list[dict[str, str]]
         return []
 
     leader_specs: list[tuple[str, str, Callable[[object], str], Callable[[pd.Series], str]]] = [
-        ("TD leader", "total_distance_td", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
+        ("TD leader", "total_distance", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
         ("HSR leader", "hsr_hsd", _fmt_distance, lambda row: f"{_fmt_int(row.get('sessions'))} sessies"),
-        ("Sprint leader", "sprints", _fmt_int, lambda row: _fmt_distance(row.get("total_distance_td"))),
-        ("Top speed", "max_speed", _fmt_speed, lambda row: _fmt_distance(row.get("hsr_hsd"))),
-        ("Intensity", "distance_per_min", lambda value: f"{_fmt_dec(value, 1)} m/min", lambda row: _fmt_distance(row.get("total_distance_td"))),
+        ("Sprint leader", "sprints", _fmt_int, lambda row: _fmt_distance(row.get("total_distance"))),
+        ("Top speed", "maximum_speed", _fmt_speed, lambda row: _fmt_distance(row.get("hsr_hsd"))),
+        ("Intensity", "distance_per_minute", lambda value: f"{_fmt_dec(value, 1)} m/min", lambda row: _fmt_distance(row.get("total_distance"))),
     ]
     cards: list[dict[str, str]] = []
     for label, column, formatter, foot_factory in leader_specs:
@@ -2011,9 +2011,9 @@ def build_week_report_html_pdf_bytes(
     report_revision: str | None = None,
 ) -> bytes:
     top_players = (
-        player_table.sort_values("total_distance_td", ascending=False)
+        player_table.sort_values("total_distance", ascending=False)
         .head(12)
-        .assign(distance_per_min=lambda frame: pd.to_numeric(frame.get("distance_per_min"), errors="coerce"))
+        .assign(distance_per_minute=lambda frame: pd.to_numeric(frame.get("distance_per_minute"), errors="coerce"))
         if isinstance(player_table, pd.DataFrame) and not player_table.empty
         else pd.DataFrame()
     )
@@ -2085,7 +2085,7 @@ def build_week_report_html_pdf_bytes(
         "report_header_meta": [],
         "badges": [],
         "cards": [
-            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance_td")), "foot": ""},
+            {"label": "Total Distance", "value": _fmt_distance_km(summary.get("total_distance")), "foot": ""},
             {"label": "HSR", "value": _fmt_distance_km(summary.get("hsr_hsd")), "foot": ""},
             {"label": "Dist / Player", "value": _fmt_distance_km(summary.get("dist_per_player")), "foot": ""},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": ""},
@@ -2101,7 +2101,7 @@ def build_week_report_html_pdf_bytes(
                     "svg": _build_session_metric_chart_svg(
                         "Daily Team Distance",
                         session_flow,
-                        "total_distance_td",
+                        "total_distance",
                         height=196,
                         formatter=_fmt_distance,
                         footer_text="Trainingen en wedstrijden staan per dag naast elkaar gegroepeerd.",
@@ -2283,12 +2283,12 @@ def build_week_report_html_pdf_bytes(
                             ("day_label", "Dag", None),
                             ("session_code_display", "Event", None),
                             ("session_display", "Type", None),
-                            ("total_distance_td", "TD", _fmt_distance),
+                            ("total_distance", "TD", _fmt_distance),
                             ("distance_per_player", "Dist / Player", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
                             ("speed_exposures", "Exposures", _fmt_int),
-                            ("max_speed", "Top Speed", _fmt_speed),
+                            ("maximum_speed", "Top Speed", _fmt_speed),
                         ],
                         empty_message="Geen sessie-overzicht beschikbaar.",
                     ),
@@ -2300,10 +2300,10 @@ def build_week_report_html_pdf_bytes(
                             ("session_category", "Type", None),
                             ("active_players", "Players", _fmt_int),
                             ("player_sessions", "Sessions", _fmt_int),
-                            ("total_distance_td", "TD", _fmt_distance),
+                            ("total_distance", "TD", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
-                            ("max_speed", "Top Speed", _fmt_speed),
+                            ("maximum_speed", "Top Speed", _fmt_speed),
                         ],
                         empty_message="Geen sessie-indeling beschikbaar.",
                     ),
@@ -2321,11 +2321,11 @@ def build_week_report_html_pdf_bytes(
                         [
                             ("player_name", "Speler", None),
                             ("sessions", "Sessies", _fmt_int),
-                            ("total_distance_td", "TD", _fmt_distance),
+                            ("total_distance", "TD", _fmt_distance),
                             ("hsr_hsd", "HSR", _fmt_distance),
                             ("sprints", "Sprints", _fmt_int),
-                            ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
-                            ("max_speed", "Top Speed", _fmt_speed),
+                            ("distance_per_minute", "m/min", lambda value: _fmt_dec(value, 1)),
+                            ("maximum_speed", "Top Speed", _fmt_speed),
                         ],
                         empty_message="Geen spelerssamenvatting beschikbaar.",
                     ),
@@ -2388,8 +2388,8 @@ def _player_badges(player_name: str, scope_label: str, period_label: str, summar
         f"{_fmt_int(summary.get('sessions'))} sessies",
         f"{_fmt_int(summary.get('active_days'))} actieve dagen",
     ]
-    if pd.notna(summary.get("distance_per_min")):
-        badges.append(f"Intensiteit: {_fmt_dec(summary.get('distance_per_min'), 1)} m/min")
+    if pd.notna(summary.get("distance_per_minute")):
+        badges.append(f"Intensiteit: {_fmt_dec(summary.get('distance_per_minute'), 1)} m/min")
     if pd.notna(summary.get("speed_exposures")):
         badges.append(f"Speed exposures: {_fmt_int(summary.get('speed_exposures'))}")
     return badges
@@ -2417,8 +2417,8 @@ def build_player_report_html_pdf_bytes(
     recent_sessions = sessions_df.copy() if isinstance(sessions_df, pd.DataFrame) else pd.DataFrame()
     recent_sessions = recent_sessions.head(12).copy() if not recent_sessions.empty else recent_sessions
 
-    workload_values = period_table.get("total_distance_td", pd.Series(dtype=float)).tolist()
-    intensity_values = period_table.get("distance_per_min", pd.Series(dtype=float)).tolist()
+    workload_values = period_table.get("total_distance", pd.Series(dtype=float)).tolist()
+    intensity_values = period_table.get("distance_per_minute", pd.Series(dtype=float)).tolist()
 
     context = {
         "document_title": f"Player Report | {player_name}",
@@ -2431,8 +2431,8 @@ def build_player_report_html_pdf_bytes(
         "cards": [
             {"label": "Sessions", "value": _fmt_int(summary.get("sessions")), "foot": "Summary-sessies binnen de huidige scope"},
             {"label": "Active Days", "value": _fmt_int(summary.get("active_days")), "foot": "Dagen met GPS-activiteit"},
-            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance_td")), "foot": "Totale afstand in de huidige scope"},
-            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high zone_5 distance"},
+            {"label": "Total Distance", "value": _fmt_distance(summary.get("total_distance")), "foot": "Totale afstand in de huidige scope"},
+            {"label": "HSR / HSD", "value": _fmt_distance(summary.get("hsr_hsd")), "foot": "Sprint plus high total_distance_zone_5 distance"},
             {"label": "Sprints", "value": _fmt_int(summary.get("sprints")), "foot": "Totaal aantal sprintacties"},
             {"label": "Top Speed", "value": _fmt_speed(summary.get("top_speed")), "foot": "Hoogste gemeten snelheid"},
         ],
@@ -2469,7 +2469,7 @@ def build_player_report_html_pdf_bytes(
                     "svg": _build_horizontal_bar_chart_svg(
                         "Recent Sessions by Distance",
                         recent_sessions.get("datum_label", pd.Series(dtype=str)).tolist(),
-                        recent_sessions.get("total_distance_td", pd.Series(dtype=float)).tolist(),
+                        recent_sessions.get("total_distance", pd.Series(dtype=float)).tolist(),
                         color="#C8102E",
                         formatter=_fmt_distance,
                     )
@@ -2522,11 +2522,11 @@ def build_player_report_html_pdf_bytes(
                     [
                         ("label", "Periode", None),
                         ("sessions", "Sessies", _fmt_int),
-                        ("total_distance_td", "Distance", _fmt_distance),
+                        ("total_distance", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("number_of_sprints", "Sprints", _fmt_int),
-                        ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
-                        ("max_speed", "Top Speed", _fmt_speed),
+                        ("distance_per_minute", "m/min", lambda value: _fmt_dec(value, 1)),
+                        ("maximum_speed", "Top Speed", _fmt_speed),
                     ],
                     empty_message="Geen periodetabel beschikbaar.",
                 ),
@@ -2537,11 +2537,11 @@ def build_player_report_html_pdf_bytes(
                     [
                         ("session_category", "Type", None),
                         ("sessions", "Sessies", _fmt_int),
-                        ("total_distance_td", "Distance", _fmt_distance),
+                        ("total_distance", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("sprints", "Sprints", _fmt_int),
-                        ("distance_per_min", "m/min", lambda value: _fmt_dec(value, 1)),
-                        ("max_speed", "Top Speed", _fmt_speed),
+                        ("distance_per_minute", "m/min", lambda value: _fmt_dec(value, 1)),
+                        ("maximum_speed", "Top Speed", _fmt_speed),
                     ],
                     empty_message="Geen trainings- versus matchdata beschikbaar.",
                 ),
@@ -2555,11 +2555,11 @@ def build_player_report_html_pdf_bytes(
                         ("datum_label", "Datum", None),
                         ("type", "Type", None),
                         ("event", "Event", None),
-                        ("total_distance_td", "Distance", _fmt_distance),
+                        ("total_distance", "Distance", _fmt_distance),
                         ("hsr_hsd", "HSR / HSD", _fmt_distance),
                         ("number_of_sprints", "Sprints", _fmt_int),
                         ("duration", "Duur", _fmt_minutes),
-                        ("max_speed", "Top Speed", _fmt_speed),
+                        ("maximum_speed", "Top Speed", _fmt_speed),
                     ],
                     empty_message="Geen recente sessies beschikbaar.",
                 ),

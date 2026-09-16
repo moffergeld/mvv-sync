@@ -729,7 +729,7 @@ def matches_df_to_rows(df: pd.DataFrame, source_file: str) -> list[dict]:
             "result": r.get("result") or None,
             "goals_for": int(r["goals_for"]) if pd.notna(r.get("goals_for")) else None,
             "goals_against": int(r["goals_against"]) if pd.notna(r.get("goals_against")) else None,
-            "source_file": source_file,
+
         }
         if pd.notna(match_id) and _clean_match_text(match_id):
             payload["match_id"] = int(match_id)
@@ -913,175 +913,174 @@ def apply_auto_match_ids_to_rows(access_token: str, rows: list[dict], ui_key_pre
 # -------------------------
 # GPS schema + parsers
 # -------------------------
-GPS_COLS = [
-    "player_id",
-    "player_name",
-    "datum",
-    "week",
-    "year",
-    "type",
-    "event",
-    "match_id",
-    "duration",
-    "total_distance_td",
-    "td_zone_1",
-    "td_zone_2",
-    "td_zone_1_2",
-    "td_zone_3",
-    "td_zone_4",
-    "td_zone_5",
-    "td_zone_6",
-    "number_of_sprints",
-    "number_of_high_sprints",
-    "number_of_repeated_sprints",
-    "max_speed",
-    "avg_speed",
-    "playerload3d",
-    "playerload2d",
-    "total_accelerations",
-    "high_accelerations",
-    "total_decelerations",
-    "high_decelerations",
-    "hrzone1",
-    "hrzone2",
-    "hrzone3",
-    "hrzone4",
-    "hrzone5",
-    "hrtrimp",
-    "hrzoneanaerobic",
-    "avg_hr",
-    "max_hr",
-    # Frequently used fields from broad player-metrics exports. Less stable
-    # vendor-specific fields continue to be preserved in extra_metrics.
-    "distance_per_min",
-    "high_sprint_relative",
-    "sprint_relative",
-    "accelerations_relative",
-    "decelerations_relative",
-    "acceleration_impulse",
-    "total_acceleration_loading",
-    "total_deceleration_loading",
-    "max_acceleration",
-    "max_deceleration",
-    "explosive_distance",
-    "metabolic_distance_relative",
-    "hml_distance",
-    "hml_efforts_maximum_speed",
-    "lower_speed_loading",
-    "total_loading",
-    "player_max_speed",
-    "heart_rate_load",
-    "heart_rate_exertion",
-    "heart_rate_recovery_pct",
-    "heart_rate_recovery_beats",
-    "heart_rate_variability",
-    "min_hr",
-    "acute_load",
-    "chronic_load",
-    "acwr",
-    "steps",
-    "source_file",
-    "extra_metrics",
-]
+GPS_COLS = ['player_id',
+ 'player_name',
+ 'datum',
+ 'week',
+ 'year',
+ 'type',
+ 'event',
+ 'match_id',
+ 'duration',
+ 'total_distance',
+ 'total_distance_zone_1',
+ 'total_distance_zone_2',
+ 'total_distance_zone_1_and_2',
+ 'total_distance_zone_3',
+ 'total_distance_zone_4',
+ 'total_distance_zone_5',
+ 'total_distance_zone_6',
+ 'number_of_sprints',
+ 'number_of_high_sprints',
+ 'number_of_repeated_sprints',
+ 'maximum_speed',
+ 'average_speed',
+ 'player_load_three_dimensional',
+ 'player_load_two_dimensional',
+ 'total_accelerations',
+ 'high_accelerations',
+ 'total_decelerations',
+ 'high_decelerations',
+ 'heart_rate_zone_1',
+ 'heart_rate_zone_2',
+ 'heart_rate_zone_3',
+ 'heart_rate_zone_4',
+ 'heart_rate_zone_5',
+ 'heart_rate_training_impulse',
+ 'heart_rate_anaerobic_zone',
+ 'average_heart_rate',
+ 'maximum_heart_rate',
+ 'distance_per_minute',
+ 'high_speed_running_distance_relative',
+ 'sprint_distance_relative',
+ 'accelerations_relative',
+ 'decelerations_relative',
+ 'acceleration_impulse',
+ 'total_acceleration_loading',
+ 'total_deceleration_loading',
+ 'maximum_acceleration',
+ 'maximum_deceleration',
+ 'explosive_distance',
+ 'metabolic_distance_relative',
+ 'high_metabolic_load_distance',
+ 'high_metabolic_load_efforts_maximum_speed',
+ 'lower_speed_loading',
+ 'total_loading',
+ 'player_maximum_speed',
+ 'heart_rate_load',
+ 'heart_rate_exertion',
+ 'heart_rate_recovery_percentage',
+ 'heart_rate_recovery_beats',
+ 'heart_rate_variability',
+ 'minimum_heart_rate',
+ 'acute_load',
+ 'chronic_load',
+ 'acute_chronic_workload_ratio',
+ 'steps',
+ 'extra_metrics']
 
-METRIC_MAP = {
-    "duration": "duration",
-    "totaldistance": "total_distance_td",
-    "distancetotal": "total_distance_td",
-    "walkdistance": "td_zone_1_2",
-    "jogdistance": "td_zone_3",
-    "rundistance": "td_zone_4",
-    "sprintdistance": "td_zone_5",
-    "hisprintdistance": "td_zone_6",
-    "highsprintdistance": "td_zone_6",
-    "highspeedrunningabsolute": "td_zone_6",
-    "numberofsprints": "number_of_sprints",
-    "sprints": "number_of_sprints",
-    "numberofhisprints": "number_of_high_sprints",
-    "numberofhighsprints": "number_of_high_sprints",
-    "numberofrepeatedsprints": "number_of_repeated_sprints",
-    "maxspeed": "max_speed",
-    "avgspeed": "avg_speed",
-    "averagespeed": "avg_speed",
-    "playerload3d": "playerload3d",
-    "playerload2d": "playerload2d",
-    "totalaccelerations": "total_accelerations",
-    "accelerationsrel": "total_accelerations",
-    "highaccelerations": "high_accelerations",
-    "totaldecelerations": "total_decelerations",
-    "decelerationsrel": "total_decelerations",
-    "highdecelerations": "high_decelerations",
-    "hrzone1": "hrzone1",
-    "hrzone2": "hrzone2",
-    "hrzone3": "hrzone3",
-    "hrzone4": "hrzone4",
-    "hrzone5": "hrzone5",
-    "hrtrimp": "hrtrimp",
-    "hrzoneanaerobic": "hrzoneanaerobic",
-    "avghr": "avg_hr",
-    "averageheartrate": "avg_hr",
-    "avgheartrate": "avg_hr",
-    "maxhr": "max_hr",
-    "maximumheartrate": "max_hr",
-    "maxheartrate": "max_hr",
-    "distancepermin": "distance_per_min",
-    "highspeedrunningrelative": "high_sprint_relative",
-    "sprintdistancerelative": "sprint_relative",
-    "accelerationsrelative": "accelerations_relative",
-    "decelerationsrelative": "decelerations_relative",
-    "accelerationimpulse": "acceleration_impulse",
-    "totalaccelerationloading": "total_acceleration_loading",
-    "totaldecelerationloading": "total_deceleration_loading",
-    "maxacceleration": "max_acceleration",
-    "maxdeceleration": "max_deceleration",
-    "explosivedistanceabsolute": "explosive_distance",
-    "metabolicdistancerelative": "metabolic_distance_relative",
-    "hmldistance": "hml_distance",
-    "hmleffortsmaximumspeed": "hml_efforts_maximum_speed",
-    "lowerspeedloading": "lower_speed_loading",
-    "totalloading": "total_loading",
-    "playermaxspeed": "player_max_speed",
-    "heartrateload": "heart_rate_load",
-    "heartrateexertion": "heart_rate_exertion",
-    "heartraterecovery": "heart_rate_recovery_pct",
-    "heartraterecoverynumberofbeats": "heart_rate_recovery_beats",
-    "heartratevariability": "heart_rate_variability",
-    "minimumheartrate": "min_hr",
-    "acute": "acute_load",
-    "chronic": "chronic_load",
-    "acutechronicratio": "acwr",
-    "steps": "steps",
-    # extra aliases (zonder "distance")
-    "walking": "td_zone_1_2",
-    "jogging": "td_zone_3",
-    "running": "td_zone_4",
-    "sprint": "td_zone_5",
-    "highsprint": "td_zone_6",
-    "hisprint": "td_zone_6",
-    "walk": "td_zone_1_2",
-    "jog": "td_zone_3",
-    "run": "td_zone_4",
-}
+METRIC_MAP = {'duration': 'duration',
+ 'totaldistance': 'total_distance',
+ 'distancetotal': 'total_distance',
+ 'walkdistance': 'total_distance_zone_1_and_2',
+ 'jogdistance': 'total_distance_zone_3',
+ 'rundistance': 'total_distance_zone_4',
+ 'sprintdistance': 'total_distance_zone_5',
+ 'hisprintdistance': 'total_distance_zone_6',
+ 'highsprintdistance': 'total_distance_zone_6',
+ 'highspeedrunningabsolute': 'total_distance_zone_6',
+ 'numberofsprints': 'number_of_sprints',
+ 'sprints': 'number_of_sprints',
+ 'numberofhisprints': 'number_of_high_sprints',
+ 'numberofhighsprints': 'number_of_high_sprints',
+ 'numberofrepeatedsprints': 'number_of_repeated_sprints',
+ 'maxspeed': 'maximum_speed',
+ 'avgspeed': 'average_speed',
+ 'averagespeed': 'average_speed',
+ 'playerload3d': 'player_load_three_dimensional',
+ 'playerload2d': 'player_load_two_dimensional',
+ 'totalaccelerations': 'total_accelerations',
+ 'accelerationsrel': 'total_accelerations',
+ 'highaccelerations': 'high_accelerations',
+ 'totaldecelerations': 'total_decelerations',
+ 'decelerationsrel': 'total_decelerations',
+ 'highdecelerations': 'high_decelerations',
+ 'hrzone1': 'heart_rate_zone_1',
+ 'hrzone2': 'heart_rate_zone_2',
+ 'hrzone3': 'heart_rate_zone_3',
+ 'hrzone4': 'heart_rate_zone_4',
+ 'hrzone5': 'heart_rate_zone_5',
+ 'hrtrimp': 'heart_rate_training_impulse',
+ 'hrzoneanaerobic': 'heart_rate_anaerobic_zone',
+ 'avghr': 'average_heart_rate',
+ 'averageheartrate': 'average_heart_rate',
+ 'avgheartrate': 'average_heart_rate',
+ 'maxhr': 'maximum_heart_rate',
+ 'maximumheartrate': 'maximum_heart_rate',
+ 'maxheartrate': 'maximum_heart_rate',
+ 'distancepermin': 'distance_per_minute',
+ 'highspeedrunningrelative': 'high_speed_running_distance_relative',
+ 'sprintdistancerelative': 'sprint_distance_relative',
+ 'accelerationsrelative': 'accelerations_relative',
+ 'decelerationsrelative': 'decelerations_relative',
+ 'accelerationimpulse': 'acceleration_impulse',
+ 'totalaccelerationloading': 'total_acceleration_loading',
+ 'totaldecelerationloading': 'total_deceleration_loading',
+ 'maxacceleration': 'maximum_acceleration',
+ 'maxdeceleration': 'maximum_deceleration',
+ 'explosivedistanceabsolute': 'explosive_distance',
+ 'metabolicdistancerelative': 'metabolic_distance_relative',
+ 'hmldistance': 'high_metabolic_load_distance',
+ 'hmleffortsmaximumspeed': 'high_metabolic_load_efforts_maximum_speed',
+ 'lowerspeedloading': 'lower_speed_loading',
+ 'totalloading': 'total_loading',
+ 'playermaxspeed': 'player_maximum_speed',
+ 'heartrateload': 'heart_rate_load',
+ 'heartrateexertion': 'heart_rate_exertion',
+ 'heartraterecovery': 'heart_rate_recovery_percentage',
+ 'heartraterecoverynumberofbeats': 'heart_rate_recovery_beats',
+ 'heartratevariability': 'heart_rate_variability',
+ 'minimumheartrate': 'minimum_heart_rate',
+ 'acute': 'acute_load',
+ 'chronic': 'chronic_load',
+ 'acutechronicratio': 'acute_chronic_workload_ratio',
+ 'steps': 'steps',
+ 'walking': 'total_distance_zone_1_and_2',
+ 'jogging': 'total_distance_zone_3',
+ 'running': 'total_distance_zone_4',
+ 'sprint': 'total_distance_zone_5',
+ 'highsprint': 'total_distance_zone_6',
+ 'hisprint': 'total_distance_zone_6',
+ 'walk': 'total_distance_zone_1_and_2',
+ 'jog': 'total_distance_zone_3',
+ 'run': 'total_distance_zone_4'}
 
 # Source-complete fields from the STATSports/Johan Sports player-metrics export.
 # Exact headers are kept so similarly normalized fields (for example time and time %) do not collide.
-CSV_SOURCE_COLUMN_MAP = {'timeinredzonerelative': 'csv_time_in_red_zone_relative', 'accelerationstotaldistancezone1relative': 'csv_accelerations_total_distance_zone_1_relative', 'accelerationstotaldistancezone2relative': 'csv_accelerations_total_distance_zone_2_relative', 'accelerationstotaldistancezone3relative': 'csv_accelerations_total_distance_zone_3_relative', 'accelerationstotaldistancezone4absolute': 'csv_accelerations_total_distance_zone_4_absolute', 'accelerationstotaldistancezone4relative': 'csv_accelerations_total_distance_zone_4_relative', 'accelerationstotaldistancezone5relative': 'csv_accelerations_total_distance_zone_5_relative', 'accelerationstotaldistancezone6relative': 'csv_accelerations_total_distance_zone_6_relative', 'accelerationstotaltimezone1relative': 'csv_accelerations_total_time_zone_1_relative', 'accelerationstotaltimezone2relative': 'csv_accelerations_total_time_zone_2_relative', 'accelerationstotaltimezone3relative': 'csv_accelerations_total_time_zone_3_relative', 'accelerationstotaltimezone4relative': 'csv_accelerations_total_time_zone_4_relative', 'accelerationstotaltimezone5relative': 'csv_accelerations_total_time_zone_5_relative', 'accelerationstotaltimezone6relative': 'csv_accelerations_total_time_zone_6_relative', 'accelerationszone1relative': 'csv_accelerations_zone_1_relative', 'accelerationszone2relative': 'csv_accelerations_zone_2_relative', 'accelerationszone3relative': 'csv_accelerations_zone_3_relative', 'accelerationszone3zone6relative': 'csv_accelerations_zone_3_zone_6_relative', 'accelerationszone4relative': 'csv_accelerations_zone_4_relative', 'accelerationszone4zone6relative': 'csv_accelerations_zone_4_zone_6_relative', 'accelerationszone5relative': 'csv_accelerations_zone_5_relative', 'accelerationszone5zone6relative': 'csv_accelerations_zone_5_zone_6_relative', 'accelerationszone6relative': 'csv_accelerations_zone_6_relative', 'accelerationsperminrelative': 'csv_accelerations_per_min_relative', 'averagediveimpact': 'csv_average_dive_impact', 'averagegkpower': 'csv_average_gk_power', 'averagemetabolicpower': 'csv_average_metabolic_power', 'averagetimesincelastaccel': 'csv_average_time_since_last_accel', 'averagetimesincelastdecel': 'csv_average_time_since_last_decel', 'averagetimesincelastdive': 'csv_average_time_since_last_dive', 'averagetimesincelasthib': 'csv_average_time_since_last_hib', 'averagetimesincelasthmleffort': 'csv_average_time_since_last_hml_effort', 'averagetimesincelastsprint': 'csv_average_time_since_last_sprint', 'ballinplaytime': 'csv_ball_in_play_time_pct', 'playercustomid': 'csv_player_custom_id', 'decelerationstotaldistancezone1relative': 'csv_decelerations_total_distance_zone_1_relative', 'decelerationstotaldistancezone2relative': 'csv_decelerations_total_distance_zone_2_relative', 'decelerationstotaldistancezone3relative': 'csv_decelerations_total_distance_zone_3_relative', 'decelerationstotaldistancezone4relative': 'csv_decelerations_total_distance_zone_4_relative', 'decelerationstotaldistancezone5relative': 'csv_decelerations_total_distance_zone_5_relative', 'decelerationstotaldistancezone6relative': 'csv_decelerations_total_distance_zone_6_relative', 'decelerationstotaltimezone1relative': 'csv_decelerations_total_time_zone_1_relative', 'decelerationstotaltimezone2relative': 'csv_decelerations_total_time_zone_2_relative', 'decelerationstotaltimezone3relative': 'csv_decelerations_total_time_zone_3_relative', 'decelerationstotaltimezone4relative': 'csv_decelerations_total_time_zone_4_relative', 'decelerationstotaltimezone5relative': 'csv_decelerations_total_time_zone_5_relative', 'decelerationstotaltimezone6relative': 'csv_decelerations_total_time_zone_6_relative', 'decelerationszone1relative': 'csv_decelerations_zone_1_relative', 'decelerationszone2relative': 'csv_decelerations_zone_2_relative', 'decelerationszone3relative': 'csv_decelerations_zone_3_relative', 'decelerationszone3zone6relative': 'csv_decelerations_zone_3_zone_6_relative', 'decelerationszone4relative': 'csv_decelerations_zone_4_relative', 'decelerationszone4zone6relative': 'csv_decelerations_zone_4_zone_6_relative', 'decelerationszone5relative': 'csv_decelerations_zone_5_relative', 'decelerationszone5zone6relative': 'csv_decelerations_zone_5_zone_6_relative', 'decelerationszone6relative': 'csv_decelerations_zone_6_relative', 'decelerationsperminrelative': 'csv_decelerations_per_min_relative', 'distancezone1absolute': 'csv_distance_zone_1_absolute', 'distancezone1relative': 'csv_distance_zone_1_relative', 'distancezone2absolute': 'csv_distance_zone_2_absolute', 'distancezone2relative': 'csv_distance_zone_2_relative', 'distancezone2zone6absolute': 'csv_distance_zone_2_zone_6_absolute', 'distancezone2zone6relative': 'csv_distance_zone_2_zone_6_relative', 'distancezone3absolute': 'csv_distance_zone_3_absolute', 'distancezone3relative': 'csv_distance_zone_3_relative', 'distancezone3zone6absolute': 'csv_distance_zone_3_zone_6_absolute', 'distancezone3zone6relative': 'csv_distance_zone_3_zone_6_relative', 'distancezone4absolute': 'csv_distance_zone_4_absolute', 'distancezone4relative': 'csv_distance_zone_4_relative', 'distancezone4zone6absolute': 'csv_distance_zone_4_zone_6_absolute', 'distancezone4zone6relative': 'csv_distance_zone_4_zone_6_relative', 'distancezone5absolute': 'csv_distance_zone_5_absolute', 'distancezone5relative': 'csv_distance_zone_5_relative', 'distancezone6absolute': 'csv_distance_zone_6_absolute', 'distancezone6relative': 'csv_distance_zone_6_relative', 'dives': 'csv_dives', 'divesleft': 'csv_dives_left', 'divesright': 'csv_dives_right', 'drilldate': 'csv_drill_date', 'drillendtime': 'csv_drill_end_time', 'drillstarttime': 'csv_drill_start_time', 'drilltitle': 'csv_drill_title', 'durationofhighintensitybursts': 'csv_duration_of_high_intensity_bursts', 'dynamicloadanterior': 'csv_dynamic_load_anterior', 'dynamicloadlateral': 'csv_dynamic_load_lateral', 'dynamicloadvertical': 'csv_dynamic_load_vertical', 'dynamicstressload': 'csv_dynamic_stress_load', 'dynamicstressloadtimezone1': 'csv_dynamic_stress_load_time_zone_1', 'dynamicstressloadtimezone2': 'csv_dynamic_stress_load_time_zone_2', 'dynamicstressloadtimezone3': 'csv_dynamic_stress_load_time_zone_3', 'dynamicstressloadtimezone4': 'csv_dynamic_stress_load_time_zone_4', 'dynamicstressloadtimezone5': 'csv_dynamic_stress_load_time_zone_5', 'dynamicstressloadtimezone6': 'csv_dynamic_stress_load_time_zone_6', 'dynamicstressloadzone1': 'csv_dynamic_stress_load_zone_1', 'dynamicstressloadzone2': 'csv_dynamic_stress_load_zone_2', 'dynamicstressloadzone3': 'csv_dynamic_stress_load_zone_3', 'dynamicstressloadzone3zone6': 'csv_dynamic_stress_load_zone_3_zone_6', 'dynamicstressloadzone4': 'csv_dynamic_stress_load_zone_4', 'dynamicstressloadzone4zone6': 'csv_dynamic_stress_load_zone_4_zone_6', 'dynamicstressloadzone5': 'csv_dynamic_stress_load_zone_5', 'dynamicstressloadzone5zone6': 'csv_dynamic_stress_load_zone_5_zone_6', 'dynamicstressloadzone6': 'csv_dynamic_stress_load_zone_6', 'edi': 'csv_edi_pct', 'energyexpenditurekcal': 'csv_energy_expenditure_kcal', 'entrieszone3absolute': 'csv_entries_zone_3_absolute', 'entrieszone3relative': 'csv_entries_zone_3_relative', 'entrieszone4absolute': 'csv_entries_zone_4_absolute', 'entrieszone4relative': 'csv_entries_zone_4_relative', 'entrieszone5absolute': 'csv_entries_zone_5_absolute', 'entrieszone5relative': 'csv_entries_zone_5_relative', 'entrieszone6absolute': 'csv_entries_zone_6_absolute', 'entrieszone6relative': 'csv_entries_zone_6_relative', 'equivalentmetabolicdistance': 'csv_equivalent_metabolic_distance', 'explosivedistancerelative': 'csv_explosive_distance_relative', 'externalwork': 'csv_external_work', 'fatigueindex': 'csv_fatigue_index', 'gkload': 'csv_gk_load', 'highintensityburstsmaximumspeed': 'csv_high_intensity_bursts_maximum_speed', 'highintensityburststotaldistance': 'csv_high_intensity_bursts_total_distance', 'hmlefforts': 'csv_hml_efforts', 'hmleffortstotaldistance': 'csv_hml_efforts_total_distance', 'hmltime': 'csv_hml_time', 'hmldperminute': 'csv_hmld_per_minute', 'hsrperminuteabsolute': 'csv_hsr_per_minute_absolute', 'hsrperminuterelative': 'csv_hsr_per_minute_relative', 'impactsrelative': 'csv_impacts_relative', 'impactszone1relative': 'csv_impacts_zone_1_relative', 'impactszone2relative': 'csv_impacts_zone_2_relative', 'impactszone3relative': 'csv_impacts_zone_3_relative', 'impactszone3zone6relative': 'csv_impacts_zone_3_zone_6_relative', 'impactszone4relative': 'csv_impacts_zone_4_relative', 'impactszone4zone6relative': 'csv_impacts_zone_4_zone_6_relative', 'impactszone5relative': 'csv_impacts_zone_5_relative', 'impactszone5zone6relative': 'csv_impacts_zone_5_zone_6_relative', 'impactszone6relative': 'csv_impacts_zone_6_relative', 'leftanteriorpostimpact': 'csv_left_anterior_post_impact', 'leftaverageverticalimpact': 'csv_left_average_vertical_impact', 'leftlateralimpact': 'csv_left_lateral_impact', 'leftmagimpact': 'csv_left_mag_impact', 'leftverticalimpact': 'csv_left_vertical_impact', 'maxheartrate': 'csv_max_heart_rate', 'metabolicdistancezone1relative': 'csv_metabolic_distance_zone_1_relative', 'metabolicdistancezone2relative': 'csv_metabolic_distance_zone_2_relative', 'metabolicdistancezone3relative': 'csv_metabolic_distance_zone_3_relative', 'metabolicdistancezone4relative': 'csv_metabolic_distance_zone_4_relative', 'metabolicdistancezone5relative': 'csv_metabolic_distance_zone_5_relative', 'metabolicdistancezone6relative': 'csv_metabolic_distance_zone_6_relative', 'metabolictimerelative': 'csv_metabolic_time_relative', 'metabolictimezone1absolute': 'csv_metabolic_time_zone_1_absolute', 'metabolictimezone1relative': 'csv_metabolic_time_zone_1_relative', 'metabolictimezone2absolute': 'csv_metabolic_time_zone_2_absolute', 'metabolictimezone2relative': 'csv_metabolic_time_zone_2_relative', 'metabolictimezone3relative': 'csv_metabolic_time_zone_3_relative', 'metabolictimezone4relative': 'csv_metabolic_time_zone_4_relative', 'metabolictimezone5relative': 'csv_metabolic_time_zone_5_relative', 'metabolictimezone6relative': 'csv_metabolic_time_zone_6_relative', 'noofsatellites': 'csv_no_of_satellites', 'numberofhighintensitybursts': 'csv_number_of_high_intensity_bursts', 'playerdateofbirth': 'csv_player_date_of_birth', 'playerdisplayname': 'csv_player_display_name', 'playerfirstname': 'csv_player_first_name', 'playerheight': 'csv_player_height', 'playerlastname': 'csv_player_last_name', 'playermaxaccel': 'csv_player_max_accel', 'playermaxdecel': 'csv_player_max_decel', 'playermaxheartrate': 'csv_player_max_heart_rate', 'playername': 'csv_player_name', 'playerprimaryposition': 'csv_player_primary_position', 'playerrestingheartrate': 'csv_player_resting_heart_rate', 'playersecondaryposition': 'csv_player_secondary_position', 'playersprintthreshold': 'csv_player_sprint_threshold', 'playerweight': 'csv_player_weight', 'qualityofsignal': 'csv_quality_of_signal', 'rightanteriorpostimpact': 'csv_right_anterior_post_impact', 'rightaverageverticalimpact': 'csv_right_average_vertical_impact', 'rightlateralimpact': 'csv_right_lateral_impact', 'rightmagimpact': 'csv_right_mag_impact', 'rightverticalimpact': 'csv_right_vertical_impact', 'sessiondate': 'csv_session_date', 'sessiondayofweek': 'csv_session_day_of_week', 'sessionendtime': 'csv_session_end_time', 'sessionstarttime': 'csv_session_start_time', 'sessiontitle': 'csv_session_title', 'sessiontype': 'csv_session_type', 'sessionweeknumber': 'csv_session_week_number', 'speedintensity': 'csv_speed_intensity', 'speedintensityzone1absolute': 'csv_speed_intensity_zone_1_absolute', 'speedintensityzone1relative': 'csv_speed_intensity_zone_1_relative', 'speedintensityzone2absolute': 'csv_speed_intensity_zone_2_absolute', 'speedintensityzone2relative': 'csv_speed_intensity_zone_2_relative', 'speedintensityzone3absolute': 'csv_speed_intensity_zone_3_absolute', 'speedintensityzone3relative': 'csv_speed_intensity_zone_3_relative', 'speedintensityzone3zone6absolute': 'csv_speed_intensity_zone_3_zone_6_absolute', 'speedintensityzone3zone6relative': 'csv_speed_intensity_zone_3_zone_6_relative', 'speedintensityzone4absolute': 'csv_speed_intensity_zone_4_absolute', 'speedintensityzone4relative': 'csv_speed_intensity_zone_4_relative', 'speedintensityzone4zone6absolute': 'csv_speed_intensity_zone_4_zone_6_absolute', 'speedintensityzone4zone6relative': 'csv_speed_intensity_zone_4_zone_6_relative', 'speedintensityzone5absolute': 'csv_speed_intensity_zone_5_absolute', 'speedintensityzone5relative': 'csv_speed_intensity_zone_5_relative', 'speedintensityzone5zone6absolute': 'csv_speed_intensity_zone_5_zone_6_absolute', 'speedintensityzone5zone6relative': 'csv_speed_intensity_zone_5_zone_6_relative', 'speedintensityzone6absolute': 'csv_speed_intensity_zone_6_absolute', 'speedintensityzone6relative': 'csv_speed_intensity_zone_6_relative', 'stepbalance': 'csv_step_balance', 'timeinheartratezone1relative': 'csv_time_in_heart_rate_zone_1_relative', 'timeinheartratezone2relative': 'csv_time_in_heart_rate_zone_2_relative', 'timeinheartratezone2zone6relative': 'csv_time_in_heart_rate_zone_2_zone_6_relative', 'timeinheartratezone3relative': 'csv_time_in_heart_rate_zone_3_relative', 'timeinheartratezone3zone6relative': 'csv_time_in_heart_rate_zone_3_zone_6_relative', 'timeinheartratezone4relative': 'csv_time_in_heart_rate_zone_4_relative', 'timeinheartratezone4zone6relative': 'csv_time_in_heart_rate_zone_4_zone_6_relative', 'timeinheartratezone5relative': 'csv_time_in_heart_rate_zone_5_relative', 'timeinheartratezone6relative': 'csv_time_in_heart_rate_zone_6_relative', 'timezone1absolute': 'csv_time_zone_1_absolute', 'timezone1relative': 'csv_time_zone_1_relative', 'timezone2absolute': 'csv_time_zone_2_absolute', 'timezone2relative': 'csv_time_zone_2_relative', 'timezone3absolute': 'csv_time_zone_3_absolute', 'timezone3relative': 'csv_time_zone_3_relative', 'timezone4absolute': 'csv_time_zone_4_absolute', 'timezone4relative': 'csv_time_zone_4_relative', 'timezone5absolute': 'csv_time_zone_5_absolute', 'timezone5relative': 'csv_time_zone_5_relative', 'timezone6absolute': 'csv_time_zone_6_absolute', 'timezone6relative': 'csv_time_zone_6_relative', 'totalleftsteps': 'csv_total_left_steps', 'totalmetabolicpower': 'csv_total_metabolic_power', 'totalrightsteps': 'csv_total_right_steps', 'totaltime': 'csv_total_time'}
-CSV_SOURCE_HEADER_MAP = {'% Time In Red Zone (Relative)': 'csv_pct_time_in_red_zone_relative', 'Accelerations Total Distance Zone 1 (Relative)': 'csv_accelerations_total_distance_zone_1_relative', 'Accelerations Total Distance Zone 2 (Relative)': 'csv_accelerations_total_distance_zone_2_relative', 'Accelerations Total Distance Zone 3 (Relative)': 'csv_accelerations_total_distance_zone_3_relative', 'Accelerations Total Distance Zone 4 (Absolute)': 'csv_accelerations_total_distance_zone_4_absolute', 'Accelerations Total Distance Zone 4 (Relative)': 'csv_accelerations_total_distance_zone_4_relative', 'Accelerations Total Distance Zone 5 (Relative)': 'csv_accelerations_total_distance_zone_5_relative', 'Accelerations Total Distance Zone 6 (Relative)': 'csv_accelerations_total_distance_zone_6_relative', 'Accelerations Total Time Zone 1 (Relative)': 'csv_accelerations_total_time_zone_1_relative', 'Accelerations Total Time Zone 2 (Relative)': 'csv_accelerations_total_time_zone_2_relative', 'Accelerations Total Time Zone 3 (Relative)': 'csv_accelerations_total_time_zone_3_relative', 'Accelerations Total Time Zone 4 (Relative)': 'csv_accelerations_total_time_zone_4_relative', 'Accelerations Total Time Zone 5 (Relative)': 'csv_accelerations_total_time_zone_5_relative', 'Accelerations Total Time Zone 6 (Relative)': 'csv_accelerations_total_time_zone_6_relative', 'Accelerations Zone 1 (Relative)': 'csv_accelerations_zone_1_relative', 'Accelerations Zone 2 (Relative)': 'csv_accelerations_zone_2_relative', 'Accelerations Zone 3 (Relative)': 'csv_accelerations_zone_3_relative', 'Accelerations Zone 3 - Zone 6 (Relative)': 'csv_accelerations_zone_3_zone_6_relative', 'Accelerations Zone 4 (Relative)': 'csv_accelerations_zone_4_relative', 'Accelerations Zone 4 - Zone 6 (Relative)': 'csv_accelerations_zone_4_zone_6_relative', 'Accelerations Zone 5 (Relative)': 'csv_accelerations_zone_5_relative', 'Accelerations Zone 5 - Zone 6 (Relative)': 'csv_accelerations_zone_5_zone_6_relative', 'Accelerations Zone 6 (Relative)': 'csv_accelerations_zone_6_relative', 'Accelerations Per Min (Relative)': 'csv_accelerations_per_min_relative', 'Average Dive Impact': 'csv_average_dive_impact', 'Average GK Power': 'csv_average_gk_power', 'Average Metabolic Power': 'csv_average_metabolic_power', 'Average Time Since Last Accel': 'csv_average_time_since_last_accel', 'Average Time Since Last Decel': 'csv_average_time_since_last_decel', 'Average Time Since Last Dive': 'csv_average_time_since_last_dive', 'Average Time Since Last HIB': 'csv_average_time_since_last_hib', 'Average Time Since Last HML Effort': 'csv_average_time_since_last_hml_effort', 'Average Time Since Last Sprint': 'csv_average_time_since_last_sprint', 'Ball In Play Time': 'csv_ball_in_play_time', 'Ball In Play Time %': 'csv_ball_in_play_time_pct', 'Player Custom ID': 'csv_player_custom_id', 'Decelerations Total Distance Zone 1 (Relative)': 'csv_decelerations_total_distance_zone_1_relative', 'Decelerations Total Distance Zone 2 (Relative)': 'csv_decelerations_total_distance_zone_2_relative', 'Decelerations Total Distance Zone 3 (Relative)': 'csv_decelerations_total_distance_zone_3_relative', 'Decelerations Total Distance Zone 4 (Relative)': 'csv_decelerations_total_distance_zone_4_relative', 'Decelerations Total Distance Zone 5 (Relative)': 'csv_decelerations_total_distance_zone_5_relative', 'Decelerations Total Distance Zone 6 (Relative)': 'csv_decelerations_total_distance_zone_6_relative', 'Decelerations Total Time Zone 1 (Relative)': 'csv_decelerations_total_time_zone_1_relative', 'Decelerations Total Time Zone 2 (Relative)': 'csv_decelerations_total_time_zone_2_relative', 'Decelerations Total Time Zone 3 (Relative)': 'csv_decelerations_total_time_zone_3_relative', 'Decelerations Total Time Zone 4 (Relative)': 'csv_decelerations_total_time_zone_4_relative', 'Decelerations Total Time Zone 5 (Relative)': 'csv_decelerations_total_time_zone_5_relative', 'Decelerations Total Time Zone 6 (Relative)': 'csv_decelerations_total_time_zone_6_relative', 'Decelerations Zone 1 (Relative)': 'csv_decelerations_zone_1_relative', 'Decelerations Zone 2 (Relative)': 'csv_decelerations_zone_2_relative', 'Decelerations Zone 3 (Relative)': 'csv_decelerations_zone_3_relative', 'Decelerations Zone 3 - Zone 6 (Relative)': 'csv_decelerations_zone_3_zone_6_relative', 'Decelerations Zone 4 (Relative)': 'csv_decelerations_zone_4_relative', 'Decelerations Zone 4 - Zone 6 (Relative)': 'csv_decelerations_zone_4_zone_6_relative', 'Decelerations Zone 5 (Relative)': 'csv_decelerations_zone_5_relative', 'Decelerations Zone 5 - Zone 6 (Relative)': 'csv_decelerations_zone_5_zone_6_relative', 'Decelerations Zone 6 (Relative)': 'csv_decelerations_zone_6_relative', 'Decelerations Per Min (Relative)': 'csv_decelerations_per_min_relative', 'Distance Zone 1 (Absolute)': 'csv_distance_zone_1_absolute', 'Distance Zone 1 (Relative)': 'csv_distance_zone_1_relative', 'Distance Zone 2 (Absolute)': 'csv_distance_zone_2_absolute', 'Distance Zone 2 (Relative)': 'csv_distance_zone_2_relative', 'Distance Zone 2 - Zone 6 (Absolute)': 'csv_distance_zone_2_zone_6_absolute', 'Distance Zone 2 - Zone 6 (Relative)': 'csv_distance_zone_2_zone_6_relative', 'Distance Zone 3 (Absolute)': 'csv_distance_zone_3_absolute', 'Distance Zone 3 (Relative)': 'csv_distance_zone_3_relative', 'Distance Zone 3 - Zone 6 (Absolute)': 'csv_distance_zone_3_zone_6_absolute', 'Distance Zone 3 - Zone 6 (Relative)': 'csv_distance_zone_3_zone_6_relative', 'Distance Zone 4 (Absolute)': 'csv_distance_zone_4_absolute', 'Distance Zone 4 (Relative)': 'csv_distance_zone_4_relative', 'Distance Zone 4 - Zone 6 (Absolute)': 'csv_distance_zone_4_zone_6_absolute', 'Distance Zone 4 - Zone 6 (Relative)': 'csv_distance_zone_4_zone_6_relative', 'Distance Zone 5 (Absolute)': 'csv_distance_zone_5_absolute', 'Distance Zone 5 (Relative)': 'csv_distance_zone_5_relative', 'Distance Zone 6 (Absolute)': 'csv_distance_zone_6_absolute', 'Distance Zone 6 (Relative)': 'csv_distance_zone_6_relative', 'Dives': 'csv_dives', 'Dives Left': 'csv_dives_left', 'Dives Right': 'csv_dives_right', 'Drill Date': 'csv_drill_date', 'Drill End Time': 'csv_drill_end_time', 'Drill Start Time': 'csv_drill_start_time', 'Drill Title': 'csv_drill_title', 'Duration Of High Intensity Bursts': 'csv_duration_of_high_intensity_bursts', 'Dynamic Load Anterior': 'csv_dynamic_load_anterior', 'Dynamic Load Lateral': 'csv_dynamic_load_lateral', 'Dynamic Load Vertical': 'csv_dynamic_load_vertical', 'Dynamic Stress Load': 'csv_dynamic_stress_load', 'Dynamic Stress Load Time Zone 1': 'csv_dynamic_stress_load_time_zone_1', 'Dynamic Stress Load Time Zone 2': 'csv_dynamic_stress_load_time_zone_2', 'Dynamic Stress Load Time Zone 3': 'csv_dynamic_stress_load_time_zone_3', 'Dynamic Stress Load Time Zone 4': 'csv_dynamic_stress_load_time_zone_4', 'Dynamic Stress Load Time Zone 5': 'csv_dynamic_stress_load_time_zone_5', 'Dynamic Stress Load Time Zone 6': 'csv_dynamic_stress_load_time_zone_6', 'Dynamic Stress Load Zone 1': 'csv_dynamic_stress_load_zone_1', 'Dynamic Stress Load Zone 2': 'csv_dynamic_stress_load_zone_2', 'Dynamic Stress Load Zone 3': 'csv_dynamic_stress_load_zone_3', 'Dynamic Stress Load Zone 3 - Zone 6': 'csv_dynamic_stress_load_zone_3_zone_6', 'Dynamic Stress Load Zone 4': 'csv_dynamic_stress_load_zone_4', 'Dynamic Stress Load Zone 4 - Zone 6': 'csv_dynamic_stress_load_zone_4_zone_6', 'Dynamic Stress Load Zone 5': 'csv_dynamic_stress_load_zone_5', 'Dynamic Stress Load Zone 5 - Zone 6': 'csv_dynamic_stress_load_zone_5_zone_6', 'Dynamic Stress Load Zone 6': 'csv_dynamic_stress_load_zone_6', 'EDI %': 'csv_edi_pct', 'Energy Expenditure (Kcal)': 'csv_energy_expenditure_kcal', 'Entries Zone 3 (Absolute)': 'csv_entries_zone_3_absolute', 'Entries Zone 3 (Relative)': 'csv_entries_zone_3_relative', 'Entries Zone 4 (Absolute)': 'csv_entries_zone_4_absolute', 'Entries Zone 4 (Relative)': 'csv_entries_zone_4_relative', 'Entries Zone 5 (Absolute)': 'csv_entries_zone_5_absolute', 'Entries Zone 5 (Relative)': 'csv_entries_zone_5_relative', 'Entries Zone 6 (Absolute)': 'csv_entries_zone_6_absolute', 'Entries Zone 6 (Relative)': 'csv_entries_zone_6_relative', 'Equivalent Metabolic Distance': 'csv_equivalent_metabolic_distance', 'Explosive Distance (Relative)': 'csv_explosive_distance_relative', 'External Work': 'csv_external_work', 'Fatigue Index': 'csv_fatigue_index', 'GK Load': 'csv_gk_load', 'High Intensity Bursts Maximum Speed': 'csv_high_intensity_bursts_maximum_speed', 'High Intensity Bursts Total Distance': 'csv_high_intensity_bursts_total_distance', 'HML Efforts': 'csv_hml_efforts', 'HML Efforts Total Distance': 'csv_hml_efforts_total_distance', 'HML Time': 'csv_hml_time', 'HMLD Per Minute': 'csv_hmld_per_minute', 'HSR Per Minute (Absolute)': 'csv_hsr_per_minute_absolute', 'HSR Per Minute (Relative)': 'csv_hsr_per_minute_relative', 'Impacts (Relative)': 'csv_impacts_relative', 'Impacts Zone 1 (Relative)': 'csv_impacts_zone_1_relative', 'Impacts Zone 2 (Relative)': 'csv_impacts_zone_2_relative', 'Impacts Zone 3 (Relative)': 'csv_impacts_zone_3_relative', 'Impacts Zone 3 - Zone 6 (Relative)': 'csv_impacts_zone_3_zone_6_relative', 'Impacts Zone 4 (Relative)': 'csv_impacts_zone_4_relative', 'Impacts Zone 4 - Zone 6 (Relative)': 'csv_impacts_zone_4_zone_6_relative', 'Impacts Zone 5 (Relative)': 'csv_impacts_zone_5_relative', 'Impacts Zone 5 - Zone 6 (Relative)': 'csv_impacts_zone_5_zone_6_relative', 'Impacts Zone 6 (Relative)': 'csv_impacts_zone_6_relative', 'Left Anterior Post Impact': 'csv_left_anterior_post_impact', 'Left Average Vertical Impact': 'csv_left_average_vertical_impact', 'Left Lateral Impact': 'csv_left_lateral_impact', 'Left Mag Impact': 'csv_left_mag_impact', 'Left Vertical Impact': 'csv_left_vertical_impact', 'Max Heart Rate': 'csv_max_heart_rate', 'Metabolic Distance Zone 1 (Relative)': 'csv_metabolic_distance_zone_1_relative', 'Metabolic Distance Zone 2 (Relative)': 'csv_metabolic_distance_zone_2_relative', 'Metabolic Distance Zone 3 (Relative)': 'csv_metabolic_distance_zone_3_relative', 'Metabolic Distance Zone 4 (Relative)': 'csv_metabolic_distance_zone_4_relative', 'Metabolic Distance Zone 5 (Relative)': 'csv_metabolic_distance_zone_5_relative', 'Metabolic Distance Zone 6 (Relative)': 'csv_metabolic_distance_zone_6_relative', 'Metabolic Time (Relative)': 'csv_metabolic_time_relative', 'Metabolic Time Zone 1 (Absolute)': 'csv_metabolic_time_zone_1_absolute', 'Metabolic Time Zone 1 (Relative)': 'csv_metabolic_time_zone_1_relative', 'Metabolic Time Zone 2 (Absolute)': 'csv_metabolic_time_zone_2_absolute', 'Metabolic Time Zone 2 (Relative)': 'csv_metabolic_time_zone_2_relative', 'Metabolic Time Zone 3 (Relative)': 'csv_metabolic_time_zone_3_relative', 'Metabolic Time Zone 4 (Relative)': 'csv_metabolic_time_zone_4_relative', 'Metabolic Time Zone 5 (Relative)': 'csv_metabolic_time_zone_5_relative', 'Metabolic Time Zone 6 (Relative)': 'csv_metabolic_time_zone_6_relative', 'No of Satellites': 'csv_no_of_satellites', 'Number Of High Intensity Bursts': 'csv_number_of_high_intensity_bursts', 'Player Date of Birth': 'csv_player_date_of_birth', 'Player Display Name': 'csv_player_display_name', 'Player First Name': 'csv_player_first_name', 'Player Height': 'csv_player_height', 'Player Last Name': 'csv_player_last_name', 'Player Max Accel': 'csv_player_max_accel', 'Player Max Decel': 'csv_player_max_decel', 'Player Max Heart Rate': 'csv_player_max_heart_rate', 'Player Name': 'csv_player_name', 'Player Primary Position': 'csv_player_primary_position', 'Player Resting Heart Rate': 'csv_player_resting_heart_rate', 'Player Secondary Position': 'csv_player_secondary_position', 'Player Sprint Threshold': 'csv_player_sprint_threshold', 'Player Weight': 'csv_player_weight', 'Quality of Signal': 'csv_quality_of_signal', 'Right Anterior Post Impact': 'csv_right_anterior_post_impact', 'Right Average Vertical Impact': 'csv_right_average_vertical_impact', 'Right Lateral Impact': 'csv_right_lateral_impact', 'Right Mag Impact': 'csv_right_mag_impact', 'Right Vertical Impact': 'csv_right_vertical_impact', 'Session Date': 'csv_session_date', 'Session Day of Week': 'csv_session_day_of_week', 'Session End Time': 'csv_session_end_time', 'Session Start Time': 'csv_session_start_time', 'Session Title': 'csv_session_title', 'Session Type': 'csv_session_type', 'Session Week Number': 'csv_session_week_number', 'Speed Intensity': 'csv_speed_intensity', 'Speed Intensity Zone 1 (Absolute)': 'csv_speed_intensity_zone_1_absolute', 'Speed Intensity Zone 1(Relative)': 'csv_speed_intensity_zone_1_relative', 'Speed Intensity Zone 2 (Absolute)': 'csv_speed_intensity_zone_2_absolute', 'Speed Intensity Zone 2 (Relative)': 'csv_speed_intensity_zone_2_relative', 'Speed Intensity Zone 3 (Absolute)': 'csv_speed_intensity_zone_3_absolute', 'Speed Intensity Zone 3 (Relative)': 'csv_speed_intensity_zone_3_relative', 'Speed Intensity Zone 3 - Zone 6 (Absolute)': 'csv_speed_intensity_zone_3_zone_6_absolute', 'Speed Intensity Zone 3 - Zone 6 (Relative)': 'csv_speed_intensity_zone_3_zone_6_relative', 'Speed Intensity Zone 4 (Absolute)': 'csv_speed_intensity_zone_4_absolute', 'Speed Intensity Zone 4 (Relative)': 'csv_speed_intensity_zone_4_relative', 'Speed Intensity Zone 4 - Zone 6 (Absolute)': 'csv_speed_intensity_zone_4_zone_6_absolute', 'Speed Intensity Zone 4 - Zone 6 (Relative)': 'csv_speed_intensity_zone_4_zone_6_relative', 'Speed Intensity Zone 5 (Absolute)': 'csv_speed_intensity_zone_5_absolute', 'Speed Intensity Zone 5 (Relative)': 'csv_speed_intensity_zone_5_relative', 'Speed Intensity Zone 5 - Zone 6 (Absolute)': 'csv_speed_intensity_zone_5_zone_6_absolute', 'Speed Intensity Zone 5 - Zone 6 (Relative)': 'csv_speed_intensity_zone_5_zone_6_relative', 'Speed Intensity Zone 6 (Absolute)': 'csv_speed_intensity_zone_6_absolute', 'Speed Intensity Zone 6 (Relative)': 'csv_speed_intensity_zone_6_relative', 'Step Balance': 'csv_step_balance', 'Time In Heart Rate Zone 1 (Relative)': 'csv_time_in_heart_rate_zone_1_relative', 'Time In Heart Rate Zone 2 (Relative)': 'csv_time_in_heart_rate_zone_2_relative', 'Time In Heart Rate Zone 2 - Zone 6 (Relative)': 'csv_time_in_heart_rate_zone_2_zone_6_relative', 'Time In Heart Rate Zone 3 (Relative)': 'csv_time_in_heart_rate_zone_3_relative', 'Time In Heart Rate Zone 3 - Zone 6 (Relative)': 'csv_time_in_heart_rate_zone_3_zone_6_relative', 'Time In Heart Rate Zone 4 (Relative)': 'csv_time_in_heart_rate_zone_4_relative', 'Time In Heart Rate Zone 4 - Zone 6 (Relative)': 'csv_time_in_heart_rate_zone_4_zone_6_relative', 'Time In Heart Rate Zone 5 (Relative)': 'csv_time_in_heart_rate_zone_5_relative', 'Time In Heart Rate Zone 6 (Relative)': 'csv_time_in_heart_rate_zone_6_relative', 'Time In Red Zone (Relative)': 'csv_time_in_red_zone_relative', 'Time Zone 1 (Absolute)': 'csv_time_zone_1_absolute', 'Time Zone 1 (Relative)': 'csv_time_zone_1_relative', 'Time Zone 2 (Absolute)': 'csv_time_zone_2_absolute', 'Time Zone 2 (Relative)': 'csv_time_zone_2_relative', 'Time Zone 3 (Absolute)': 'csv_time_zone_3_absolute', 'Time Zone 3 (Relative)': 'csv_time_zone_3_relative', 'Time Zone 4 (Absolute)': 'csv_time_zone_4_absolute', 'Time Zone 4 (Relative)': 'csv_time_zone_4_relative', 'Time Zone 5 (Absolute)': 'csv_time_zone_5_absolute', 'Time Zone 5 (Relative)': 'csv_time_zone_5_relative', 'Time Zone 6 (Absolute)': 'csv_time_zone_6_absolute', 'Time Zone 6 (Relative)': 'csv_time_zone_6_relative', 'Total Left Steps': 'csv_total_left_steps', 'Total Metabolic Power': 'csv_total_metabolic_power', 'Total Right Steps': 'csv_total_right_steps', 'Total Time': 'csv_total_time'}
-CSV_SOURCE_TEXT_COLUMNS = frozenset(['csv_accelerations_total_time_zone_1_relative', 'csv_accelerations_total_time_zone_2_relative', 'csv_accelerations_total_time_zone_3_relative', 'csv_accelerations_total_time_zone_4_relative', 'csv_accelerations_total_time_zone_5_relative', 'csv_accelerations_total_time_zone_6_relative', 'csv_average_time_since_last_accel', 'csv_average_time_since_last_decel', 'csv_average_time_since_last_dive', 'csv_average_time_since_last_hib', 'csv_average_time_since_last_hml_effort', 'csv_average_time_since_last_sprint', 'csv_ball_in_play_time', 'csv_player_custom_id', 'csv_decelerations_total_time_zone_1_relative', 'csv_decelerations_total_time_zone_2_relative', 'csv_decelerations_total_time_zone_3_relative', 'csv_decelerations_total_time_zone_4_relative', 'csv_decelerations_total_time_zone_5_relative', 'csv_decelerations_total_time_zone_6_relative', 'csv_drill_date', 'csv_drill_end_time', 'csv_drill_start_time', 'csv_drill_title', 'csv_duration_of_high_intensity_bursts', 'csv_dynamic_stress_load_time_zone_1', 'csv_dynamic_stress_load_time_zone_2', 'csv_dynamic_stress_load_time_zone_3', 'csv_dynamic_stress_load_time_zone_4', 'csv_dynamic_stress_load_time_zone_5', 'csv_dynamic_stress_load_time_zone_6', 'csv_hml_time', 'csv_metabolic_time_relative', 'csv_metabolic_time_zone_1_absolute', 'csv_metabolic_time_zone_1_relative', 'csv_metabolic_time_zone_2_absolute', 'csv_metabolic_time_zone_2_relative', 'csv_metabolic_time_zone_3_relative', 'csv_metabolic_time_zone_4_relative', 'csv_metabolic_time_zone_5_relative', 'csv_metabolic_time_zone_6_relative', 'csv_player_date_of_birth', 'csv_player_display_name', 'csv_player_first_name', 'csv_player_last_name', 'csv_player_name', 'csv_player_primary_position', 'csv_player_secondary_position', 'csv_session_date', 'csv_session_day_of_week', 'csv_session_end_time', 'csv_session_start_time', 'csv_session_title', 'csv_session_type', 'csv_time_in_heart_rate_zone_1_relative', 'csv_time_in_heart_rate_zone_2_relative', 'csv_time_in_heart_rate_zone_2_zone_6_relative', 'csv_time_in_heart_rate_zone_3_relative', 'csv_time_in_heart_rate_zone_3_zone_6_relative', 'csv_time_in_heart_rate_zone_4_relative', 'csv_time_in_heart_rate_zone_4_zone_6_relative', 'csv_time_in_heart_rate_zone_5_relative', 'csv_time_in_heart_rate_zone_6_relative', 'csv_time_in_red_zone_relative', 'csv_time_zone_1_absolute', 'csv_time_zone_1_relative', 'csv_time_zone_2_absolute', 'csv_time_zone_2_relative', 'csv_time_zone_3_absolute', 'csv_time_zone_3_relative', 'csv_time_zone_4_absolute', 'csv_time_zone_4_relative', 'csv_time_zone_5_absolute', 'csv_time_zone_5_relative', 'csv_time_zone_6_absolute', 'csv_time_zone_6_relative', 'csv_total_time'])
-CSV_DIRECT_COLS = ('csv_pct_time_in_red_zone_relative', 'csv_accelerations_total_distance_zone_1_relative', 'csv_accelerations_total_distance_zone_2_relative', 'csv_accelerations_total_distance_zone_3_relative', 'csv_accelerations_total_distance_zone_4_absolute', 'csv_accelerations_total_distance_zone_4_relative', 'csv_accelerations_total_distance_zone_5_relative', 'csv_accelerations_total_distance_zone_6_relative', 'csv_accelerations_total_time_zone_1_relative', 'csv_accelerations_total_time_zone_2_relative', 'csv_accelerations_total_time_zone_3_relative', 'csv_accelerations_total_time_zone_4_relative', 'csv_accelerations_total_time_zone_5_relative', 'csv_accelerations_total_time_zone_6_relative', 'csv_accelerations_zone_1_relative', 'csv_accelerations_zone_2_relative', 'csv_accelerations_zone_3_relative', 'csv_accelerations_zone_3_zone_6_relative', 'csv_accelerations_zone_4_relative', 'csv_accelerations_zone_4_zone_6_relative', 'csv_accelerations_zone_5_relative', 'csv_accelerations_zone_5_zone_6_relative', 'csv_accelerations_zone_6_relative', 'csv_accelerations_per_min_relative', 'csv_average_dive_impact', 'csv_average_gk_power', 'csv_average_metabolic_power', 'csv_average_time_since_last_accel', 'csv_average_time_since_last_decel', 'csv_average_time_since_last_dive', 'csv_average_time_since_last_hib', 'csv_average_time_since_last_hml_effort', 'csv_average_time_since_last_sprint', 'csv_ball_in_play_time', 'csv_ball_in_play_time_pct', 'csv_player_custom_id', 'csv_decelerations_total_distance_zone_1_relative', 'csv_decelerations_total_distance_zone_2_relative', 'csv_decelerations_total_distance_zone_3_relative', 'csv_decelerations_total_distance_zone_4_relative', 'csv_decelerations_total_distance_zone_5_relative', 'csv_decelerations_total_distance_zone_6_relative', 'csv_decelerations_total_time_zone_1_relative', 'csv_decelerations_total_time_zone_2_relative', 'csv_decelerations_total_time_zone_3_relative', 'csv_decelerations_total_time_zone_4_relative', 'csv_decelerations_total_time_zone_5_relative', 'csv_decelerations_total_time_zone_6_relative', 'csv_decelerations_zone_1_relative', 'csv_decelerations_zone_2_relative', 'csv_decelerations_zone_3_relative', 'csv_decelerations_zone_3_zone_6_relative', 'csv_decelerations_zone_4_relative', 'csv_decelerations_zone_4_zone_6_relative', 'csv_decelerations_zone_5_relative', 'csv_decelerations_zone_5_zone_6_relative', 'csv_decelerations_zone_6_relative', 'csv_decelerations_per_min_relative', 'csv_distance_zone_1_absolute', 'csv_distance_zone_1_relative', 'csv_distance_zone_2_absolute', 'csv_distance_zone_2_relative', 'csv_distance_zone_2_zone_6_absolute', 'csv_distance_zone_2_zone_6_relative', 'csv_distance_zone_3_absolute', 'csv_distance_zone_3_relative', 'csv_distance_zone_3_zone_6_absolute', 'csv_distance_zone_3_zone_6_relative', 'csv_distance_zone_4_absolute', 'csv_distance_zone_4_relative', 'csv_distance_zone_4_zone_6_absolute', 'csv_distance_zone_4_zone_6_relative', 'csv_distance_zone_5_absolute', 'csv_distance_zone_5_relative', 'csv_distance_zone_6_absolute', 'csv_distance_zone_6_relative', 'csv_dives', 'csv_dives_left', 'csv_dives_right', 'csv_drill_date', 'csv_drill_end_time', 'csv_drill_start_time', 'csv_drill_title', 'csv_duration_of_high_intensity_bursts', 'csv_dynamic_load_anterior', 'csv_dynamic_load_lateral', 'csv_dynamic_load_vertical', 'csv_dynamic_stress_load', 'csv_dynamic_stress_load_time_zone_1', 'csv_dynamic_stress_load_time_zone_2', 'csv_dynamic_stress_load_time_zone_3', 'csv_dynamic_stress_load_time_zone_4', 'csv_dynamic_stress_load_time_zone_5', 'csv_dynamic_stress_load_time_zone_6', 'csv_dynamic_stress_load_zone_1', 'csv_dynamic_stress_load_zone_2', 'csv_dynamic_stress_load_zone_3', 'csv_dynamic_stress_load_zone_3_zone_6', 'csv_dynamic_stress_load_zone_4', 'csv_dynamic_stress_load_zone_4_zone_6', 'csv_dynamic_stress_load_zone_5', 'csv_dynamic_stress_load_zone_5_zone_6', 'csv_dynamic_stress_load_zone_6', 'csv_edi_pct', 'csv_energy_expenditure_kcal', 'csv_entries_zone_3_absolute', 'csv_entries_zone_3_relative', 'csv_entries_zone_4_absolute', 'csv_entries_zone_4_relative', 'csv_entries_zone_5_absolute', 'csv_entries_zone_5_relative', 'csv_entries_zone_6_absolute', 'csv_entries_zone_6_relative', 'csv_equivalent_metabolic_distance', 'csv_explosive_distance_relative', 'csv_external_work', 'csv_fatigue_index', 'csv_gk_load', 'csv_high_intensity_bursts_maximum_speed', 'csv_high_intensity_bursts_total_distance', 'csv_hml_efforts', 'csv_hml_efforts_total_distance', 'csv_hml_time', 'csv_hmld_per_minute', 'csv_hsr_per_minute_absolute', 'csv_hsr_per_minute_relative', 'csv_impacts_relative', 'csv_impacts_zone_1_relative', 'csv_impacts_zone_2_relative', 'csv_impacts_zone_3_relative', 'csv_impacts_zone_3_zone_6_relative', 'csv_impacts_zone_4_relative', 'csv_impacts_zone_4_zone_6_relative', 'csv_impacts_zone_5_relative', 'csv_impacts_zone_5_zone_6_relative', 'csv_impacts_zone_6_relative', 'csv_left_anterior_post_impact', 'csv_left_average_vertical_impact', 'csv_left_lateral_impact', 'csv_left_mag_impact', 'csv_left_vertical_impact', 'csv_max_heart_rate', 'csv_metabolic_distance_zone_1_relative', 'csv_metabolic_distance_zone_2_relative', 'csv_metabolic_distance_zone_3_relative', 'csv_metabolic_distance_zone_4_relative', 'csv_metabolic_distance_zone_5_relative', 'csv_metabolic_distance_zone_6_relative', 'csv_metabolic_time_relative', 'csv_metabolic_time_zone_1_absolute', 'csv_metabolic_time_zone_1_relative', 'csv_metabolic_time_zone_2_absolute', 'csv_metabolic_time_zone_2_relative', 'csv_metabolic_time_zone_3_relative', 'csv_metabolic_time_zone_4_relative', 'csv_metabolic_time_zone_5_relative', 'csv_metabolic_time_zone_6_relative', 'csv_no_of_satellites', 'csv_number_of_high_intensity_bursts', 'csv_player_date_of_birth', 'csv_player_display_name', 'csv_player_first_name', 'csv_player_height', 'csv_player_last_name', 'csv_player_max_accel', 'csv_player_max_decel', 'csv_player_max_heart_rate', 'csv_player_name', 'csv_player_primary_position', 'csv_player_resting_heart_rate', 'csv_player_secondary_position', 'csv_player_sprint_threshold', 'csv_player_weight', 'csv_quality_of_signal', 'csv_right_anterior_post_impact', 'csv_right_average_vertical_impact', 'csv_right_lateral_impact', 'csv_right_mag_impact', 'csv_right_vertical_impact', 'csv_session_date', 'csv_session_day_of_week', 'csv_session_end_time', 'csv_session_start_time', 'csv_session_title', 'csv_session_type', 'csv_session_week_number', 'csv_speed_intensity', 'csv_speed_intensity_zone_1_absolute', 'csv_speed_intensity_zone_1_relative', 'csv_speed_intensity_zone_2_absolute', 'csv_speed_intensity_zone_2_relative', 'csv_speed_intensity_zone_3_absolute', 'csv_speed_intensity_zone_3_relative', 'csv_speed_intensity_zone_3_zone_6_absolute', 'csv_speed_intensity_zone_3_zone_6_relative', 'csv_speed_intensity_zone_4_absolute', 'csv_speed_intensity_zone_4_relative', 'csv_speed_intensity_zone_4_zone_6_absolute', 'csv_speed_intensity_zone_4_zone_6_relative', 'csv_speed_intensity_zone_5_absolute', 'csv_speed_intensity_zone_5_relative', 'csv_speed_intensity_zone_5_zone_6_absolute', 'csv_speed_intensity_zone_5_zone_6_relative', 'csv_speed_intensity_zone_6_absolute', 'csv_speed_intensity_zone_6_relative', 'csv_step_balance', 'csv_time_in_heart_rate_zone_1_relative', 'csv_time_in_heart_rate_zone_2_relative', 'csv_time_in_heart_rate_zone_2_zone_6_relative', 'csv_time_in_heart_rate_zone_3_relative', 'csv_time_in_heart_rate_zone_3_zone_6_relative', 'csv_time_in_heart_rate_zone_4_relative', 'csv_time_in_heart_rate_zone_4_zone_6_relative', 'csv_time_in_heart_rate_zone_5_relative', 'csv_time_in_heart_rate_zone_6_relative', 'csv_time_in_red_zone_relative', 'csv_time_zone_1_absolute', 'csv_time_zone_1_relative', 'csv_time_zone_2_absolute', 'csv_time_zone_2_relative', 'csv_time_zone_3_absolute', 'csv_time_zone_3_relative', 'csv_time_zone_4_absolute', 'csv_time_zone_4_relative', 'csv_time_zone_5_absolute', 'csv_time_zone_5_relative', 'csv_time_zone_6_absolute', 'csv_time_zone_6_relative', 'csv_total_left_steps', 'csv_total_metabolic_power', 'csv_total_right_steps', 'csv_total_time')
+CSV_SOURCE_COLUMN_MAP = {'timeinredzonerelative': 'time_in_red_zone_relative', 'accelerationstotaldistancezone1relative': 'accelerations_total_distance_zone_1_relative', 'accelerationstotaldistancezone2relative': 'accelerations_total_distance_zone_2_relative', 'accelerationstotaldistancezone3relative': 'accelerations_total_distance_zone_3_relative', 'accelerationstotaldistancezone4absolute': 'accelerations_total_distance_zone_4_absolute', 'accelerationstotaldistancezone4relative': 'accelerations_total_distance_zone_4_relative', 'accelerationstotaldistancezone5relative': 'accelerations_total_distance_zone_5_relative', 'accelerationstotaldistancezone6relative': 'accelerations_total_distance_zone_6_relative', 'accelerationstotaltimezone1relative': 'accelerations_total_time_zone_1_relative', 'accelerationstotaltimezone2relative': 'accelerations_total_time_zone_2_relative', 'accelerationstotaltimezone3relative': 'accelerations_total_time_zone_3_relative', 'accelerationstotaltimezone4relative': 'accelerations_total_time_zone_4_relative', 'accelerationstotaltimezone5relative': 'accelerations_total_time_zone_5_relative', 'accelerationstotaltimezone6relative': 'accelerations_total_time_zone_6_relative', 'accelerationszone1relative': 'accelerations_zone_1_relative', 'accelerationszone2relative': 'accelerations_zone_2_relative', 'accelerationszone3relative': 'accelerations_zone_3_relative', 'accelerationszone3zone6relative': 'accelerations_zone_3_zone_6_relative', 'accelerationszone4relative': 'accelerations_zone_4_relative', 'accelerationszone4zone6relative': 'accelerations_zone_4_zone_6_relative', 'accelerationszone5relative': 'accelerations_zone_5_relative', 'accelerationszone5zone6relative': 'accelerations_zone_5_zone_6_relative', 'accelerationszone6relative': 'accelerations_zone_6_relative', 'accelerationsperminrelative': 'accelerations_per_minute_relative', 'averagediveimpact': 'average_dive_impact', 'averagegkpower': 'average_goalkeeper_power', 'averagemetabolicpower': 'average_metabolic_power', 'averagetimesincelastaccel': 'average_time_since_last_acceleration', 'averagetimesincelastdecel': 'average_time_since_last_deceleration', 'averagetimesincelastdive': 'average_time_since_last_dive', 'averagetimesincelasthib': 'average_time_since_last_high_intensity_burst', 'averagetimesincelasthmleffort': 'average_time_since_last_high_metabolic_load_effort', 'averagetimesincelastsprint': 'average_time_since_last_sprint', 'ballinplaytime': 'ball_in_play_time_percentage', 'playercustomid': 'player_custom_id', 'decelerationstotaldistancezone1relative': 'decelerations_total_distance_zone_1_relative', 'decelerationstotaldistancezone2relative': 'decelerations_total_distance_zone_2_relative', 'decelerationstotaldistancezone3relative': 'decelerations_total_distance_zone_3_relative', 'decelerationstotaldistancezone4relative': 'decelerations_total_distance_zone_4_relative', 'decelerationstotaldistancezone5relative': 'decelerations_total_distance_zone_5_relative', 'decelerationstotaldistancezone6relative': 'decelerations_total_distance_zone_6_relative', 'decelerationstotaltimezone1relative': 'decelerations_total_time_zone_1_relative', 'decelerationstotaltimezone2relative': 'decelerations_total_time_zone_2_relative', 'decelerationstotaltimezone3relative': 'decelerations_total_time_zone_3_relative', 'decelerationstotaltimezone4relative': 'decelerations_total_time_zone_4_relative', 'decelerationstotaltimezone5relative': 'decelerations_total_time_zone_5_relative', 'decelerationstotaltimezone6relative': 'decelerations_total_time_zone_6_relative', 'decelerationszone1relative': 'decelerations_zone_1_relative', 'decelerationszone2relative': 'decelerations_zone_2_relative', 'decelerationszone3relative': 'decelerations_zone_3_relative', 'decelerationszone3zone6relative': 'decelerations_zone_3_zone_6_relative', 'decelerationszone4relative': 'decelerations_zone_4_relative', 'decelerationszone4zone6relative': 'decelerations_zone_4_zone_6_relative', 'decelerationszone5relative': 'decelerations_zone_5_relative', 'decelerationszone5zone6relative': 'decelerations_zone_5_zone_6_relative', 'decelerationszone6relative': 'decelerations_zone_6_relative', 'decelerationsperminrelative': 'decelerations_per_minute_relative', 'distancezone1absolute': 'distance_zone_1_absolute', 'distancezone1relative': 'distance_zone_1_relative', 'distancezone2absolute': 'distance_zone_2_absolute', 'distancezone2relative': 'distance_zone_2_relative', 'distancezone2zone6absolute': 'distance_zone_2_zone_6_absolute', 'distancezone2zone6relative': 'distance_zone_2_zone_6_relative', 'distancezone3absolute': 'distance_zone_3_absolute', 'distancezone3relative': 'distance_zone_3_relative', 'distancezone3zone6absolute': 'distance_zone_3_zone_6_absolute', 'distancezone3zone6relative': 'distance_zone_3_zone_6_relative', 'distancezone4absolute': 'distance_zone_4_absolute', 'distancezone4relative': 'distance_zone_4_relative', 'distancezone4zone6absolute': 'distance_zone_4_zone_6_absolute', 'distancezone4zone6relative': 'distance_zone_4_zone_6_relative', 'distancezone5absolute': 'distance_zone_5_absolute', 'distancezone5relative': 'distance_zone_5_relative', 'distancezone6absolute': 'distance_zone_6_absolute', 'distancezone6relative': 'distance_zone_6_relative', 'dives': 'dives', 'divesleft': 'dives_left', 'divesright': 'dives_right', 'drilldate': 'drill_date', 'drillendtime': 'drill_end_time', 'drillstarttime': 'drill_start_time', 'drilltitle': 'drill_title', 'durationofhighintensitybursts': 'duration_of_high_intensity_bursts', 'dynamicloadanterior': 'dynamic_load_anterior', 'dynamicloadlateral': 'dynamic_load_lateral', 'dynamicloadvertical': 'dynamic_load_vertical', 'dynamicstressload': 'dynamic_stress_load', 'dynamicstressloadtimezone1': 'dynamic_stress_load_time_zone_1', 'dynamicstressloadtimezone2': 'dynamic_stress_load_time_zone_2', 'dynamicstressloadtimezone3': 'dynamic_stress_load_time_zone_3', 'dynamicstressloadtimezone4': 'dynamic_stress_load_time_zone_4', 'dynamicstressloadtimezone5': 'dynamic_stress_load_time_zone_5', 'dynamicstressloadtimezone6': 'dynamic_stress_load_time_zone_6', 'dynamicstressloadzone1': 'dynamic_stress_load_zone_1', 'dynamicstressloadzone2': 'dynamic_stress_load_zone_2', 'dynamicstressloadzone3': 'dynamic_stress_load_zone_3', 'dynamicstressloadzone3zone6': 'dynamic_stress_load_zone_3_zone_6', 'dynamicstressloadzone4': 'dynamic_stress_load_zone_4', 'dynamicstressloadzone4zone6': 'dynamic_stress_load_zone_4_zone_6', 'dynamicstressloadzone5': 'dynamic_stress_load_zone_5', 'dynamicstressloadzone5zone6': 'dynamic_stress_load_zone_5_zone_6', 'dynamicstressloadzone6': 'dynamic_stress_load_zone_6', 'edi': 'equivalent_distance_index_percentage', 'energyexpenditurekcal': 'energy_expenditure_kilocalories', 'entrieszone3absolute': 'entries_zone_3_absolute', 'entrieszone3relative': 'entries_zone_3_relative', 'entrieszone4absolute': 'entries_zone_4_absolute', 'entrieszone4relative': 'entries_zone_4_relative', 'entrieszone5absolute': 'entries_zone_5_absolute', 'entrieszone5relative': 'entries_zone_5_relative', 'entrieszone6absolute': 'entries_zone_6_absolute', 'entrieszone6relative': 'entries_zone_6_relative', 'equivalentmetabolicdistance': 'equivalent_metabolic_distance', 'explosivedistancerelative': 'explosive_distance_relative', 'externalwork': 'external_work', 'fatigueindex': 'fatigue_index', 'gkload': 'goalkeeper_load', 'highintensityburstsmaximumspeed': 'high_intensity_bursts_maximum_speed', 'highintensityburststotaldistance': 'high_intensity_bursts_total_distance', 'hmlefforts': 'high_metabolic_load_efforts', 'hmleffortstotaldistance': 'high_metabolic_load_efforts_total_distance', 'hmltime': 'high_metabolic_load_time', 'hmldperminute': 'high_metabolic_load_distance_per_minute', 'hsrperminuteabsolute': 'high_speed_running_per_minute_absolute', 'hsrperminuterelative': 'high_speed_running_per_minute_relative', 'impactsrelative': 'impacts_relative', 'impactszone1relative': 'impacts_zone_1_relative', 'impactszone2relative': 'impacts_zone_2_relative', 'impactszone3relative': 'impacts_zone_3_relative', 'impactszone3zone6relative': 'impacts_zone_3_zone_6_relative', 'impactszone4relative': 'impacts_zone_4_relative', 'impactszone4zone6relative': 'impacts_zone_4_zone_6_relative', 'impactszone5relative': 'impacts_zone_5_relative', 'impactszone5zone6relative': 'impacts_zone_5_zone_6_relative', 'impactszone6relative': 'impacts_zone_6_relative', 'leftanteriorpostimpact': 'left_anterior_posterior_impact', 'leftaverageverticalimpact': 'left_average_vertical_impact', 'leftlateralimpact': 'left_lateral_impact', 'leftmagimpact': 'left_magnitude_impact', 'leftverticalimpact': 'left_vertical_impact', 'maxheartrate': 'maximum_heart_rate', 'metabolicdistancezone1relative': 'metabolic_distance_zone_1_relative', 'metabolicdistancezone2relative': 'metabolic_distance_zone_2_relative', 'metabolicdistancezone3relative': 'metabolic_distance_zone_3_relative', 'metabolicdistancezone4relative': 'metabolic_distance_zone_4_relative', 'metabolicdistancezone5relative': 'metabolic_distance_zone_5_relative', 'metabolicdistancezone6relative': 'metabolic_distance_zone_6_relative', 'metabolictimerelative': 'metabolic_time_relative', 'metabolictimezone1absolute': 'metabolic_time_zone_1_absolute', 'metabolictimezone1relative': 'metabolic_time_zone_1_relative', 'metabolictimezone2absolute': 'metabolic_time_zone_2_absolute', 'metabolictimezone2relative': 'metabolic_time_zone_2_relative', 'metabolictimezone3relative': 'metabolic_time_zone_3_relative', 'metabolictimezone4relative': 'metabolic_time_zone_4_relative', 'metabolictimezone5relative': 'metabolic_time_zone_5_relative', 'metabolictimezone6relative': 'metabolic_time_zone_6_relative', 'noofsatellites': 'number_of_satellites', 'numberofhighintensitybursts': 'number_of_high_intensity_bursts', 'playerdateofbirth': 'player_date_of_birth', 'playerdisplayname': 'player_display_name', 'playerfirstname': 'player_first_name', 'playerheight': 'player_height', 'playerlastname': 'player_last_name', 'playermaxaccel': 'player_maximum_acceleration', 'playermaxdecel': 'player_maximum_deceleration', 'playermaxheartrate': 'player_maximum_heart_rate', 'playername': 'source_player_name', 'playerprimaryposition': 'player_primary_position', 'playerrestingheartrate': 'player_resting_heart_rate', 'playersecondaryposition': 'player_secondary_position', 'playersprintthreshold': 'player_sprint_threshold', 'playerweight': 'player_weight', 'qualityofsignal': 'quality_of_signal', 'rightanteriorpostimpact': 'right_anterior_posterior_impact', 'rightaverageverticalimpact': 'right_average_vertical_impact', 'rightlateralimpact': 'right_lateral_impact', 'rightmagimpact': 'right_magnitude_impact', 'rightverticalimpact': 'right_vertical_impact', 'sessiondate': 'session_date', 'sessiondayofweek': 'session_day_of_week', 'sessionendtime': 'session_end_time', 'sessionstarttime': 'session_start_time', 'sessiontitle': 'session_title', 'sessiontype': 'session_type', 'sessionweeknumber': 'session_week_number', 'speedintensity': 'speed_intensity', 'speedintensityzone1absolute': 'speed_intensity_zone_1_absolute', 'speedintensityzone1relative': 'speed_intensity_zone_1_relative', 'speedintensityzone2absolute': 'speed_intensity_zone_2_absolute', 'speedintensityzone2relative': 'speed_intensity_zone_2_relative', 'speedintensityzone3absolute': 'speed_intensity_zone_3_absolute', 'speedintensityzone3relative': 'speed_intensity_zone_3_relative', 'speedintensityzone3zone6absolute': 'speed_intensity_zone_3_zone_6_absolute', 'speedintensityzone3zone6relative': 'speed_intensity_zone_3_zone_6_relative', 'speedintensityzone4absolute': 'speed_intensity_zone_4_absolute', 'speedintensityzone4relative': 'speed_intensity_zone_4_relative', 'speedintensityzone4zone6absolute': 'speed_intensity_zone_4_zone_6_absolute', 'speedintensityzone4zone6relative': 'speed_intensity_zone_4_zone_6_relative', 'speedintensityzone5absolute': 'speed_intensity_zone_5_absolute', 'speedintensityzone5relative': 'speed_intensity_zone_5_relative', 'speedintensityzone5zone6absolute': 'speed_intensity_zone_5_zone_6_absolute', 'speedintensityzone5zone6relative': 'speed_intensity_zone_5_zone_6_relative', 'speedintensityzone6absolute': 'speed_intensity_zone_6_absolute', 'speedintensityzone6relative': 'speed_intensity_zone_6_relative', 'stepbalance': 'step_balance', 'timeinheartratezone1relative': 'time_in_heart_rate_zone_1_relative', 'timeinheartratezone2relative': 'time_in_heart_rate_zone_2_relative', 'timeinheartratezone2zone6relative': 'time_in_heart_rate_zone_2_zone_6_relative', 'timeinheartratezone3relative': 'time_in_heart_rate_zone_3_relative', 'timeinheartratezone3zone6relative': 'time_in_heart_rate_zone_3_zone_6_relative', 'timeinheartratezone4relative': 'time_in_heart_rate_zone_4_relative', 'timeinheartratezone4zone6relative': 'time_in_heart_rate_zone_4_zone_6_relative', 'timeinheartratezone5relative': 'time_in_heart_rate_zone_5_relative', 'timeinheartratezone6relative': 'time_in_heart_rate_zone_6_relative', 'timezone1absolute': 'time_zone_1_absolute', 'timezone1relative': 'time_zone_1_relative', 'timezone2absolute': 'time_zone_2_absolute', 'timezone2relative': 'time_zone_2_relative', 'timezone3absolute': 'time_zone_3_absolute', 'timezone3relative': 'time_zone_3_relative', 'timezone4absolute': 'time_zone_4_absolute', 'timezone4relative': 'time_zone_4_relative', 'timezone5absolute': 'time_zone_5_absolute', 'timezone5relative': 'time_zone_5_relative', 'timezone6absolute': 'time_zone_6_absolute', 'timezone6relative': 'time_zone_6_relative', 'totalleftsteps': 'total_left_steps', 'totalmetabolicpower': 'total_metabolic_power', 'totalrightsteps': 'total_right_steps', 'totaltime': 'total_time'}
+CSV_SOURCE_HEADER_MAP = {'% Time In Red Zone (Relative)': 'percentage_time_in_red_zone_relative', 'Accelerations Total Distance Zone 1 (Relative)': 'accelerations_total_distance_zone_1_relative', 'Accelerations Total Distance Zone 2 (Relative)': 'accelerations_total_distance_zone_2_relative', 'Accelerations Total Distance Zone 3 (Relative)': 'accelerations_total_distance_zone_3_relative', 'Accelerations Total Distance Zone 4 (Absolute)': 'accelerations_total_distance_zone_4_absolute', 'Accelerations Total Distance Zone 4 (Relative)': 'accelerations_total_distance_zone_4_relative', 'Accelerations Total Distance Zone 5 (Relative)': 'accelerations_total_distance_zone_5_relative', 'Accelerations Total Distance Zone 6 (Relative)': 'accelerations_total_distance_zone_6_relative', 'Accelerations Total Time Zone 1 (Relative)': 'accelerations_total_time_zone_1_relative', 'Accelerations Total Time Zone 2 (Relative)': 'accelerations_total_time_zone_2_relative', 'Accelerations Total Time Zone 3 (Relative)': 'accelerations_total_time_zone_3_relative', 'Accelerations Total Time Zone 4 (Relative)': 'accelerations_total_time_zone_4_relative', 'Accelerations Total Time Zone 5 (Relative)': 'accelerations_total_time_zone_5_relative', 'Accelerations Total Time Zone 6 (Relative)': 'accelerations_total_time_zone_6_relative', 'Accelerations Zone 1 (Relative)': 'accelerations_zone_1_relative', 'Accelerations Zone 2 (Relative)': 'accelerations_zone_2_relative', 'Accelerations Zone 3 (Relative)': 'accelerations_zone_3_relative', 'Accelerations Zone 3 - Zone 6 (Relative)': 'accelerations_zone_3_zone_6_relative', 'Accelerations Zone 4 (Relative)': 'accelerations_zone_4_relative', 'Accelerations Zone 4 - Zone 6 (Relative)': 'accelerations_zone_4_zone_6_relative', 'Accelerations Zone 5 (Relative)': 'accelerations_zone_5_relative', 'Accelerations Zone 5 - Zone 6 (Relative)': 'accelerations_zone_5_zone_6_relative', 'Accelerations Zone 6 (Relative)': 'accelerations_zone_6_relative', 'Accelerations Per Min (Relative)': 'accelerations_per_minute_relative', 'Average Dive Impact': 'average_dive_impact', 'Average GK Power': 'average_goalkeeper_power', 'Average Metabolic Power': 'average_metabolic_power', 'Average Time Since Last Accel': 'average_time_since_last_acceleration', 'Average Time Since Last Decel': 'average_time_since_last_deceleration', 'Average Time Since Last Dive': 'average_time_since_last_dive', 'Average Time Since Last HIB': 'average_time_since_last_high_intensity_burst', 'Average Time Since Last HML Effort': 'average_time_since_last_high_metabolic_load_effort', 'Average Time Since Last Sprint': 'average_time_since_last_sprint', 'Ball In Play Time': 'ball_in_play_time', 'Ball In Play Time %': 'ball_in_play_time_percentage', 'Player Custom ID': 'player_custom_id', 'Decelerations Total Distance Zone 1 (Relative)': 'decelerations_total_distance_zone_1_relative', 'Decelerations Total Distance Zone 2 (Relative)': 'decelerations_total_distance_zone_2_relative', 'Decelerations Total Distance Zone 3 (Relative)': 'decelerations_total_distance_zone_3_relative', 'Decelerations Total Distance Zone 4 (Relative)': 'decelerations_total_distance_zone_4_relative', 'Decelerations Total Distance Zone 5 (Relative)': 'decelerations_total_distance_zone_5_relative', 'Decelerations Total Distance Zone 6 (Relative)': 'decelerations_total_distance_zone_6_relative', 'Decelerations Total Time Zone 1 (Relative)': 'decelerations_total_time_zone_1_relative', 'Decelerations Total Time Zone 2 (Relative)': 'decelerations_total_time_zone_2_relative', 'Decelerations Total Time Zone 3 (Relative)': 'decelerations_total_time_zone_3_relative', 'Decelerations Total Time Zone 4 (Relative)': 'decelerations_total_time_zone_4_relative', 'Decelerations Total Time Zone 5 (Relative)': 'decelerations_total_time_zone_5_relative', 'Decelerations Total Time Zone 6 (Relative)': 'decelerations_total_time_zone_6_relative', 'Decelerations Zone 1 (Relative)': 'decelerations_zone_1_relative', 'Decelerations Zone 2 (Relative)': 'decelerations_zone_2_relative', 'Decelerations Zone 3 (Relative)': 'decelerations_zone_3_relative', 'Decelerations Zone 3 - Zone 6 (Relative)': 'decelerations_zone_3_zone_6_relative', 'Decelerations Zone 4 (Relative)': 'decelerations_zone_4_relative', 'Decelerations Zone 4 - Zone 6 (Relative)': 'decelerations_zone_4_zone_6_relative', 'Decelerations Zone 5 (Relative)': 'decelerations_zone_5_relative', 'Decelerations Zone 5 - Zone 6 (Relative)': 'decelerations_zone_5_zone_6_relative', 'Decelerations Zone 6 (Relative)': 'decelerations_zone_6_relative', 'Decelerations Per Min (Relative)': 'decelerations_per_minute_relative', 'Distance Zone 1 (Absolute)': 'distance_zone_1_absolute', 'Distance Zone 1 (Relative)': 'distance_zone_1_relative', 'Distance Zone 2 (Absolute)': 'distance_zone_2_absolute', 'Distance Zone 2 (Relative)': 'distance_zone_2_relative', 'Distance Zone 2 - Zone 6 (Absolute)': 'distance_zone_2_zone_6_absolute', 'Distance Zone 2 - Zone 6 (Relative)': 'distance_zone_2_zone_6_relative', 'Distance Zone 3 (Absolute)': 'distance_zone_3_absolute', 'Distance Zone 3 (Relative)': 'distance_zone_3_relative', 'Distance Zone 3 - Zone 6 (Absolute)': 'distance_zone_3_zone_6_absolute', 'Distance Zone 3 - Zone 6 (Relative)': 'distance_zone_3_zone_6_relative', 'Distance Zone 4 (Absolute)': 'distance_zone_4_absolute', 'Distance Zone 4 (Relative)': 'distance_zone_4_relative', 'Distance Zone 4 - Zone 6 (Absolute)': 'distance_zone_4_zone_6_absolute', 'Distance Zone 4 - Zone 6 (Relative)': 'distance_zone_4_zone_6_relative', 'Distance Zone 5 (Absolute)': 'distance_zone_5_absolute', 'Distance Zone 5 (Relative)': 'distance_zone_5_relative', 'Distance Zone 6 (Absolute)': 'distance_zone_6_absolute', 'Distance Zone 6 (Relative)': 'distance_zone_6_relative', 'Dives': 'dives', 'Dives Left': 'dives_left', 'Dives Right': 'dives_right', 'Drill Date': 'drill_date', 'Drill End Time': 'drill_end_time', 'Drill Start Time': 'drill_start_time', 'Drill Title': 'drill_title', 'Duration Of High Intensity Bursts': 'duration_of_high_intensity_bursts', 'Dynamic Load Anterior': 'dynamic_load_anterior', 'Dynamic Load Lateral': 'dynamic_load_lateral', 'Dynamic Load Vertical': 'dynamic_load_vertical', 'Dynamic Stress Load': 'dynamic_stress_load', 'Dynamic Stress Load Time Zone 1': 'dynamic_stress_load_time_zone_1', 'Dynamic Stress Load Time Zone 2': 'dynamic_stress_load_time_zone_2', 'Dynamic Stress Load Time Zone 3': 'dynamic_stress_load_time_zone_3', 'Dynamic Stress Load Time Zone 4': 'dynamic_stress_load_time_zone_4', 'Dynamic Stress Load Time Zone 5': 'dynamic_stress_load_time_zone_5', 'Dynamic Stress Load Time Zone 6': 'dynamic_stress_load_time_zone_6', 'Dynamic Stress Load Zone 1': 'dynamic_stress_load_zone_1', 'Dynamic Stress Load Zone 2': 'dynamic_stress_load_zone_2', 'Dynamic Stress Load Zone 3': 'dynamic_stress_load_zone_3', 'Dynamic Stress Load Zone 3 - Zone 6': 'dynamic_stress_load_zone_3_zone_6', 'Dynamic Stress Load Zone 4': 'dynamic_stress_load_zone_4', 'Dynamic Stress Load Zone 4 - Zone 6': 'dynamic_stress_load_zone_4_zone_6', 'Dynamic Stress Load Zone 5': 'dynamic_stress_load_zone_5', 'Dynamic Stress Load Zone 5 - Zone 6': 'dynamic_stress_load_zone_5_zone_6', 'Dynamic Stress Load Zone 6': 'dynamic_stress_load_zone_6', 'EDI %': 'equivalent_distance_index_percentage', 'Energy Expenditure (Kcal)': 'energy_expenditure_kilocalories', 'Entries Zone 3 (Absolute)': 'entries_zone_3_absolute', 'Entries Zone 3 (Relative)': 'entries_zone_3_relative', 'Entries Zone 4 (Absolute)': 'entries_zone_4_absolute', 'Entries Zone 4 (Relative)': 'entries_zone_4_relative', 'Entries Zone 5 (Absolute)': 'entries_zone_5_absolute', 'Entries Zone 5 (Relative)': 'entries_zone_5_relative', 'Entries Zone 6 (Absolute)': 'entries_zone_6_absolute', 'Entries Zone 6 (Relative)': 'entries_zone_6_relative', 'Equivalent Metabolic Distance': 'equivalent_metabolic_distance', 'Explosive Distance (Relative)': 'explosive_distance_relative', 'External Work': 'external_work', 'Fatigue Index': 'fatigue_index', 'GK Load': 'goalkeeper_load', 'High Intensity Bursts Maximum Speed': 'high_intensity_bursts_maximum_speed', 'High Intensity Bursts Total Distance': 'high_intensity_bursts_total_distance', 'HML Efforts': 'high_metabolic_load_efforts', 'HML Efforts Total Distance': 'high_metabolic_load_efforts_total_distance', 'HML Time': 'high_metabolic_load_time', 'HMLD Per Minute': 'high_metabolic_load_distance_per_minute', 'HSR Per Minute (Absolute)': 'high_speed_running_per_minute_absolute', 'HSR Per Minute (Relative)': 'high_speed_running_per_minute_relative', 'Impacts (Relative)': 'impacts_relative', 'Impacts Zone 1 (Relative)': 'impacts_zone_1_relative', 'Impacts Zone 2 (Relative)': 'impacts_zone_2_relative', 'Impacts Zone 3 (Relative)': 'impacts_zone_3_relative', 'Impacts Zone 3 - Zone 6 (Relative)': 'impacts_zone_3_zone_6_relative', 'Impacts Zone 4 (Relative)': 'impacts_zone_4_relative', 'Impacts Zone 4 - Zone 6 (Relative)': 'impacts_zone_4_zone_6_relative', 'Impacts Zone 5 (Relative)': 'impacts_zone_5_relative', 'Impacts Zone 5 - Zone 6 (Relative)': 'impacts_zone_5_zone_6_relative', 'Impacts Zone 6 (Relative)': 'impacts_zone_6_relative', 'Left Anterior Post Impact': 'left_anterior_posterior_impact', 'Left Average Vertical Impact': 'left_average_vertical_impact', 'Left Lateral Impact': 'left_lateral_impact', 'Left Mag Impact': 'left_magnitude_impact', 'Left Vertical Impact': 'left_vertical_impact', 'Max Heart Rate': 'maximum_heart_rate', 'Metabolic Distance Zone 1 (Relative)': 'metabolic_distance_zone_1_relative', 'Metabolic Distance Zone 2 (Relative)': 'metabolic_distance_zone_2_relative', 'Metabolic Distance Zone 3 (Relative)': 'metabolic_distance_zone_3_relative', 'Metabolic Distance Zone 4 (Relative)': 'metabolic_distance_zone_4_relative', 'Metabolic Distance Zone 5 (Relative)': 'metabolic_distance_zone_5_relative', 'Metabolic Distance Zone 6 (Relative)': 'metabolic_distance_zone_6_relative', 'Metabolic Time (Relative)': 'metabolic_time_relative', 'Metabolic Time Zone 1 (Absolute)': 'metabolic_time_zone_1_absolute', 'Metabolic Time Zone 1 (Relative)': 'metabolic_time_zone_1_relative', 'Metabolic Time Zone 2 (Absolute)': 'metabolic_time_zone_2_absolute', 'Metabolic Time Zone 2 (Relative)': 'metabolic_time_zone_2_relative', 'Metabolic Time Zone 3 (Relative)': 'metabolic_time_zone_3_relative', 'Metabolic Time Zone 4 (Relative)': 'metabolic_time_zone_4_relative', 'Metabolic Time Zone 5 (Relative)': 'metabolic_time_zone_5_relative', 'Metabolic Time Zone 6 (Relative)': 'metabolic_time_zone_6_relative', 'No of Satellites': 'number_of_satellites', 'Number Of High Intensity Bursts': 'number_of_high_intensity_bursts', 'Player Date of Birth': 'player_date_of_birth', 'Player Display Name': 'player_display_name', 'Player First Name': 'player_first_name', 'Player Height': 'player_height', 'Player Last Name': 'player_last_name', 'Player Max Accel': 'player_maximum_acceleration', 'Player Max Decel': 'player_maximum_deceleration', 'Player Max Heart Rate': 'player_maximum_heart_rate', 'Player Name': 'source_player_name', 'Player Primary Position': 'player_primary_position', 'Player Resting Heart Rate': 'player_resting_heart_rate', 'Player Secondary Position': 'player_secondary_position', 'Player Sprint Threshold': 'player_sprint_threshold', 'Player Weight': 'player_weight', 'Quality of Signal': 'quality_of_signal', 'Right Anterior Post Impact': 'right_anterior_posterior_impact', 'Right Average Vertical Impact': 'right_average_vertical_impact', 'Right Lateral Impact': 'right_lateral_impact', 'Right Mag Impact': 'right_magnitude_impact', 'Right Vertical Impact': 'right_vertical_impact', 'Session Date': 'session_date', 'Session Day of Week': 'session_day_of_week', 'Session End Time': 'session_end_time', 'Session Start Time': 'session_start_time', 'Session Title': 'session_title', 'Session Type': 'session_type', 'Session Week Number': 'session_week_number', 'Speed Intensity': 'speed_intensity', 'Speed Intensity Zone 1 (Absolute)': 'speed_intensity_zone_1_absolute', 'Speed Intensity Zone 1(Relative)': 'speed_intensity_zone_1_relative', 'Speed Intensity Zone 2 (Absolute)': 'speed_intensity_zone_2_absolute', 'Speed Intensity Zone 2 (Relative)': 'speed_intensity_zone_2_relative', 'Speed Intensity Zone 3 (Absolute)': 'speed_intensity_zone_3_absolute', 'Speed Intensity Zone 3 (Relative)': 'speed_intensity_zone_3_relative', 'Speed Intensity Zone 3 - Zone 6 (Absolute)': 'speed_intensity_zone_3_zone_6_absolute', 'Speed Intensity Zone 3 - Zone 6 (Relative)': 'speed_intensity_zone_3_zone_6_relative', 'Speed Intensity Zone 4 (Absolute)': 'speed_intensity_zone_4_absolute', 'Speed Intensity Zone 4 (Relative)': 'speed_intensity_zone_4_relative', 'Speed Intensity Zone 4 - Zone 6 (Absolute)': 'speed_intensity_zone_4_zone_6_absolute', 'Speed Intensity Zone 4 - Zone 6 (Relative)': 'speed_intensity_zone_4_zone_6_relative', 'Speed Intensity Zone 5 (Absolute)': 'speed_intensity_zone_5_absolute', 'Speed Intensity Zone 5 (Relative)': 'speed_intensity_zone_5_relative', 'Speed Intensity Zone 5 - Zone 6 (Absolute)': 'speed_intensity_zone_5_zone_6_absolute', 'Speed Intensity Zone 5 - Zone 6 (Relative)': 'speed_intensity_zone_5_zone_6_relative', 'Speed Intensity Zone 6 (Absolute)': 'speed_intensity_zone_6_absolute', 'Speed Intensity Zone 6 (Relative)': 'speed_intensity_zone_6_relative', 'Step Balance': 'step_balance', 'Time In Heart Rate Zone 1 (Relative)': 'time_in_heart_rate_zone_1_relative', 'Time In Heart Rate Zone 2 (Relative)': 'time_in_heart_rate_zone_2_relative', 'Time In Heart Rate Zone 2 - Zone 6 (Relative)': 'time_in_heart_rate_zone_2_zone_6_relative', 'Time In Heart Rate Zone 3 (Relative)': 'time_in_heart_rate_zone_3_relative', 'Time In Heart Rate Zone 3 - Zone 6 (Relative)': 'time_in_heart_rate_zone_3_zone_6_relative', 'Time In Heart Rate Zone 4 (Relative)': 'time_in_heart_rate_zone_4_relative', 'Time In Heart Rate Zone 4 - Zone 6 (Relative)': 'time_in_heart_rate_zone_4_zone_6_relative', 'Time In Heart Rate Zone 5 (Relative)': 'time_in_heart_rate_zone_5_relative', 'Time In Heart Rate Zone 6 (Relative)': 'time_in_heart_rate_zone_6_relative', 'Time In Red Zone (Relative)': 'time_in_red_zone_relative', 'Time Zone 1 (Absolute)': 'time_zone_1_absolute', 'Time Zone 1 (Relative)': 'time_zone_1_relative', 'Time Zone 2 (Absolute)': 'time_zone_2_absolute', 'Time Zone 2 (Relative)': 'time_zone_2_relative', 'Time Zone 3 (Absolute)': 'time_zone_3_absolute', 'Time Zone 3 (Relative)': 'time_zone_3_relative', 'Time Zone 4 (Absolute)': 'time_zone_4_absolute', 'Time Zone 4 (Relative)': 'time_zone_4_relative', 'Time Zone 5 (Absolute)': 'time_zone_5_absolute', 'Time Zone 5 (Relative)': 'time_zone_5_relative', 'Time Zone 6 (Absolute)': 'time_zone_6_absolute', 'Time Zone 6 (Relative)': 'time_zone_6_relative', 'Total Left Steps': 'total_left_steps', 'Total Metabolic Power': 'total_metabolic_power', 'Total Right Steps': 'total_right_steps', 'Total Time': 'total_time'}
+CSV_SOURCE_TEXT_COLUMNS = frozenset(['accelerations_total_time_zone_1_relative', 'accelerations_total_time_zone_2_relative', 'accelerations_total_time_zone_3_relative', 'accelerations_total_time_zone_4_relative', 'accelerations_total_time_zone_5_relative', 'accelerations_total_time_zone_6_relative', 'average_time_since_last_acceleration', 'average_time_since_last_deceleration', 'average_time_since_last_dive', 'average_time_since_last_high_intensity_burst', 'average_time_since_last_high_metabolic_load_effort', 'average_time_since_last_sprint', 'ball_in_play_time', 'player_custom_id', 'decelerations_total_time_zone_1_relative', 'decelerations_total_time_zone_2_relative', 'decelerations_total_time_zone_3_relative', 'decelerations_total_time_zone_4_relative', 'decelerations_total_time_zone_5_relative', 'decelerations_total_time_zone_6_relative', 'drill_date', 'drill_end_time', 'drill_start_time', 'drill_title', 'duration_of_high_intensity_bursts', 'dynamic_stress_load_time_zone_1', 'dynamic_stress_load_time_zone_2', 'dynamic_stress_load_time_zone_3', 'dynamic_stress_load_time_zone_4', 'dynamic_stress_load_time_zone_5', 'dynamic_stress_load_time_zone_6', 'high_metabolic_load_time', 'metabolic_time_relative', 'metabolic_time_zone_1_absolute', 'metabolic_time_zone_1_relative', 'metabolic_time_zone_2_absolute', 'metabolic_time_zone_2_relative', 'metabolic_time_zone_3_relative', 'metabolic_time_zone_4_relative', 'metabolic_time_zone_5_relative', 'metabolic_time_zone_6_relative', 'player_date_of_birth', 'player_display_name', 'player_first_name', 'player_last_name', 'source_player_name', 'player_primary_position', 'player_secondary_position', 'session_date', 'session_day_of_week', 'session_end_time', 'session_start_time', 'session_title', 'session_type', 'time_in_heart_rate_zone_1_relative', 'time_in_heart_rate_zone_2_relative', 'time_in_heart_rate_zone_2_zone_6_relative', 'time_in_heart_rate_zone_3_relative', 'time_in_heart_rate_zone_3_zone_6_relative', 'time_in_heart_rate_zone_4_relative', 'time_in_heart_rate_zone_4_zone_6_relative', 'time_in_heart_rate_zone_5_relative', 'time_in_heart_rate_zone_6_relative', 'time_in_red_zone_relative', 'time_zone_1_absolute', 'time_zone_1_relative', 'time_zone_2_absolute', 'time_zone_2_relative', 'time_zone_3_absolute', 'time_zone_3_relative', 'time_zone_4_absolute', 'time_zone_4_relative', 'time_zone_5_absolute', 'time_zone_5_relative', 'time_zone_6_absolute', 'time_zone_6_relative', 'total_time'])
+CSV_DIRECT_COLS = ('percentage_time_in_red_zone_relative', 'accelerations_total_distance_zone_1_relative', 'accelerations_total_distance_zone_2_relative', 'accelerations_total_distance_zone_3_relative', 'accelerations_total_distance_zone_4_absolute', 'accelerations_total_distance_zone_4_relative', 'accelerations_total_distance_zone_5_relative', 'accelerations_total_distance_zone_6_relative', 'accelerations_total_time_zone_1_relative', 'accelerations_total_time_zone_2_relative', 'accelerations_total_time_zone_3_relative', 'accelerations_total_time_zone_4_relative', 'accelerations_total_time_zone_5_relative', 'accelerations_total_time_zone_6_relative', 'accelerations_zone_1_relative', 'accelerations_zone_2_relative', 'accelerations_zone_3_relative', 'accelerations_zone_3_zone_6_relative', 'accelerations_zone_4_relative', 'accelerations_zone_4_zone_6_relative', 'accelerations_zone_5_relative', 'accelerations_zone_5_zone_6_relative', 'accelerations_zone_6_relative', 'accelerations_per_minute_relative', 'average_dive_impact', 'average_goalkeeper_power', 'average_metabolic_power', 'average_time_since_last_acceleration', 'average_time_since_last_deceleration', 'average_time_since_last_dive', 'average_time_since_last_high_intensity_burst', 'average_time_since_last_high_metabolic_load_effort', 'average_time_since_last_sprint', 'ball_in_play_time', 'ball_in_play_time_percentage', 'player_custom_id', 'decelerations_total_distance_zone_1_relative', 'decelerations_total_distance_zone_2_relative', 'decelerations_total_distance_zone_3_relative', 'decelerations_total_distance_zone_4_relative', 'decelerations_total_distance_zone_5_relative', 'decelerations_total_distance_zone_6_relative', 'decelerations_total_time_zone_1_relative', 'decelerations_total_time_zone_2_relative', 'decelerations_total_time_zone_3_relative', 'decelerations_total_time_zone_4_relative', 'decelerations_total_time_zone_5_relative', 'decelerations_total_time_zone_6_relative', 'decelerations_zone_1_relative', 'decelerations_zone_2_relative', 'decelerations_zone_3_relative', 'decelerations_zone_3_zone_6_relative', 'decelerations_zone_4_relative', 'decelerations_zone_4_zone_6_relative', 'decelerations_zone_5_relative', 'decelerations_zone_5_zone_6_relative', 'decelerations_zone_6_relative', 'decelerations_per_minute_relative', 'distance_zone_1_absolute', 'distance_zone_1_relative', 'distance_zone_2_absolute', 'distance_zone_2_relative', 'distance_zone_2_zone_6_absolute', 'distance_zone_2_zone_6_relative', 'distance_zone_3_absolute', 'distance_zone_3_relative', 'distance_zone_3_zone_6_absolute', 'distance_zone_3_zone_6_relative', 'distance_zone_4_absolute', 'distance_zone_4_relative', 'distance_zone_4_zone_6_absolute', 'distance_zone_4_zone_6_relative', 'distance_zone_5_absolute', 'distance_zone_5_relative', 'distance_zone_6_absolute', 'distance_zone_6_relative', 'dives', 'dives_left', 'dives_right', 'drill_date', 'drill_end_time', 'drill_start_time', 'drill_title', 'duration_of_high_intensity_bursts', 'dynamic_load_anterior', 'dynamic_load_lateral', 'dynamic_load_vertical', 'dynamic_stress_load', 'dynamic_stress_load_time_zone_1', 'dynamic_stress_load_time_zone_2', 'dynamic_stress_load_time_zone_3', 'dynamic_stress_load_time_zone_4', 'dynamic_stress_load_time_zone_5', 'dynamic_stress_load_time_zone_6', 'dynamic_stress_load_zone_1', 'dynamic_stress_load_zone_2', 'dynamic_stress_load_zone_3', 'dynamic_stress_load_zone_3_zone_6', 'dynamic_stress_load_zone_4', 'dynamic_stress_load_zone_4_zone_6', 'dynamic_stress_load_zone_5', 'dynamic_stress_load_zone_5_zone_6', 'dynamic_stress_load_zone_6', 'equivalent_distance_index_percentage', 'energy_expenditure_kilocalories', 'entries_zone_3_absolute', 'entries_zone_3_relative', 'entries_zone_4_absolute', 'entries_zone_4_relative', 'entries_zone_5_absolute', 'entries_zone_5_relative', 'entries_zone_6_absolute', 'entries_zone_6_relative', 'equivalent_metabolic_distance', 'explosive_distance_relative', 'external_work', 'fatigue_index', 'goalkeeper_load', 'high_intensity_bursts_maximum_speed', 'high_intensity_bursts_total_distance', 'high_metabolic_load_efforts', 'high_metabolic_load_efforts_total_distance', 'high_metabolic_load_time', 'high_metabolic_load_distance_per_minute', 'high_speed_running_per_minute_absolute', 'high_speed_running_per_minute_relative', 'impacts_relative', 'impacts_zone_1_relative', 'impacts_zone_2_relative', 'impacts_zone_3_relative', 'impacts_zone_3_zone_6_relative', 'impacts_zone_4_relative', 'impacts_zone_4_zone_6_relative', 'impacts_zone_5_relative', 'impacts_zone_5_zone_6_relative', 'impacts_zone_6_relative', 'left_anterior_posterior_impact', 'left_average_vertical_impact', 'left_lateral_impact', 'left_magnitude_impact', 'left_vertical_impact', 'maximum_heart_rate', 'metabolic_distance_zone_1_relative', 'metabolic_distance_zone_2_relative', 'metabolic_distance_zone_3_relative', 'metabolic_distance_zone_4_relative', 'metabolic_distance_zone_5_relative', 'metabolic_distance_zone_6_relative', 'metabolic_time_relative', 'metabolic_time_zone_1_absolute', 'metabolic_time_zone_1_relative', 'metabolic_time_zone_2_absolute', 'metabolic_time_zone_2_relative', 'metabolic_time_zone_3_relative', 'metabolic_time_zone_4_relative', 'metabolic_time_zone_5_relative', 'metabolic_time_zone_6_relative', 'number_of_satellites', 'number_of_high_intensity_bursts', 'player_date_of_birth', 'player_display_name', 'player_first_name', 'player_height', 'player_last_name', 'player_maximum_acceleration', 'player_maximum_deceleration', 'player_maximum_heart_rate', 'source_player_name', 'player_primary_position', 'player_resting_heart_rate', 'player_secondary_position', 'player_sprint_threshold', 'player_weight', 'quality_of_signal', 'right_anterior_posterior_impact', 'right_average_vertical_impact', 'right_lateral_impact', 'right_magnitude_impact', 'right_vertical_impact', 'session_date', 'session_day_of_week', 'session_end_time', 'session_start_time', 'session_title', 'session_type', 'session_week_number', 'speed_intensity', 'speed_intensity_zone_1_absolute', 'speed_intensity_zone_1_relative', 'speed_intensity_zone_2_absolute', 'speed_intensity_zone_2_relative', 'speed_intensity_zone_3_absolute', 'speed_intensity_zone_3_relative', 'speed_intensity_zone_3_zone_6_absolute', 'speed_intensity_zone_3_zone_6_relative', 'speed_intensity_zone_4_absolute', 'speed_intensity_zone_4_relative', 'speed_intensity_zone_4_zone_6_absolute', 'speed_intensity_zone_4_zone_6_relative', 'speed_intensity_zone_5_absolute', 'speed_intensity_zone_5_relative', 'speed_intensity_zone_5_zone_6_absolute', 'speed_intensity_zone_5_zone_6_relative', 'speed_intensity_zone_6_absolute', 'speed_intensity_zone_6_relative', 'step_balance', 'time_in_heart_rate_zone_1_relative', 'time_in_heart_rate_zone_2_relative', 'time_in_heart_rate_zone_2_zone_6_relative', 'time_in_heart_rate_zone_3_relative', 'time_in_heart_rate_zone_3_zone_6_relative', 'time_in_heart_rate_zone_4_relative', 'time_in_heart_rate_zone_4_zone_6_relative', 'time_in_heart_rate_zone_5_relative', 'time_in_heart_rate_zone_6_relative', 'time_in_red_zone_relative', 'time_zone_1_absolute', 'time_zone_1_relative', 'time_zone_2_absolute', 'time_zone_2_relative', 'time_zone_3_absolute', 'time_zone_3_relative', 'time_zone_4_absolute', 'time_zone_4_relative', 'time_zone_5_absolute', 'time_zone_5_relative', 'time_zone_6_absolute', 'time_zone_6_relative', 'total_left_steps', 'total_metabolic_power', 'total_right_steps', 'total_time')
 CSV_SOURCE_COLUMN_MAP.update({
-    "distancez1abs": "csv_distance_zone_1_absolute",
-    "distancez1rel": "csv_distance_zone_1_relative",
-    "distancez2abs": "csv_distance_zone_2_absolute",
-    "distancez2rel": "csv_distance_zone_2_relative",
-    "distancez3abs": "csv_distance_zone_3_absolute",
-    "distancez3rel": "csv_distance_zone_3_relative",
-    "distancez4abs": "csv_distance_zone_4_absolute",
-    "distancez4rel": "csv_distance_zone_4_relative",
-    "distancez5abs": "csv_distance_zone_5_absolute",
-    "distancez5rel": "csv_distance_zone_5_relative",
-    "distancez6abs": "csv_distance_zone_6_absolute",
-    "distancez6rel": "csv_distance_zone_6_relative",
+    # Compact Statsports exports split elapsed ball-in-play time and percentage.
+    # Keep the time string out of the numeric percentage column.
+    "ballinplaytime": "ball_in_play_time",
+    "ballinplaypercentage": "ball_in_play_time_percentage",
+    # Compact exports abbreviate these dashboard metrics differently than full exports.
+    "dsl": "dynamic_stress_load",
+    "hmldpermin": "high_metabolic_load_distance_per_minute",
+    "distancez1abs": "distance_zone_1_absolute",
+    "distancez1rel": "distance_zone_1_relative",
+    "distancez2abs": "distance_zone_2_absolute",
+    "distancez2rel": "distance_zone_2_relative",
+    "distancez3abs": "distance_zone_3_absolute",
+    "distancez3rel": "distance_zone_3_relative",
+    "distancez4abs": "distance_zone_4_absolute",
+    "distancez4rel": "distance_zone_4_relative",
+    "distancez5abs": "distance_zone_5_absolute",
+    "distancez5rel": "distance_zone_5_relative",
+    "distancez6abs": "distance_zone_6_absolute",
+    "distancez6rel": "distance_zone_6_relative",
 })
 
 ID_COLS_IN_PARSER = ["Speler", "Datum", "Week", "Year", "Type", "Event"]
@@ -1109,17 +1108,7 @@ CSV_METADATA_KEYS = {
     "teamname",
 }
 
-INT_DB_COLS = {
-    "number_of_sprints",
-    "number_of_high_sprints",
-    "number_of_repeated_sprints",
-    "total_accelerations",
-    "high_accelerations",
-    "total_decelerations",
-    "high_decelerations",
-    "heart_rate_recovery_beats",
-    "steps",
-}
+INT_DB_COLS = ['number_of_repeated_sprints', 'high_accelerations', 'heart_rate_recovery_beats', 'number_of_sprints', 'total_decelerations', 'total_accelerations', 'steps', 'number_of_high_sprints', 'high_decelerations']
 
 
 def normalize_key(s: str) -> str:
@@ -1180,25 +1169,25 @@ def _apply_speed_zone_mapping(base: dict, source_row, source_columns: dict[int, 
 
     if 6 in source_columns:
         # STATSports exposes all six speed zones. Keep both low-speed zones and
-        # their combined total so they can be compared with Johan's zone_1_2 field.
+        # their combined total so they can be compared with Johan's total_distance_zone_1_and_2 field.
         groups = {
-            "td_zone_1": (1,),
-            "td_zone_2": (2,),
-            "td_zone_1_2": (1, 2),
-            "td_zone_3": (3,),
-            "td_zone_4": (4,),
-            "td_zone_5": (5,),
-            "td_zone_6": (6,),
+            "total_distance_zone_1": (1,),
+            "total_distance_zone_2": (2,),
+            "total_distance_zone_1_and_2": (1, 2),
+            "total_distance_zone_3": (3,),
+            "total_distance_zone_4": (4,),
+            "total_distance_zone_5": (5,),
+            "total_distance_zone_6": (6,),
         }
     else:
         # Johan Sports has five zones; its first zone remains the combined
         # Zone 1-2 comparison value, followed by Zones 3 through 6.
         groups = {
-            "td_zone_1_2": (1,),
-            "td_zone_3": (2,),
-            "td_zone_4": (3,),
-            "td_zone_5": (4,),
-            "td_zone_6": (5,),
+            "total_distance_zone_1_and_2": (1,),
+            "total_distance_zone_3": (2,),
+            "total_distance_zone_4": (3,),
+            "total_distance_zone_5": (4,),
+            "total_distance_zone_6": (5,),
         }
 
     for target, zones in groups.items():
@@ -1257,17 +1246,19 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
             "type": t,
             "event": ev,
             "match_id": None,
-            "source_file": source_file,
+
             "extra_metrics": {},
         }
 
         for c in df.columns:
-            if c in ID_COLS_IN_PARSER:
+            if c in ID_COLS_IN_PARSER or str(c).strip() in {"source_file", "inserted_at"}:
                 continue
 
             key = normalize_key(c)
             val = r[c]
             direct_col = CSV_SOURCE_HEADER_MAP.get(str(c).strip()) or CSV_SOURCE_COLUMN_MAP.get(key)
+            if direct_col is None and str(c).strip() in CSV_DIRECT_COLS:
+                direct_col = str(c).strip()
             if direct_col is not None:
                 if direct_col in CSV_SOURCE_TEXT_COLUMNS:
                     base[direct_col] = _source_text_value(val)
@@ -1341,6 +1332,9 @@ def parse_player_metrics_csv(file_bytes: bytes, selected_type: str) -> pd.DataFr
     # drill title is included in a vendor export.
     event_col = _csv_column(df, ["Drill Title", "Event", "Session Title"])
     session_col = _csv_column(df, ["Session Title"])
+    session_type_col = _csv_column(df, ["Session Type"])
+    drill_start_col = _csv_column(df, ["Drill Start Time", "Drill Start", "Start Time"])
+    primary_label_col = _csv_column(df, ["Primary Label"])
 
     missing = []
     if player_col is None:
@@ -1376,19 +1370,44 @@ def parse_player_metrics_csv(file_bytes: bytes, selected_type: str) -> pd.DataFr
     result.insert(2, "Week", parsed_dates.dt.isocalendar().week.astype(int))
     result.insert(3, "Year", parsed_dates.dt.year.astype(int))
     event_values = event_values.where(event_values.ne(""), "CSV import")
-    # "Entire Session" represents the session total; it belongs in Summary,
-    # while similarly named live drill data remains separately traceable.
-    event_values = event_values.mask(event_values.map(normalize_key).eq("entiresession"), "Summary")
+    # Statsport uses MD-1/MD-2/etc. for training days and MD (usually with
+    # the opponent in the title) for the actual match. Match Day -N is also a
+    # training context. The session title/type therefore takes precedence over
+    # incomplete Primary Label values such as Match-Topups on MD-5.
+    session_values = result[session_col].astype(str).str.strip() if session_col else pd.Series("", index=result.index)
+    session_type_values = result[session_type_col].astype(str).str.strip() if session_type_col else pd.Series("", index=result.index)
+    primary_values = result[primary_label_col].astype(str).str.strip().str.lower() if primary_label_col else pd.Series("", index=result.index)
+    session_norm = session_values.str.lower()
+    session_type_norm = session_type_values.str.lower()
+    is_relative_training = session_norm.str.startswith("md-") | session_norm.str.startswith("md+") | session_type_norm.str.startswith("match day -")
+    is_md_match = ((session_norm == "md") | (session_norm.str.startswith("md "))) & ~is_relative_training
+    is_named_match = session_norm.str.contains(r"\bmatch\b", case=False, na=False) & ~is_relative_training
+    is_explicit_match_session = is_md_match | is_named_match | (session_type_norm == "match day")
+    is_match = is_explicit_match_session | ((primary_values == "match") & is_md_match)
+    type_values = pd.Series("Practice", index=result.index).mask(is_match, "Match")
 
-    type_values = pd.Series(str(selected_type).strip(), index=result.index)
-    if str(selected_type).strip() == "Practice" and session_col is not None:
-        is_match = result[session_col].astype(str).str.contains(r"\bmatch\b", case=False, na=False)
-        type_values = type_values.mask(is_match, "Match")
+    drill_norm = event_values.map(normalize_key)
+    start_values = result[drill_start_col].astype(str).str.strip() if drill_start_col else pd.Series("", index=result.index)
+    session_keys = list(zip(player_values, parsed_dates.dt.strftime("%Y-%m-%d"), session_values, start_values))
+    live_keys = {key for key, drill in zip(session_keys, drill_norm) if drill == "entiresessionlive"}
+
+    keep_mask = pd.Series(True, index=result.index)
+    for idx, (key, drill) in enumerate(zip(session_keys, drill_norm)):
+        if drill == "entiresession" and key in live_keys:
+            keep_mask.iloc[idx] = False
+        elif drill in {"match", "matchentirematch"} and key in live_keys:
+            keep_mask.iloc[idx] = False
+
+    event_values = event_values.mask(drill_norm == "entiresessionlive", "Summary")
+    event_values = event_values.mask(drill_norm == "entiresession", "Summary")
+    event_values = event_values.mask(drill_norm == "matchentirematch", "Summary")
+    event_values = event_values.mask(drill_norm == "match", "Summary")
 
     result.insert(4, "Type", type_values)
     result.insert(5, "Event", event_values)
 
     result = result[result["Speler"].ne("")].copy()
+    result = result.loc[keep_mask.reindex(result.index, fill_value=True)].copy()
     return ensure_unique_events(result)
 
 
@@ -1410,11 +1429,18 @@ def ensure_unique_events(df: pd.DataFrame) -> pd.DataFrame:
     keys = ["Speler", "Datum", "Type", "Event"]
     df["Event"] = df["Event"].astype(str).str.strip()
 
-    idx = df.groupby(keys).cumcount()
-    grp_size = df.groupby(keys)["Event"].transform("size")
-
+    start_col = _csv_column(df, ["Drill Start Time", "Drill Start", "Start Time"])
+    if start_col:
+        df["_event_order"] = pd.to_datetime(df[start_col], dayfirst=True, errors="coerce")
+    else:
+        df["_event_order"] = pd.NaT
+    df["_event_original_order"] = range(len(df))
+    ordered = df.sort_values(keys + ["_event_order", "_event_original_order"], na_position="last")
+    idx = ordered.groupby(keys).cumcount()
+    grp_size = ordered.groupby(keys)["Event"].transform("size")
     mask = grp_size > 1
-    df.loc[mask, "Event"] = df.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
+    ordered.loc[mask, "Event"] = ordered.loc[mask, "Event"] + " (" + (idx[mask] + 1).astype(str) + ")"
+    df = ordered.sort_values("_event_original_order").drop(columns=["_event_order", "_event_original_order"])
     return df
 
 
