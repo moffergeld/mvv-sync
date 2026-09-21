@@ -56,6 +56,14 @@ EVENT_FULL = "Full match"
 EVENT_FIRST = "First Half"
 EVENT_SECOND = "Second Half"
 
+# STATSports uses its own drill labels for match segments. Keep the report
+# compatible with the dashboard's historic names as well as current exports.
+MATCH_PHASE_EVENT_KEYS = {
+    EVENT_FULL: {"summary", "matchentirematch", "entiresession", "entiresessionlive", "match"},
+    EVENT_FIRST: {"firsthalf", "matchhalvesfirsthalf", "matchhalfesfirsthalf"},
+    EVENT_SECOND: {"secondhalf", "matchhalvessecondhalf", "matchhalfessecondhalf"},
+}
+
 MATCH_FILTER_ALL = "Alle wedstrijden"
 MATCH_FILTER_REGULAR = "Normale wedstrijd"
 MATCH_FILTER_FRIENDLY = "Oefenwedstrijd"
@@ -737,23 +745,25 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
         return df_events
 
     dff = df_events.copy()
-    dff["event_norm"] = dff["event"].astype(str).str.strip().str.lower()
+    dff["event_norm"] = (
+        dff["event"].astype(str).str.lower().str.replace(r"[^a-z0-9]", "", regex=True)
+    )
 
     if phase == EVENT_FULL:
-        summary_df = dff[dff["event_norm"].eq("summary")].copy()
+        summary_df = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FULL])].copy()
         if not summary_df.empty:
             dff = summary_df
         else:
-            dff = dff[dff["event_norm"].isin(["first half", "second half"])].copy()
+            dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FIRST] | MATCH_PHASE_EVENT_KEYS[EVENT_SECOND])].copy()
 
     elif phase == EVENT_FIRST:
-        dff = dff[dff["event_norm"].eq("first half")].copy()
+        dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FIRST])].copy()
 
     elif phase == EVENT_SECOND:
-        dff = dff[dff["event_norm"].eq("second half")].copy()
+        dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_SECOND])].copy()
 
     else:
-        dff = dff[dff["event_norm"].isin(["summary", "first half", "second half"])].copy()
+        dff = dff[dff["event_norm"].isin(set().union(*MATCH_PHASE_EVENT_KEYS.values()))].copy()
 
     if dff.empty:
         return dff
