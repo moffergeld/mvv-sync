@@ -1046,6 +1046,30 @@ def build_daily_bar_chart(
     return fig
 
 
+def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
+    fig = base_figure("Totale weekbelasting per speler", height=390)
+    if player_table.empty or "total_distance" not in player_table.columns:
+        return fig
+
+    data = player_table.sort_values("total_distance", ascending=False).reset_index(drop=True)
+    values = pd.to_numeric(data["total_distance"], errors="coerce").fillna(0)
+    fig.add_trace(
+        go.Bar(
+            x=data["player_name"],
+            y=values,
+            marker_color=MVV_RED_DEEP,
+            text=[_format_distance(value) for value in values],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="<b>%{x}</b><br>Total Distance: %{y:,.0f} m<extra></extra>",
+        )
+    )
+    fig.update_layout(showlegend=False)
+    fig.update_xaxes(tickangle=-35, automargin=True)
+    fig.update_yaxes(title_text="Meters")
+    return fig
+
+
 def build_error_bar_chart(day_stats: pd.DataFrame, mean_column: str, std_column: str, title: str, color: str, value_formatter: Callable[[object], str]) -> go.Figure:
     fig = base_figure(title, height=350)
     if day_stats.empty or mean_column not in day_stats.columns:
@@ -1473,6 +1497,12 @@ def main() -> None:
                 build_daily_bar_chart(day_table, "hsr_hsd", "Daily Team HSR", MVV_RED_BRIGHT, _format_distance),
                 "Sprint plus high total_distance_zone_5 per dag",
             )
+
+        render_plot_panel(
+            "Totale weekbelasting per speler",
+            build_weekly_player_load_chart(player_table),
+            "Opgetelde Total Distance van alle Summary-sessies binnen de gekozen week",
+        )
 
         bottom_left, bottom_right = st.columns(2, gap="large")
         with bottom_left:
