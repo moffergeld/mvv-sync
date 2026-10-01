@@ -147,9 +147,20 @@ Belangrijk:
 
 - zet nooit Postgres-connection strings of service-role keys in tracked bestanden
 - gebruik voor de hoofdapp minimaal `SUPABASE_URL` en `SUPABASE_ANON_KEY`
+- voeg `STATSPORTS_API_KEY` toe om de directe STATSports-import te gebruiken
 - gebruik voor de losse tablet-app daarnaast `SUPABASE_SERVICE_ROLE_KEY`, `TABLET_SHARED_CODE` en `TABLET_CREATED_BY_USER_ID`
 
 Als er eerder credentials in de repo hebben gestaan, roteer die dan ook in Supabase.
+
+De oudere secretnaam `STATSport` wordt ook herkend, zodat bestaande
+Streamlit-configuraties niet direct hoeven te worden aangepast.
+
+De workflow `GPS Import` → `STATSports API` haalt data in blokken van zeven dagen
+rechtstreeks bij STATSports op. Na een controle-preview worden de meetregels direct
+naar `gps_records` in Supabase geschreven. Bekende waarden gaan naar vaste kolommen;
+de volledige ruwe sessie-, speler- en drillcontext blijft in `extra_metrics` bewaard.
+De eerste volledige import begint standaard op 24 augustus 2026. Er wordt geen
+lokale STATSports-database of permanente cache gebruikt.
 
 ## Supabase Preview
 

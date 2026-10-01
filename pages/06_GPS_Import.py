@@ -16,6 +16,7 @@ from pages.Subscripts.gps_import_common import (
 )
 from pages.Subscripts.gps_import_tab_excel import tab_import_excel_main
 from pages.Subscripts.gps_import_tab_csv import tab_import_csv_main
+from pages.Subscripts.gps_import_tab_statsports import tab_import_statsports_main
 from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
@@ -576,7 +577,7 @@ f"""
       Gebruik de hoofd- en subnavigatie om snel tussen workflowstappen en matchbeheer te schakelen.
     </div>
     <div class="mvv-pill-row">
-      <span class="mvv-pill">Import via Excel of handmatige invoer</span>
+      <span class="mvv-pill">Import via STATSports API, bestanden of handmatige invoer</span>
       <span class="mvv-pill">Matchbeheer en export in dezelfde omgeving</span>
     </div>
   </div>
@@ -641,7 +642,7 @@ if main_page == "Import GPS":
     st.markdown('<div class="subnav-wrap">', unsafe_allow_html=True)
     sub_page = st.radio(
         "Sub",
-        options=["Import (Excel)", "Import (CSV)", "Manual add", "Export"],
+        options=["STATSports API", "Import (Excel)", "Import (CSV)", "Manual add", "Export"],
         horizontal=True,
         key="nav_gps_sub",
         label_visibility="collapsed",
@@ -650,7 +651,10 @@ if main_page == "Import GPS":
 
     st.divider()
 
-    if sub_page == "Import (Excel)":
+    if sub_page == "STATSports API":
+        tab_import_statsports_main(access_token=access_token, name_to_id=name_to_id)
+
+    elif sub_page == "Import (Excel)":
         tab_import_excel_main(access_token=access_token, name_to_id=name_to_id)
 
     elif sub_page == "Import (CSV)":

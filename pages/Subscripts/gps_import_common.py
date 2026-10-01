@@ -1975,6 +1975,7 @@ CSV_BLOCKED_KEYS = ['accelerationdistancez1rel', 'accelerationdistancez2rel', 'a
 def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple[list[dict], list[str]]:
     rows = []
     unmapped = set()
+    preserve_extra_metrics = bool(df.attrs.get("preserve_extra_metrics"))
 
     parsed_dates = pd.to_datetime(df["Datum"], dayfirst=True, errors="coerce")
     if parsed_dates.isna().any():
@@ -2019,7 +2020,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
                 continue
 
             key = normalize_key(c)
-            if key in CSV_BLOCKED_KEYS:
+            if key in CSV_BLOCKED_KEYS and not preserve_extra_metrics:
                 continue
             val = r[c]
             direct_col = CSV_SOURCE_HEADER_MAP.get(str(c).strip()) or CSV_SOURCE_COLUMN_MAP.get(key)
@@ -2035,7 +2036,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
                 continue
 
             if key not in METRIC_MAP:
-                if is_statsports:
+                if is_statsports and not preserve_extra_metrics:
                     continue
                 extra_value = json_safe(val)
                 if extra_value is not None and not (isinstance(extra_value, str) and not extra_value.strip()):

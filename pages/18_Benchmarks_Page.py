@@ -151,6 +151,23 @@ MATCH_NUMERIC_COLS = [
     "high_decelerations",
 ]
 
+MATCH_AVERAGE_SELECT = (
+    "gps_id,match_id,datum,player_id,player_name,type,event,duration,"
+    "total_distance,total_distance_zone_5,total_distance_zone_6,heart_rate_exertion,"
+    "high_metabolic_load_distance,fatigue_index,dynamic_stress_load"
+)
+
+MATCH_AVERAGE_METRICS = {
+    "total_distance": "TD",
+    "total_distance_zone_5": "Zone 5",
+    "total_distance_zone_6": "Zone 6",
+    "hsr": "HSR (Zone 5 + 6)",
+    "heart_rate_exertion": "HR Exertion",
+    "high_metabolic_load_distance_per_minute": "HMLD / min",
+    "fatigue_index": "Fatigue Index",
+    "dynamic_stress_load": "Dynamic Stress Load",
+}
+
 METRIC_SPECS = {
     "total_distance_90": {
         "label": "Totale afstand /90",
@@ -1536,6 +1553,42 @@ def fetch_match_events_history_cached(_access_token: str, start_iso: str) -> pd.
     raise RuntimeError(f"Kon v_gps_match_events niet laden: {last_error}")
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_match_summary_averages_cached(_access_token: str) -> pd.DataFrame:
+    """Load the one canonical Summary record per player and match for team averages."""
+    raw = rest_get_paged(
+        _access_token,
+        "gps_records",
+        f"select={MATCH_AVERAGE_SELECT}&type=eq.Match&event=eq.Summary&order=datum.desc,gps_id.desc",
+    )
+    if raw.empty:
+        return raw
+
+    df = raw.copy()
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
+    if "player_id" not in df.columns:
+        df["player_id"] = ""
+    if "player_name" not in df.columns:
+        df["player_name"] = "Onbekend"
+    if "match_id" not in df.columns:
+        df["match_id"] = pd.NA
+    df["player_id"] = df["player_id"].fillna("").astype(str)
+    df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
+    df["match_id"] = pd.to_numeric(df["match_id"], errors="coerce")
+    for column in set(MATCH_AVERAGE_METRICS) | {"duration", "high_metabolic_load_distance"}:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+    valid_duration = df["duration"].where(df["duration"] > 0)
+    df["high_metabolic_load_distance_per_minute"] = df["high_metabolic_load_distance"] / valid_duration
+    for column in ("total_distance_zone_5", "total_distance_zone_6"):
+        if column not in df.columns:
+            df[column] = 0.0
+    df["hsr"] = df["total_distance_zone_5"].fillna(0.0) + df["total_distance_zone_6"].fillna(0.0)
+    df["match_key"] = df["match_id"].astype("Int64").astype(str)
+    df.loc[df["match_id"].isna(), "match_key"] = df.loc[df["match_id"].isna(), "datum"].astype(str)
+    return df.dropna(subset=["datum"]).copy()
+
+
 def _select_match_event_rows(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -2780,6 +2833,144 @@ def render_compare_tab(sb) -> None:
                 )
 
 
+def _format_match_average_metric(metric_key: str, value: object) -> str:
+    if metric_key in {"total_distance", "total_distance_zone_5", "total_distance_zone_6", "hsr"}:
+        return _format_distance(value)
+    if metric_key in {"heart_rate_exertion", "high_metabolic_load_distance_per_minute", "fatigue_index", "dynamic_stress_load"}:
+        return _format_decimal(value, 1)
+    return _format_decimal(value, 1)
+
+
+def render_match_averages_tab(sb) -> None:
+    st.markdown(
+        '<div class="bench-section-copy">Gemiddelde wedstrijdload van actieve spelers. Eerst wordt per speler het gemiddelde over zijn wedstrijden berekend; daarna het teamgemiddelde. Zo telt iedere actieve speler even zwaar mee.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        st.markdown('<div class="bench-empty">Supabase-config ontbreekt, daardoor zijn wedstrijdgemiddelden niet beschikbaar.</div>', unsafe_allow_html=True)
+        return
+
+    try:
+        active_players = fetch_active_players_cached(sb)
+        match_df = fetch_match_summary_averages_cached(get_access_token())
+    except Exception as exc:
+        st.markdown(f'<div class="bench-empty">Kon wedstrijdgemiddelden niet laden: {exc}</div>', unsafe_allow_html=True)
+        return
+
+    if active_players.empty or match_df.empty:
+        st.markdown('<div class="bench-empty">Nog geen Match Summary-data van actieve spelers beschikbaar.</div>', unsafe_allow_html=True)
+        return
+
+    active_players = apply_benchmark_position_overrides(active_players)
+    active_ids = set(active_players["player_id"].astype(str))
+    match_df = match_df.loc[match_df["player_id"].isin(active_ids)].copy()
+    if match_df.empty:
+        st.markdown('<div class="bench-empty">Geen Match Summary-data gevonden voor de huidige actieve selectie.</div>', unsafe_allow_html=True)
+        return
+
+    scope_options = list(COMPARE_MATCH_SCOPE_OPTIONS.keys())
+    scope_label = st.selectbox(
+        "Wedstrijdscope",
+        options=scope_options,
+        index=scope_options.index("Alle wedstrijden"),
+        key="bench_match_averages_scope",
+    )
+    match_limit = COMPARE_MATCH_SCOPE_OPTIONS[scope_label]
+    scoped_groups = []
+    for _, player_matches in match_df.groupby("player_id", dropna=False):
+        ordered = player_matches.sort_values(["datum", "gps_id"], ascending=[False, False])
+        scoped_groups.append(ordered if match_limit is None else ordered.head(int(match_limit)))
+    scoped_df = pd.concat(scoped_groups, ignore_index=True) if scoped_groups else pd.DataFrame()
+    if scoped_df.empty:
+        st.markdown('<div class="bench-empty">Geen wedstrijddata binnen deze scope.</div>', unsafe_allow_html=True)
+        return
+
+    metric_keys = list(MATCH_AVERAGE_METRICS)
+    player_averages = (
+        scoped_df.groupby(["player_id", "player_name"], as_index=False)
+        .agg(
+            wedstrijden=("match_key", "nunique"),
+            **{metric: (metric, "mean") for metric in metric_keys},
+        )
+        .sort_values("player_name")
+    )
+    player_averages = player_averages.merge(
+        active_players[["player_id", "benchmark_position_source"]].rename(
+            columns={"benchmark_position_source": "Subpositie"}
+        ),
+        on="player_id",
+        how="left",
+    )
+    player_averages["Subpositie"] = player_averages["Subpositie"].fillna("").replace("", "Onbekend")
+    team_averages = player_averages[metric_keys].mean(numeric_only=True)
+    latest_match = scoped_df["datum"].max()
+    card_note = f"{len(player_averages)} actieve spelers | {scoped_df['match_key'].nunique()} wedstrijden"
+    cards = [
+        (label, _format_match_average_metric(metric, team_averages.get(metric)), card_note)
+        for metric, label in MATCH_AVERAGE_METRICS.items()
+    ]
+    position_averages = (
+        player_averages.groupby("Subpositie", as_index=False)
+        .agg(
+            Spelers=("player_id", "nunique"),
+            Wedstrijden=("wedstrijden", "sum"),
+            **{metric: (metric, "mean") for metric in metric_keys},
+        )
+        .sort_values("Subpositie")
+    )
+
+    team_tab, position_tab, player_tab = st.tabs(["Team", "Subposities", "Individueel"])
+    with team_tab:
+        render_stat_cards(cards, columns_per_row=4)
+        st.caption(f"Meest recente wedstrijd in de selectie: {latest_match:%d-%m-%Y}. HSR = Zone 5 + Zone 6.")
+
+    def format_average_table(frame: pd.DataFrame) -> pd.DataFrame:
+        formatted = frame.copy()
+        for metric in ["total_distance", "total_distance_zone_5", "total_distance_zone_6", "hsr"]:
+            formatted[metric] = formatted[metric].map(_format_distance)
+        for metric in ["heart_rate_exertion", "high_metabolic_load_distance_per_minute", "fatigue_index", "dynamic_stress_load"]:
+            formatted[metric] = formatted[metric].map(lambda value: _format_decimal(value, 1))
+        return formatted
+
+    with position_tab:
+        position_display = format_average_table(position_averages).rename(columns={
+            "total_distance": "TD",
+            "total_distance_zone_5": "Zone 5",
+            "total_distance_zone_6": "Zone 6",
+            "hsr": "HSR (Zone 5 + 6)",
+            "heart_rate_exertion": "HR Exertion",
+            "high_metabolic_load_distance_per_minute": "HMLD / min",
+            "fatigue_index": "Fatigue Index",
+            "dynamic_stress_load": "Dynamic Stress Load",
+        })
+        st.dataframe(position_display, width="stretch", hide_index=True)
+        st.caption("Subpositie is de ingestelde subpositie; zonder instelling wordt de hoofdpositie gebruikt.")
+
+    display_df = player_averages.rename(columns={
+        "player_name": "Speler",
+        "wedstrijden": "Wedstrijden",
+        "total_distance": "TD",
+        "total_distance_zone_5": "Zone 5",
+        "total_distance_zone_6": "Zone 6",
+        "hsr": "HSR (Zone 5 + 6)",
+        "heart_rate_exertion": "HR Exertion",
+        "high_metabolic_load_distance_per_minute": "HMLD / min",
+        "fatigue_index": "Fatigue Index",
+        "dynamic_stress_load": "Dynamic Stress Load",
+    })
+    with player_tab:
+        for metric in ["TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)"]:
+            display_df[metric] = display_df[metric].map(_format_distance)
+        for metric in ["HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]:
+            display_df[metric] = display_df[metric].map(lambda value: _format_decimal(value, 1))
+        st.dataframe(
+            display_df[["Speler", "Subpositie", "Wedstrijden", "TD", "Zone 5", "Zone 6", "HSR (Zone 5 + 6)", "HR Exertion", "HMLD / min", "Fatigue Index", "Dynamic Stress Load"]],
+            width="stretch",
+            hide_index=True,
+        )
+
+
 def main() -> None:
     render_css()
     require_auth()
@@ -2819,11 +3010,13 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    marks_tab, compare_tab = st.tabs(["Marks", "Compare"])
+    marks_tab, compare_tab, match_averages_tab = st.tabs(["Marks", "Compare", "Wedstrijdgemiddelden"])
     with marks_tab:
         render_marks_tab()
     with compare_tab:
         render_compare_tab(sb)
+    with match_averages_tab:
+        render_match_averages_tab(sb)
 
     render_sidebar_footer(profile)
 
