@@ -36,7 +36,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps  # noqa: E402
+from roles import get_access_token, get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
@@ -711,17 +712,16 @@ def fetch_matches_rows(limit: int = 1000) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=60)
 def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
-    sb = get_sb()
-    res = (
-        sb.table("v_gps_match_events")
-        .select(
-            "gps_id,match_id,player_id,player_name,datum,type,event,duration,total_distance,total_distance_zone_4,total_distance_zone_5,total_distance_zone_6,maximum_speed"
-        )
-        .eq("match_id", match_id)
-        .execute()
+    df = load_hybrid_gps(
+        str(get_access_token() or ""),
+        [
+            "gps_id", "match_id", "player_id", "player_name", "datum", "type", "event",
+            "duration", "total_distance", "total_distance_zone_4", "total_distance_zone_5",
+            "total_distance_zone_6", "maximum_speed",
+        ],
+        session_type="Match",
+        match_id=match_id,
     )
-
-    df = _df_from_rows(res.data or [])
     if df.empty:
         return df
 

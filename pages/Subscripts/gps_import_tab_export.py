@@ -9,18 +9,17 @@ import io
 from datetime import date
 
 import pandas as pd
-import requests
 import streamlit as st
 
 from pages.Subscripts.gps_import_common import (
     GPS_COLS,
     df_to_excel_bytes_single,
     fetch_all_gps_records,
-    rest_get,
     safe_sheet_name,
     toast_err,
     toast_ok,
 )
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from speed_outlier_utils import sanitize_progressive_max_speed
 
 
@@ -262,16 +261,13 @@ def _fetch_selected_players_df(
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for p in players:
-        pname = requests.utils.quote(str(p), safe="")
-        q = (
-            f"select={','.join(GPS_COLS)}"
-            f"&player_name=eq.{pname}"
-            f"&datum=gte.{dt_from.isoformat()}"
-            f"&datum=lte.{dt_to.isoformat()}"
-            f"&order=datum.asc"
-            f"&limit=200000"
+        dfp = load_hybrid_gps(
+            access_token,
+            GPS_COLS,
+            start=dt_from,
+            end=dt_to,
+            player_name=str(p),
         )
-        dfp = rest_get(access_token, "gps_records", q)
         if not dfp.empty:
             frames.append(dfp)
     if not frames:
@@ -521,16 +517,13 @@ def tab_export_main(access_token: str, player_options: list[str]) -> None:
             used = set()
             with pd.ExcelWriter(bio, engine="openpyxl") as writer:
                 for p in export_players:
-                    pname = requests.utils.quote(str(p), safe="")
-                    q = (
-                        f"select={','.join(GPS_COLS)}"
-                        f"&player_name=eq.{pname}"
-                        f"&datum=gte.{exp_from.isoformat()}"
-                        f"&datum=lte.{exp_to.isoformat()}"
-                        f"&order=datum.asc"
-                        f"&limit=200000"
+                    dfp = load_hybrid_gps(
+                        access_token,
+                        GPS_COLS,
+                        start=exp_from,
+                        end=exp_to,
+                        player_name=str(p),
                     )
-                    dfp = rest_get(access_token, "gps_records", q)
                     ordered = [c for c in GPS_COLS if c in dfp.columns]
                     dfp = dfp[ordered] if not dfp.empty else pd.DataFrame(columns=GPS_COLS)
                     sheet = safe_sheet_name(p, used)

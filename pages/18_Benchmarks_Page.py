@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from roles import (
     get_access_token,
     get_profile,
@@ -605,10 +606,11 @@ def save_player_sub_position(sb, player_id: str, sub_position: str) -> tuple[boo
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_summary_history_cached(_access_token: str, start_iso: str) -> pd.DataFrame:
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         _access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&datum=gte.{start_iso}&order=datum.asc,gps_id.asc",
+        GPS_SELECT_COLS,
+        start=start_iso,
+        event="Summary",
     )
     if raw.empty:
         return raw
@@ -1518,48 +1520,42 @@ def resolve_benchmark_position(position: object, source_key: str) -> str | None:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_match_events_history_cached(_access_token: str, start_iso: str) -> pd.DataFrame:
-    last_error: Exception | None = None
+    raw = load_hybrid_gps(
+        _access_token,
+        MATCH_EVENT_SELECT_VARIANTS[0].split(","),
+        start=start_iso,
+        session_type="Match",
+    )
+    df = raw.copy()
+    if df.empty:
+        return df
 
-    for select_clause in MATCH_EVENT_SELECT_VARIANTS:
-        try:
-            raw = rest_get_paged(
-                _access_token,
-                "v_gps_match_events",
-                f"select={select_clause}&datum=gte.{start_iso}&order=datum.asc,gps_id.asc",
-            )
-            df = raw.copy()
-            if df.empty:
-                return df
-
-            df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
-            if "player_id" in df.columns:
-                df["player_id"] = df["player_id"].fillna("").astype(str)
-            if "player_name" in df.columns:
-                df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
-            if "type" in df.columns:
-                df["type"] = df["type"].fillna("").astype(str).str.strip().str.lower()
-            if "event" in df.columns:
-                df["event"] = df["event"].fillna("").astype(str).str.strip()
-            if "match_id" in df.columns:
-                df["match_id"] = pd.to_numeric(df["match_id"], errors="coerce").astype("Int64")
-            for column in MATCH_NUMERIC_COLS:
-                if column in df.columns:
-                    df[column] = pd.to_numeric(df[column], errors="coerce")
-            df = df.dropna(subset=["datum"]).copy()
-            return df
-        except Exception as exc:
-            last_error = exc
-
-    raise RuntimeError(f"Kon v_gps_match_events niet laden: {last_error}")
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.normalize()
+    if "player_id" in df.columns:
+        df["player_id"] = df["player_id"].fillna("").astype(str)
+    if "player_name" in df.columns:
+        df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
+    if "type" in df.columns:
+        df["type"] = df["type"].fillna("").astype(str).str.strip().str.lower()
+    if "event" in df.columns:
+        df["event"] = df["event"].fillna("").astype(str).str.strip()
+    if "match_id" in df.columns:
+        df["match_id"] = pd.to_numeric(df["match_id"], errors="coerce").astype("Int64")
+    for column in MATCH_NUMERIC_COLS:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+    return df.dropna(subset=["datum"]).copy()
 
 
 @st.cache_data(show_spinner=False, ttl=300)
 def fetch_match_summary_averages_cached(_access_token: str) -> pd.DataFrame:
     """Load the one canonical Summary record per player and match for team averages."""
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         _access_token,
-        "gps_records",
-        f"select={MATCH_AVERAGE_SELECT}&type=eq.Match&event=eq.Summary&order=datum.desc,gps_id.desc",
+        MATCH_AVERAGE_SELECT.split(","),
+        session_type="Match",
+        event="Summary",
+        descending=True,
     )
     if raw.empty:
         return raw

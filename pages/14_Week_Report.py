@@ -11,6 +11,7 @@ import requests
 import streamlit as st
 
 from auth_session import ensure_auth_restored, get_sb_client
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from report_generator import generate_week_report
 from report_monitoring import (
@@ -617,20 +618,22 @@ def _merge_summary_context(scope_df: pd.DataFrame, history_df: pd.DataFrame) -> 
 
 @st.cache_data(show_spinner=False, ttl=180)
 def fetch_summary_index_cached(access_token: str) -> pd.DataFrame:
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         access_token,
-        "gps_records",
-        f"select={','.join(GPS_INDEX_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
+        GPS_INDEX_SELECT_COLS,
+        event="Summary",
     )
     return _prepare_summary_index_df(raw)
 
 
 @st.cache_data(show_spinner=False, ttl=180)
 def fetch_summary_period_cached(access_token: str, start_iso: str, end_iso: str) -> pd.DataFrame:
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&datum=gte.{start_iso}&datum=lte.{end_iso}&order=datum.asc,gps_id.asc",
+        GPS_SELECT_COLS,
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
     )
     return _prepare_summary_period_df(raw)
 

@@ -37,6 +37,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
+
 CHART_H = 340
 
 GPS_TABLE = "v_gps_summary"
@@ -158,27 +160,20 @@ def fetch_gps_14d_cached(_sb, cache_scope: str, player_id: str, start_iso: str, 
     Haalt GPS summary rijen op voor 1 speler binnen datumbereik.
     Server-side filter: eq(player_id) + gte/lte(datum).
     """
-    if _sb is None:
-        return pd.DataFrame()
-
     try:
-        rows = (
-            _sb.table(GPS_TABLE)
-            .select(",".join(GPS_TABLE_COLS_RAW + ["player_id"]))
-            .eq("player_id", player_id)
-            .gte("datum", start_iso)
-            .lte("datum", end_iso)
-            .order("datum", desc=True)
-            .limit(limit)
-            .execute()
-            .data
-            or []
+        df = load_hybrid_gps(
+            str(st.session_state.get("access_token") or ""),
+            GPS_TABLE_COLS_RAW + ["player_id"],
+            start=start_iso,
+            end=end_iso,
+            event="Summary",
+            player_id=player_id,
+            descending=True,
         )
-        df = _df(rows)
         if df.empty:
             return df
         df["datum"] = _to_date_series(df["datum"])
-        return df
+        return df.head(limit)
     except Exception:
         return pd.DataFrame()
 

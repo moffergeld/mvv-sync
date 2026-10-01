@@ -147,7 +147,7 @@ Belangrijk:
 
 - zet nooit Postgres-connection strings of service-role keys in tracked bestanden
 - gebruik voor de hoofdapp minimaal `SUPABASE_URL` en `SUPABASE_ANON_KEY`
-- voeg `STATSPORTS_API_KEY` toe om de directe STATSports-import te gebruiken
+- voeg `STATSPORTS_API_KEY` toe om de live STATSports-databron te gebruiken
 - gebruik voor de losse tablet-app daarnaast `SUPABASE_SERVICE_ROLE_KEY`, `TABLET_SHARED_CODE` en `TABLET_CREATED_BY_USER_ID`
 
 Als er eerder credentials in de repo hebben gestaan, roteer die dan ook in Supabase.
@@ -155,12 +155,17 @@ Als er eerder credentials in de repo hebben gestaan, roteer die dan ook in Supab
 De oudere secretnaam `STATSport` wordt ook herkend, zodat bestaande
 Streamlit-configuraties niet direct hoeven te worden aangepast.
 
-De workflow `GPS Import` → `STATSports API` haalt data in blokken van zeven dagen
-rechtstreeks bij STATSports op. Na een controle-preview worden de meetregels direct
-naar `gps_records` in Supabase geschreven. Bekende waarden gaan naar vaste kolommen;
-de volledige ruwe sessie-, speler- en drillcontext blijft in `extra_metrics` bewaard.
-De eerste volledige import begint standaard op 24 augustus 2026. Er wordt geen
-lokale STATSports-database of permanente cache gebruikt.
+Alle GPS-onderdelen gebruiken dezelfde hybride bronregel:
+
+- tot en met 23 augustus 2026 komt GPS-data uit `gps_records` in Supabase
+- vanaf 24 augustus 2026 komt GPS-data live uit de STATSports API
+
+Dit geldt ook voor de startpagina, team- en spelerspagina's, ACWR, Session Load,
+FFP, week-, maand-, jaar- en spelersrapporten, matchrapporten, benchmarks en
+GPS-exports. De API wordt in blokken van zeven dagen opgehaald en kort in het
+Streamlit-proces gecachet. Recente API-data wordt niet opnieuw in Supabase
+opgeslagen. De pagina `GPS Import` → `STATSports API` is een controleweergave voor
+de live verbinding en de ontvangen sessies.
 
 ## Supabase Preview
 

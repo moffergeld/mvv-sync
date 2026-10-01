@@ -37,9 +37,6 @@ def validate_api_key(api_key: str) -> str:
 def _date_chunks(start: date, end: date, chunk_days: int = 7) -> list[tuple[date, date]]:
     if end < start:
         raise ValueError("De einddatum mag niet voor de begindatum liggen.")
-    if (end - start).days > 370:
-        raise ValueError("Kies een periode van maximaal één seizoen.")
-
     chunks = []
     cursor = start
     while cursor <= end:
@@ -214,6 +211,18 @@ def _raw_context(session: dict, item: dict, drill: dict) -> dict:
     return {"session": session_data, "player": player_data, "drill": drill}
 
 
+def _summary_priority(event_key: str) -> int | None:
+    """Choose the same canonical full-session row used by the CSV workflow."""
+
+    if event_key == "entiresessionlive":
+        return 0
+    if event_key == "entiresession":
+        return 1
+    if event_key in {"match", "matchentirematch"}:
+        return 2
+    return None
+
+
 def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
     """Flatten STATSports sessions to the existing GPS import contract."""
 
@@ -239,7 +248,9 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
                     metrics["maxSpeed"] = metrics["maxSpeed"] * 3.6
 
                 event = str(drill.get("drillName") or drill.get("name") or session_title or "STATSports API").strip()
-                if re.sub(r"[^a-z0-9]", "", event.lower()) in {"entiresessionlive", "entiresession", "match", "matchentirematch"}:
+                event_key = re.sub(r"[^a-z0-9]", "", event.lower())
+                summary_priority = _summary_priority(event_key)
+                if summary_priority is not None:
                     event = "Summary"
 
                 rows.append({
@@ -261,6 +272,7 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
                     "Secondary Label": drill.get("secondaryLabel"),
                     "Tertiary Label": drill.get("tertiaryLabel"),
                     "STATSports Raw": _raw_context(session, item, drill),
+                    "_summary_priority": summary_priority,
                     **metrics,
                 })
 
@@ -270,6 +282,18 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     frame["Datum"] = pd.to_datetime(frame["Datum"], errors="coerce").dt.strftime("%d-%m-%Y")
     frame = frame[frame["Speler"].astype(str).str.strip().ne("") & frame["Datum"].notna()].copy()
+
+    summary_mask = frame["Event"].eq("Summary")
+    if summary_mask.any():
+        summary_rows = frame.loc[summary_mask].sort_values(
+            ["Speler", "Datum", "Type", "_summary_priority", "Drill Start Time"],
+            na_position="last",
+        )
+        keep_summary_indices = summary_rows.drop_duplicates(
+            subset=["Speler", "Datum", "Type"],
+            keep="first",
+        ).index
+        frame = frame.loc[~summary_mask | frame.index.isin(keep_summary_indices)].copy()
 
     keys = ["Speler", "Datum", "Type", "Event"]
     order = pd.to_datetime(frame["Drill Start Time"], errors="coerce", utc=True)
@@ -285,7 +309,9 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
         + (duplicate_index[duplicate_mask] + 1).astype(str)
         + ")"
     )
-    frame = ordered.sort_values("_original_order").drop(columns=["_event_order", "_original_order"])
+    frame = ordered.sort_values("_original_order").drop(
+        columns=["_event_order", "_original_order", "_summary_priority"]
+    )
     frame.attrs["statsports"] = True
     frame.attrs["preserve_extra_metrics"] = True
     frame.attrs["fetched_at"] = datetime.now(timezone.utc).isoformat()

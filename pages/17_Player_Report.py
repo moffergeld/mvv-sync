@@ -13,6 +13,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from auth_session import ensure_auth_restored, get_sb_client
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from report_generator import generate_player_report
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_grouped_summary, summarize_monitoring_dataset
@@ -541,10 +542,10 @@ def _prepare_player_summary_df(raw: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False, ttl=180)
 def fetch_summary_index_cached(access_token: str) -> pd.DataFrame:
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         access_token,
-        "gps_records",
-        f"select={','.join(GPS_INDEX_SELECT_COLS)}&event=eq.Summary&order=datum.asc,gps_id.asc",
+        GPS_INDEX_SELECT_COLS,
+        event="Summary",
     )
     return _prepare_summary_index_df(raw)
 
@@ -554,10 +555,11 @@ def fetch_player_summary_history_cached(access_token: str, player_id: str) -> pd
     normalized_player_id = str(player_id).strip()
     if not normalized_player_id:
         return pd.DataFrame()
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary&player_id=eq.{normalized_player_id}&order=datum.asc,gps_id.asc",
+        GPS_SELECT_COLS,
+        event="Summary",
+        player_id=normalized_player_id,
     )
     return _prepare_player_summary_df(raw)
 

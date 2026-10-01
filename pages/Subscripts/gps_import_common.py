@@ -1985,6 +1985,7 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
     dates_iso = parsed_dates.dt.date.astype(str)
     is_statsports = bool(df.attrs.get("statsports")) or any(normalize_key(c) in {"sessiondate", "drilldate", "sessiontitle", "playername", "playerdisplayname"} for c in df.columns)
     speed_zone_columns = _speed_zone_source_columns(list(df.columns))
+    source_by_key = {normalize_key(column): column for column in df.columns}
     total_time_column = _csv_column(df, ["Total Time", "totalTime"])
 
     for idx, r in df.iterrows():
@@ -2054,6 +2055,20 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
         _apply_speed_zone_mapping(base, r, speed_zone_columns)
         if base.get("duration") is None and total_time_column is not None:
             base["duration"] = _duration_minutes(r[total_time_column])
+
+        # STATSports exposes the canonical acceleration counts under its
+        # compact *Abs labels. Keep the vendor-specific columns as well, while
+        # also feeding the dashboard fields used by FFP and report pages.
+        derived_count_fields = {
+            "total_accelerations": "accelerationsabs",
+            "total_decelerations": "decelerationsabs",
+            "high_accelerations": "accelerationsz3z6abs",
+            "high_decelerations": "decelerationsz3z6abs",
+        }
+        for target, source_key in derived_count_fields.items():
+            if base.get(target) is None and source_key in source_by_key:
+                value = pd.to_numeric(r[source_by_key[source_key]], errors="coerce")
+                base[target] = int(value) if pd.notna(value) else None
         rows.append(base)
 
     return rows, sorted(unmapped)
@@ -2358,8 +2373,9 @@ def parse_exercises_excel(file_bytes: bytes, selected_date: date, selected_type:
 # Export helpers
 # -------------------------
 def fetch_all_gps_records(access_token: str, limit: int = 200000) -> pd.DataFrame:
-    query = f"select={','.join(GPS_COLS)}&order=datum.desc&limit={limit}"
-    return _retry_with_refreshed_token(rest_get, access_token, "gps_records", query)
+    from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
+
+    return load_hybrid_gps(access_token, GPS_COLS, descending=True).head(limit)
 
 
 def df_to_excel_bytes_single(df: pd.DataFrame, sheet_name: str = "gps_records") -> bytes:

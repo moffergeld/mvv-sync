@@ -1,4 +1,4 @@
-"""Streamlit tab for direct STATSports API -> Supabase synchronisation."""
+"""Streamlit diagnostics for the live STATSports dashboard source."""
 
 from __future__ import annotations
 
@@ -7,13 +7,7 @@ from datetime import date, timedelta
 
 import streamlit as st
 
-from pages.Subscripts.gps_import_common import (
-    apply_auto_match_ids_to_rows,
-    df_to_db_rows,
-    rest_upsert,
-    toast_err,
-    toast_ok,
-)
+from pages.Subscripts.gps_import_common import toast_err, toast_ok
 from pages.Subscripts.statsports_api import (
     STATSPORTS_FIRST_DATE,
     fetch_statsports_range,
@@ -38,10 +32,10 @@ def _preview_signature(start: date, end: date) -> str:
 
 
 def tab_import_statsports_main(access_token: str, name_to_id: dict) -> None:
-    st.subheader("STATSports API → Supabase")
+    st.subheader("STATSports API · live dashboardbron")
     st.caption(
-        "Haalt sessies rechtstreeks op bij STATSports en schrijft ze zonder lokale tussenopslag naar "
-        "Supabase. De eerste volledige import start standaard op 24 augustus 2026."
+        "Vanaf 24 augustus 2026 leest het dashboard GPS rechtstreeks uit STATSports. "
+        "Oudere GPS-data blijft uit Supabase komen; recente API-data wordt hier niet dubbel opgeslagen."
     )
 
     configured_key = _configured_api_key()
@@ -60,16 +54,16 @@ def tab_import_statsports_main(access_token: str, name_to_id: dict) -> None:
         ).strip()
 
     mode = st.radio(
-        "Synchronisatie",
-        options=["Eerste volledige import", "Periode synchroniseren"],
+        "Controleperiode",
+        options=["Volledige API-periode", "Eigen periode"],
         horizontal=True,
         key="statsports_sync_mode",
     )
     today = date.today()
-    if mode == "Eerste volledige import":
+    if mode == "Volledige API-periode":
         start = STATSPORTS_FIRST_DATE
         end = today
-        st.info(f"Volledige importperiode: {start:%d-%m-%Y} t/m {end:%d-%m-%Y}.")
+        st.info(f"Volledige API-periode: {start:%d-%m-%Y} t/m {end:%d-%m-%Y}.")
     else:
         left, right = st.columns(2)
         with left:
@@ -143,34 +137,4 @@ def tab_import_statsports_main(access_token: str, name_to_id: dict) -> None:
         if column in frame.columns
     ]
     st.dataframe(frame[preview_columns].head(150), width="stretch", hide_index=True)
-    st.caption(
-        "Bij import worden alle STATSports-velden bewaard: bekende meetwaarden in vaste Supabase-kolommen "
-        "en de volledige ruwe API-context in extra_metrics."
-    )
-
-    if st.button("Importeer rechtstreeks naar Supabase", type="primary", key="statsports_import_button"):
-        try:
-            rows, unmapped = df_to_db_rows(frame, source_file="STATSports API", name_to_id=name_to_id)
-            destination_keys = [
-                (row.get("player_name"), row.get("datum"), row.get("type"), row.get("event"))
-                for row in rows
-            ]
-            if len(destination_keys) != len(set(destination_keys)):
-                raise ValueError("Dubbele STATSports-meetregels gevonden; er is niets opgeslagen.")
-
-            rows = apply_auto_match_ids_to_rows(access_token, rows, ui_key_prefix="statsports_api_apply")
-            rest_upsert(
-                access_token,
-                "gps_records",
-                rows,
-                on_conflict="player_name,datum,type,event",
-            )
-            if unmapped:
-                st.warning(
-                    "Niet-gematchte spelers zijn wel opgeslagen met player_id = NULL: "
-                    + ", ".join(unmapped[:30])
-                )
-            st.session_state.pop("statsports_api_preview", None)
-            toast_ok(f"STATSports-synchronisatie voltooid: {len(rows)} regels opgeslagen in Supabase.")
-        except Exception as exc:
-            toast_err(f"STATSports-import mislukt: {exc}")
+    st.success("Controle geslaagd. Deze regels worden automatisch live gebruikt op alle GPS-pagina’s.")

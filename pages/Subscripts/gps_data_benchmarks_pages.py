@@ -14,6 +14,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
+
 
 # -------------------------
 # REST helpers
@@ -94,16 +96,10 @@ def fetch_match_events_all_cached(
     access_token: str,
     user_id: str,
 ) -> pd.DataFrame:
-    select = ",".join(GREF_SELECT_COLS)
-    base_query = f"select={select}&order=datum.asc,gps_id.asc"
-    return _rest_get_paged(
-        supabase_url=supabase_url,
-        supabase_anon_key=supabase_anon_key,
-        access_token=access_token,
-        table="v_gps_match_events",
-        base_query=base_query,
-        page_size=5000,
-        timeout=120,
+    return load_hybrid_gps(
+        access_token,
+        GREF_SELECT_COLS,
+        session_type="Match",
     )
 
 

@@ -8,6 +8,7 @@ import streamlit as st
 
 import pages.Subscripts.gps_data_acwr_pages as acwr_pages
 from auth_session import ensure_auth_restored, get_sb_client
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_streamlit_chrome
@@ -258,14 +259,13 @@ def _scope_to_dates(scope_key: str) -> tuple[date | None, date | None]:
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_summary_scope_cached(access_token: str, scope_key: str) -> pd.DataFrame:
     d0, d1 = _scope_to_dates(scope_key)
-    date_clause = ""
-    if d0 and d1:
-        date_clause = f"&datum=gte.{d0.isoformat()}&datum=lte.{d1.isoformat()}"
-
-    raw = rest_get_paged(
+    raw = load_hybrid_gps(
         access_token,
-        "gps_records",
-        f"select={','.join(GPS_SELECT_COLS)}&event=eq.Summary{date_clause}&order=datum.desc",
+        GPS_SELECT_COLS,
+        start=d0,
+        end=d1,
+        event="Summary",
+        descending=True,
     )
     return to_dashboard_df(raw)
 

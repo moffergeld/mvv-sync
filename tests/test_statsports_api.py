@@ -93,6 +93,27 @@ class StatsportsApiTests(unittest.TestCase):
         self.assertEqual(frame.iloc[0]["STATSports Raw"]["drill"]["drillKpi"]["vendorMetric"], 42)
         self.assertTrue(frame.attrs["preserve_extra_metrics"])
 
+    def test_live_entire_session_becomes_the_single_summary_row(self):
+        payload = [{
+            "id": "session-1",
+            "sessionName": "MD Opponent",
+            "sessionDetails": {"sessionDate": "2026-09-30T00:00:00Z", "sessionType": "Match Day"},
+            "sessionPlayers": [{
+                "playerDetails": {"id": "player-1", "displayName": "Test Speler"},
+                "drills": [
+                    {"drillName": "Entire Session", "startTime": "2026-09-30T17:00:00Z", "drillKpi": {"totalTime": 9000}},
+                    {"drillName": "Entire Session - Live", "startTime": "2026-09-30T17:10:00Z", "drillKpi": {"totalTime": 7200}},
+                    {"drillName": "Match-Entire Match", "startTime": "2026-09-30T18:00:00Z", "drillKpi": {"totalTime": 6000}},
+                ],
+            }],
+        }]
+
+        frame = sessions_to_dataframe(payload)
+
+        self.assertEqual(frame["Event"].tolist(), ["Summary"])
+        self.assertEqual(frame.iloc[0]["totalTime"], 120)
+        self.assertEqual(frame.iloc[0]["STATSports Raw"]["drill"]["drillName"], "Entire Session - Live")
+
 
 if __name__ == "__main__":
     unittest.main()

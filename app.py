@@ -11,6 +11,7 @@ import streamlit as st
 import roles as roles_mod
 
 from acwr_settings import compute_chronic_series, get_acwr_mode_meta
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from readiness_utils import enrich_wellness_scores
 from roles import (
     clear_tokens_in_cookie,
@@ -41,7 +42,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "STATSPORTS-SUPABASE-20261001"
+APP_BUILD_STAMP = "GPS-HYBRID-20261001"
 HOME_RECENT_MAX_AGE_DAYS = 1
 
 
@@ -691,20 +692,13 @@ def fetch_rpe_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
-    try:
-        rows = (
-            _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance")
-            .gte("datum", start_iso)
-            .lte("datum", end_iso)
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        rows = []
-
-    df = pd.DataFrame(rows)
+    df = load_hybrid_gps(
+        str(st.session_state.get("access_token") or ""),
+        ["player_id", "datum", "total_distance"],
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
+    )
     if df.empty:
         return df
 
@@ -720,20 +714,13 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
-    try:
-        rows = (
-            _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance,total_distance_zone_4,total_distance_zone_5,total_distance_zone_6")
-            .gte("datum", start_iso)
-            .lte("datum", end_iso)
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        rows = []
-
-    df = pd.DataFrame(rows)
+    df = load_hybrid_gps(
+        str(st.session_state.get("access_token") or ""),
+        ["player_id", "datum", "total_distance", "total_distance_zone_4", "total_distance_zone_5", "total_distance_zone_6"],
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
+    )
     if df.empty:
         return df
 

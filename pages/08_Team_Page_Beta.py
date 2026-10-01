@@ -27,6 +27,7 @@ if str(ROOT_DIR) not in sys.path:
 
 
 from readiness_utils import build_wellness_snapshot_lookup, enrich_wellness_scores  # noqa: E402
+from pages.Subscripts.gps_hybrid_source import load_hybrid_gps  # noqa: E402
 from roles import get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
 
@@ -975,20 +976,13 @@ def fetch_rpe_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
-    try:
-        rows = (
-            _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance")
-            .gte("datum", start_iso)
-            .lte("datum", end_iso)
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        rows = []
-
-    df = pd.DataFrame(rows)
+    df = load_hybrid_gps(
+        str(st.session_state.get("access_token") or ""),
+        ["player_id", "datum", "total_distance"],
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
+    )
     if df.empty:
         return df
 
@@ -1004,20 +998,13 @@ def fetch_gps_snapshot(_sb, access_scope: str, start_iso: str, end_iso: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=120)
 def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
-    try:
-        rows = (
-            _sb.table("v_gps_summary")
-            .select("player_id,datum,total_distance,total_distance_zone_4,total_distance_zone_5,total_distance_zone_6")
-            .gte("datum", start_iso)
-            .lte("datum", end_iso)
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        rows = []
-
-    df = pd.DataFrame(rows)
+    df = load_hybrid_gps(
+        str(st.session_state.get("access_token") or ""),
+        ["player_id", "datum", "total_distance", "total_distance_zone_4", "total_distance_zone_5", "total_distance_zone_6"],
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
+    )
     if df.empty:
         return df
 
