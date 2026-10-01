@@ -236,7 +236,17 @@ def _render_sidebar_css() -> None:
 
         [data-testid="stSidebar"] div[data-testid="stPageLink"] a,
         [data-testid="stSidebar"] div[data-testid="stPageLink"] span {
-          border-radius: 8px !important;
+          border-radius: 10px !important;
+        }
+
+        [data-testid="stSidebar"] div[data-testid="stPageLink"] a {
+          padding: 0.52rem 0.72rem !important;
+          transition: background-color .16s ease, transform .16s ease;
+        }
+
+        [data-testid="stSidebar"] div[data-testid="stPageLink"] a:hover {
+          background: rgba(255,255,255,0.055) !important;
+          transform: translateX(2px);
         }
 
         [data-testid="stSidebar"] .mvv-sidebar-current-link {
@@ -244,8 +254,9 @@ def _render_sidebar_css() -> None:
           width: 100%;
           padding: 0.45rem 0.75rem;
           margin-bottom: 0.15rem;
-          border-radius: 8px;
-          background: rgba(53, 72, 116, 0.58);
+          border-radius: 10px;
+          border-left: 3px solid #e52b49;
+          background: linear-gradient(90deg, rgba(229,43,73,.22), rgba(53,72,116,.34));
           color: rgba(255,255,255,0.96);
           font-size: 0.98rem;
           font-weight: 600;

@@ -44,7 +44,7 @@ from pages.Subscripts.gps_event_rules import (  # noqa: E402
 )
 from roles import get_access_token, get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
-from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome  # noqa: E402
 
 # -----------------------------
 # Config
@@ -462,6 +462,7 @@ st.markdown(
     """.replace("__APP_BACKGROUND__", _PAGE_BACKGROUND),
     unsafe_allow_html=True,
 )
+apply_dashboard_polish()
 
 # -----------------------------
 # Helpers

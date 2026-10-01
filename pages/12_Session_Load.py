@@ -11,7 +11,7 @@ from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Session Load", layout="wide", initial_sidebar_state="expanded")
@@ -351,6 +351,7 @@ def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
 
 def main() -> None:
     render_css()
+    apply_dashboard_polish()
     sb = get_sb_client()
     ok, token = ensure_auth_restored(sb)
     if not ok or not token:

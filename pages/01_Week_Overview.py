@@ -6,6 +6,7 @@ from typing import Callable
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import report_monitoring as report_monitoring_module
 import requests
 import streamlit as st
@@ -23,7 +24,7 @@ from report_monitoring import (
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from speed_outlier_utils import sanitize_progressive_max_speed
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Weekoverzicht", layout="wide", initial_sidebar_state="expanded")
@@ -1145,9 +1146,16 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
 
 
 def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
-    """Desktop-style team average for each separate live session."""
+    """Team average per session with volume and intensity on honest separate scales."""
 
-    fig = base_figure("Teamgemiddelde per sessie", height=390)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.13,
+        row_heights=[0.56, 0.44],
+        subplot_titles=("Totale afstand", "Intensieve afstand"),
+    )
     required = {
         "label",
         "total_distance_mean",
@@ -1156,6 +1164,7 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         "high_metabolic_load_distance_mean",
     }
     if session_stats.empty or not required.issubset(session_stats.columns):
+        fig.update_layout(height=460, paper_bgcolor="rgba(0,0,0,0)")
         return fig
 
     labels = session_stats["label"]
@@ -1169,7 +1178,9 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
             textposition="outside",
             cliponaxis=False,
             hovertemplate="%{x}<br>TD %{y:,.0f} m<extra></extra>",
-        )
+        ),
+        row=1,
+        col=1,
     )
     for column, name, color in (
         ("total_distance_zone_5_mean", "Zone 5", "#EDB45B"),
@@ -1183,15 +1194,27 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
                 y=session_stats[column],
                 mode="lines+markers",
                 line=dict(color=color, width=3),
-                marker=dict(size=7),
-                yaxis="y2",
-            )
+                marker=dict(size=7, symbol="circle", line=dict(color="#101827", width=1.5)),
+                hovertemplate=f"%{{x}}<br>{name} %{{y:,.0f}} m<extra></extra>",
+            ),
+            row=2,
+            col=1,
         )
     fig.update_layout(
-        yaxis=dict(title="Total Distance (m)", gridcolor=MVV_GRID),
-        yaxis2=dict(title="Zone 5 / Zone 6 / HMLD (m)", overlaying="y", side="right", showgrid=False),
+        height=510,
+        margin=dict(l=20, r=20, t=56, b=42),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.012)",
+        font=dict(color=MVV_TEXT, size=12),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        bargap=0.42,
     )
-    fig.update_xaxes(tickangle=-25, automargin=True)
+    fig.update_annotations(font=dict(color=MVV_TEXT_SOFT, size=12), xanchor="left", x=0)
+    fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT), tickangle=0, automargin=True)
+    fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(title_text="Meters", row=1, col=1)
+    fig.update_yaxes(title_text="Meters", row=2, col=1)
     return fig
 
 
@@ -1302,14 +1325,6 @@ def build_leaderboard_chart(player_table: pd.DataFrame, column: str, title: str,
 
 
 def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, object]) -> str:
-    wellness_cards = [
-        (
-            label,
-            _format_decimal(monitoring_summary[column], 1),
-            f"Gemiddelde {label.lower()} in deze week",
-        )
-        for column, label in WELLNESS_PARAMETER_SPECS
-    ]
     cards = [
         ("Active Players", _format_int(summary["active_players"]), "Unieke GPS-spelers in deze week"),
         ("Player Sessions", _format_int(summary["player_sessions"]), "Totaal aantal Entire Session - Live-sessies"),
@@ -1319,9 +1334,24 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
         ("Speed Exposures", _format_int(summary["speed_exposures"]), "Sessies >= 90% van individuele seizoensmax"),
         ("Dist / Player", _format_distance(summary["dist_per_player"]), "Team totaal gedeeld door actieve spelers"),
         ("Top Speed", _format_speed(summary["top_speed"]), "Hoogste topsnelheid in de gekozen week"),
-        *wellness_cards,
-        ("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde team-RPE in deze week"),
     ]
+    return _render_card_grid(cards)
+
+
+def build_monitoring_cards_html(monitoring_summary: dict[str, object]) -> str:
+    cards = [
+        (
+            label,
+            _format_decimal(monitoring_summary[column], 1),
+            f"Gemiddelde {label.lower()} in deze week",
+        )
+        for column, label in WELLNESS_PARAMETER_SPECS
+    ]
+    cards.append(("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde team-RPE in deze week"))
+    return _render_card_grid(cards)
+
+
+def _render_card_grid(cards: list[tuple[str, str, str]]) -> str:
     html_blocks = []
     for label, value, foot in cards:
         html_blocks.append(
@@ -1388,6 +1418,7 @@ def main() -> None:
         st.rerun()
 
     render_css()
+    apply_dashboard_polish()
     require_auth()
 
     sb = get_sb_client()
@@ -1707,6 +1738,7 @@ def main() -> None:
             )
 
     with tab_monitoring:
+        st.markdown(build_monitoring_cards_html(monitoring_summary), unsafe_allow_html=True)
         if monitoring_df.empty:
             st.info("Geen wellness- of RPE-data beschikbaar voor deze week.")
         else:

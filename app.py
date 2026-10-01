@@ -42,7 +42,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "DESKTOP-VIEWS-20261001"
+APP_BUILD_STAMP = "VISUAL-REFRESH-20261001"
 HOME_RECENT_MAX_AGE_DAYS = 1
 
 

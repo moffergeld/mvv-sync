@@ -271,9 +271,9 @@ def _style_fig(fig: go.Figure, *, title: str, y_title: str, x_tickangle: int = -
     fig.update_layout(
         title=dict(text=title, x=0.02, xanchor="left", font=dict(size=20, color=TEXT)),
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=PLOT_BG,
+        plot_bgcolor="rgba(255,255,255,0.012)",
         font=dict(color=TEXT, size=12),
-        margin=dict(l=30, r=20, t=70, b=85),
+        margin=dict(l=30, r=20, t=66, b=72),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -331,10 +331,12 @@ def _metric_card(label: str, value: str) -> None:
     st.markdown(
         f"""
         <div style="
-            border:1px solid rgba(255,255,255,0.08);
-            border-radius:18px;
+            border:1px solid rgba(255,255,255,0.085);
+            border-top-color:rgba(229,43,73,0.34);
+            border-radius:14px;
             padding:0.85rem 1rem;
-            background:rgba(255,255,255,0.035);
+            background:linear-gradient(145deg, rgba(20,30,50,.94), rgba(12,18,31,.96));
+            box-shadow:0 10px 28px rgba(0,0,0,.15);
             min-height:92px;">
             <div style="font-size:0.78rem;letter-spacing:0.14em;text-transform:uppercase;color:{TEXT_MUTED};font-weight:700;">{label}</div>
             <div style="font-size:1.55rem;color:{TEXT};font-weight:800;margin-top:0.35rem;">{value}</div>
