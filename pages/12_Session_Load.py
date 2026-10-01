@@ -14,7 +14,7 @@ from roles import get_profile, is_staff_user, render_sidebar_footer, render_side
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="Session Load Beta", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Session Load", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
@@ -211,12 +211,17 @@ GPS_SELECT_COLS = [
     "player_name",
     "type",
     "event",
+    "extra_metrics",
     "duration",
     "total_distance",
     "total_distance_zone_4",
     "total_distance_zone_5",
     "total_distance_zone_6",
     "maximum_speed",
+    "high_metabolic_load_distance",
+    "dynamic_stress_load",
+    "heart_rate_exertion",
+    "fatigue_index",
     "player_load_two_dimensional",
     "total_accelerations",
     "high_accelerations",
@@ -235,12 +240,17 @@ DB_TO_DASH = {
     "player_name": "Speler",
     "type": "Type",
     "event": "Event",
+    "extra_metrics": "Extra Metrics",
     "duration": "Duration",
     "total_distance": "Total Distance",
     "total_distance_zone_4": "Running",
     "total_distance_zone_5": "Zone 5",
     "total_distance_zone_6": "Zone 6",
     "maximum_speed": "Max Speed",
+    "high_metabolic_load_distance": "HMLD",
+    "dynamic_stress_load": "Dynamic Stress Load",
+    "heart_rate_exertion": "HR Exertion",
+    "fatigue_index": "Fatigue Index",
     "player_load_two_dimensional": "playerload2D",
     "total_accelerations": "Total Accelerations",
     "high_accelerations": "High Accelerations",
@@ -264,7 +274,11 @@ def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     df = raw_df.copy()
     if "datum" in df.columns:
         df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
-    for numeric_col in [col for col in GPS_SELECT_COLS if col not in {"datum", "player_name", "type", "event"}]:
+    for numeric_col in [
+        col
+        for col in GPS_SELECT_COLS
+        if col not in {"datum", "player_name", "type", "event", "extra_metrics"}
+    ]:
         if numeric_col in df.columns:
             df[numeric_col] = pd.to_numeric(df[numeric_col], errors="coerce")
 
@@ -377,11 +391,11 @@ def main() -> None:
         scope_col, calendar_col = st.columns(2, gap="large")
         with scope_col:
             st.markdown(
-                '<div class="session-load-beta-filter-label">Data scope (Summary-only)</div>',
+                '<div class="session-load-beta-filter-label">Periode · Entire Session - Live</div>',
                 unsafe_allow_html=True,
             )
             scope_key = st.selectbox(
-                "Data scope (Summary-only)",
+                "Periode · Entire Session - Live",
                 options=["Laatste 8 weken", "Laatste 12 weken", "Seizoen", "Alles"],
                 index=0,
                 key="session_load_beta_scope",
@@ -389,7 +403,7 @@ def main() -> None:
             )
 
     try:
-        with st.spinner(f"Summary data laden ({scope_key})..."):
+        with st.spinner(f"Entire Session - Live-data laden ({scope_key})..."):
             df_scope = fetch_summary_scope_cached(str(token), scope_key)
             calendar_df_scope = fetch_calendar_scope_cached(str(token), scope_key)
     except Exception as exc:
@@ -405,7 +419,7 @@ def main() -> None:
         selected_day = session_load_pages.pick_day_from_calendar(calendar_df_scope, key_prefix="sl_beta_hero")
 
     if df_scope.empty:
-        st.info("Geen Summary GPS data gevonden in deze scope.")
+        st.info("Geen Entire Session - Live-data gevonden in deze periode.")
     else:
         session_load_pages.session_load_pages_main(
             df_gps_scope=df_scope,

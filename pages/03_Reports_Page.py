@@ -333,11 +333,11 @@ def main() -> None:
         render_tile(
             key="reports_hub_week_report",
             kicker="Week",
-            title="Week Report",
+            title="Weekoverzicht",
             copy="Weekrapportage met load, spreiding en leaders.",
             meta="",
-            button_label="Open Week Report",
-            target_page="pages/14_Week_Report.py",
+            button_label="Open weekoverzicht",
+            target_page="pages/01_Week_Overview.py",
         )
     with row[4]:
         render_tile(

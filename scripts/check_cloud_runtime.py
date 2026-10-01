@@ -22,7 +22,21 @@ def check_forms_contracts() -> None:
             "ASRM opslaan",
             "RPE opslaan",
         ),
-        "pages/07_Player_Page_Beta.py": ("render_forms_tab", "forms_status"),
+        "pages/01_Week_Overview.py": (
+            "load_hybrid_gps",
+            "Entire Session - Live",
+            "build_monitoring_dataset",
+        ),
+        "pages/12_Session_Load.py": (
+            "load_hybrid_gps",
+            "Entire Session - Live",
+            "session_load_pages_main",
+        ),
+        "pages/02_Match_Reports.py": (
+            "select_match_phase_rows",
+            "First Half",
+            "Second Half",
+        ),
         "tablet_app/app.py": (
             "tablet_cookie_mgr",
             "tablet_asrm_form_",

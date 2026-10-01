@@ -26,7 +26,7 @@ from speed_outlier_utils import sanitize_progressive_max_speed
 from utils.streamlit_ui import apply_streamlit_chrome
 
 
-st.set_page_config(page_title="Week Report", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Weekoverzicht", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
 
 PAGE_BG_URI = build_data_uri(TEAM_HERO_BG)
@@ -55,6 +55,7 @@ GPS_SELECT_COLS = [
     "year",
     "type",
     "event",
+    "extra_metrics",
     "duration",
     "total_distance",
     "total_distance_zone_1_and_2",
@@ -68,6 +69,7 @@ GPS_SELECT_COLS = [
     "total_accelerations",
     "total_decelerations",
     "heart_rate_training_impulse",
+    "high_metabolic_load_distance",
     "maximum_speed",
 ]
 
@@ -98,6 +100,7 @@ SUM_COLUMNS = [
     "total_accelerations",
     "total_decelerations",
     "heart_rate_training_impulse",
+    "high_metabolic_load_distance",
 ]
 
 INDEX_SUM_COLUMNS = [
@@ -492,6 +495,47 @@ def _session_short_code(type_value: object) -> str:
     return f"T{index}"
 
 
+def _extra_metric_value(value: object, *keys: str) -> str:
+    if not isinstance(value, dict):
+        return ""
+    normalized = {
+        str(key).lower().replace(" ", ""): item
+        for key, item in value.items()
+    }
+    for key in keys:
+        item = normalized.get(key.lower().replace(" ", ""))
+        if item is not None and str(item).strip():
+            return str(item).strip()
+    return ""
+
+
+def _session_identity(row: pd.Series) -> str:
+    extra = row.get("extra_metrics")
+    session_id = _extra_metric_value(extra, "Session ID", "sessionId")
+    start = _extra_metric_value(extra, "Session Start Time", "sessionStartTime")
+    title = _extra_metric_value(extra, "Session Title", "sessionTitle")
+    session_type = str(row.get("type") or "Sessie").strip()
+    return session_id or "|".join((session_type, start, title))
+
+
+def _session_label(row: pd.Series) -> str:
+    extra = row.get("extra_metrics")
+    start = _extra_metric_value(extra, "Session Start Time", "sessionStartTime")
+    title = _extra_metric_value(extra, "Session Title", "sessionTitle")
+    session_type = _session_display(row.get("type"))
+    time_label = ""
+    if "T" in start:
+        time_label = start.split("T", 1)[1][:5]
+    elif len(start) >= 5:
+        time_label = start[:5]
+    pieces = [session_type]
+    if time_label:
+        pieces.append(time_label)
+    if title and title.lower() not in session_type.lower():
+        pieces.append(title)
+    return " · ".join(pieces)
+
+
 def _weekday_label(value: object) -> str:
     ts = pd.to_datetime(value, errors="coerce")
     if pd.isna(ts):
@@ -588,6 +632,8 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
     df["player_name"] = df["player_name"].fillna("Onbekend").astype(str).str.strip()
     df["type"] = df["type"].fillna("").astype(str).str.strip()
     df["event"] = df["event"].fillna("").astype(str).str.strip()
+    if "extra_metrics" not in df.columns:
+        df["extra_metrics"] = None
 
     for column in SUM_COLUMNS:
         if column in df.columns:
@@ -597,6 +643,8 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["datum"]).copy()
     df["hsr_hsd"] = df["total_distance_zone_5"].fillna(0.0) + df["total_distance_zone_6"].fillna(0.0)
     df["session_category"] = df["type"].apply(_session_category)
+    df["session_key"] = df.apply(_session_identity, axis=1)
+    df["session_label"] = df.apply(_session_label, axis=1)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     return df
 
@@ -720,7 +768,7 @@ def build_week_session_table(week_df: pd.DataFrame) -> pd.DataFrame:
     if week_df.empty:
         return pd.DataFrame()
     grouped = (
-        week_df.groupby(["datum", "type", "session_category"], dropna=False)
+        week_df.groupby(["datum", "type", "session_category", "session_key", "session_label"], dropna=False)
         .agg(
             active_players=("player_name", "nunique"),
             player_sessions=("datum", "size"),
@@ -779,7 +827,7 @@ def build_week_zone_session_table(week_df: pd.DataFrame) -> pd.DataFrame:
     if week_df.empty:
         return pd.DataFrame()
     grouped = (
-        week_df.groupby(["datum", "type", "session_category"], dropna=False)
+        week_df.groupby(["datum", "type", "session_category", "session_key", "session_label"], dropna=False)
         .agg(
             total_distance_zone_1_and_2=("total_distance_zone_1_and_2", "sum"),
             total_distance_zone_3=("total_distance_zone_3", "sum"),
@@ -841,9 +889,15 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     if week_df.empty:
         return pd.DataFrame()
     player_session = (
-        week_df.groupby(["datum", "type", "session_category", "player_name"], dropna=False)
+        week_df.groupby(
+            ["datum", "type", "session_category", "session_key", "session_label", "player_name"],
+            dropna=False,
+        )
         .agg(
             total_distance=("total_distance", "sum"),
+            total_distance_zone_5=("total_distance_zone_5", "sum"),
+            total_distance_zone_6=("total_distance_zone_6", "sum"),
+            high_metabolic_load_distance=("high_metabolic_load_distance", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             sprints=("number_of_sprints", "sum"),
             total_accelerations=("total_accelerations", "sum"),
@@ -855,6 +909,9 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     player_session["distance_per_minute"] = _safe_divide(player_session["total_distance"], player_session["duration"])
     metric_columns = [
         "total_distance",
+        "total_distance_zone_5",
+        "total_distance_zone_6",
+        "high_metabolic_load_distance",
         "hsr_hsd",
         "sprints",
         "total_accelerations",
@@ -865,18 +922,28 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
         player_session[metric] = pd.to_numeric(player_session[metric], errors="coerce").astype(float)
 
     grouped = (
-        player_session.groupby(["datum", "type", "session_category"], dropna=False)
+        player_session.groupby(
+            ["datum", "type", "session_category", "session_key", "session_label"],
+            dropna=False,
+        )
         .agg(player_count=("player_name", "nunique"))
         .reset_index()
     )
     for metric in metric_columns:
         stats = (
-            player_session.groupby(["datum", "type", "session_category"], dropna=False)[metric]
+            player_session.groupby(
+                ["datum", "type", "session_category", "session_key", "session_label"],
+                dropna=False,
+            )[metric]
             .agg(["mean", "std"])
             .reset_index()
             .rename(columns={"mean": f"{metric}_mean", "std": f"{metric}_std"})
         )
-        grouped = grouped.merge(stats, on=["datum", "type", "session_category"], how="left")
+        grouped = grouped.merge(
+            stats,
+            on=["datum", "type", "session_category", "session_key", "session_label"],
+            how="left",
+        )
 
     grouped["session_display"] = grouped["type"].apply(_session_display)
     grouped["session_sort"] = grouped["type"].apply(_session_sort_value)
@@ -889,6 +956,10 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     grouped["events_in_day"] = grouped.groupby("datum")["datum"].transform("size")
     grouped["session_code_display"] = grouped.apply(
         lambda row: row["session_code"] if int(row.get("events_in_day", 1) or 1) > 1 else ("M" if row["event_group"] == "Match" else "T"),
+        axis=1,
+    )
+    grouped["label"] = grouped.apply(
+        lambda row: f"{row['datum']:%d/%m} · {row['session_label']}",
         axis=1,
     )
     return grouped
@@ -1073,6 +1144,57 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
+    """Desktop-style team average for each separate live session."""
+
+    fig = base_figure("Teamgemiddelde per sessie", height=390)
+    required = {
+        "label",
+        "total_distance_mean",
+        "total_distance_zone_5_mean",
+        "total_distance_zone_6_mean",
+        "high_metabolic_load_distance_mean",
+    }
+    if session_stats.empty or not required.issubset(session_stats.columns):
+        return fig
+
+    labels = session_stats["label"]
+    fig.add_trace(
+        go.Bar(
+            name="Total Distance",
+            x=labels,
+            y=session_stats["total_distance_mean"],
+            marker_color="#526986",
+            text=[_format_distance(value) for value in session_stats["total_distance_mean"]],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{x}<br>TD %{y:,.0f} m<extra></extra>",
+        )
+    )
+    for column, name, color in (
+        ("total_distance_zone_5_mean", "Zone 5", "#EDB45B"),
+        ("total_distance_zone_6_mean", "Zone 6", "#E84664"),
+        ("high_metabolic_load_distance_mean", "HMLD", "#69D5CB"),
+    ):
+        fig.add_trace(
+            go.Scatter(
+                name=name,
+                x=labels,
+                y=session_stats[column],
+                mode="lines+markers",
+                line=dict(color=color, width=3),
+                marker=dict(size=7),
+                yaxis="y2",
+            )
+        )
+    fig.update_layout(
+        yaxis=dict(title="Total Distance (m)", gridcolor=MVV_GRID),
+        yaxis2=dict(title="Zone 5 / Zone 6 / HMLD (m)", overlaying="y", side="right", showgrid=False),
+    )
+    fig.update_xaxes(tickangle=-25, automargin=True)
+    return fig
+
+
 def build_error_bar_chart(day_stats: pd.DataFrame, mean_column: str, std_column: str, title: str, color: str, value_formatter: Callable[[object], str]) -> go.Figure:
     fig = base_figure(title, height=350)
     if day_stats.empty or mean_column not in day_stats.columns:
@@ -1190,7 +1312,7 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
     ]
     cards = [
         ("Active Players", _format_int(summary["active_players"]), "Unieke GPS-spelers in deze week"),
-        ("Player Sessions", _format_int(summary["player_sessions"]), "Totaal aantal Summary-sessies"),
+        ("Player Sessions", _format_int(summary["player_sessions"]), "Totaal aantal Entire Session - Live-sessies"),
         ("Total Distance", _format_distance(summary["total_distance"]), "Opgetelde teamload binnen de week"),
         ("HSR", _format_distance(summary["hsr_hsd"]), "Sprint + high total_distance_zone_5 distance"),
         ("Sprints", _format_int(summary["sprints"]), "Totale sprintacties in deze week"),
@@ -1285,17 +1407,17 @@ def main() -> None:
 
     render_sidebar_navigation(profile)
 
-    with st.spinner("Week report data laden..."):
+    with st.spinner("Weekoverzicht laden..."):
         history_source_df = fetch_summary_index_cached(access_token)
 
     if history_source_df.empty:
-        st.info("Geen Summary GPS-data gevonden voor de weekrapportage.")
+        st.info("Geen Entire Session - Live-data gevonden voor het weekoverzicht.")
         st.stop()
 
     history_df = build_week_history(history_source_df)
     week_options = history_df.sort_values("week_start", ascending=False)["week_start"].tolist()
     if not week_options:
-        st.info("Geen weken beschikbaar in de Summary-data.")
+        st.info("Geen weken beschikbaar in de Entire Session - Live-data.")
         st.stop()
 
     default_week = week_options[0]
@@ -1319,12 +1441,12 @@ def main() -> None:
             <div class="week-report-head">
               {logo_markup}
               <div class="week-report-copyhead">
-                <h1 class="week-report-title">Week Report</h1>
-                <div class="week-report-kicker">MVV Maastricht | Reports | Week Report</div>
+                <h1 class="week-report-title">Weekoverzicht</h1>
+                <div class="week-report-kicker">MVV Maastricht | GPS, Wellness &amp; RPE</div>
               </div>
             </div>
             <div class="week-report-copy">
-              Webversie van de team weekrapportage op basis van dezelfde GPS-weekstructuur als in de losse rapportagemap, maar nu compact en direct bruikbaar in het dashboard.
+              Hetzelfde weekbeeld als in de MVV-desktopapp: volledige live sessies, spelersbelasting, wellness en RPE in één overzicht.
             </div>
             """,
             unsafe_allow_html=True,
@@ -1332,8 +1454,8 @@ def main() -> None:
 
         back_col, meta_col = st.columns([0.34, 1.66], gap="large")
         with back_col:
-            if st.button("Open Reports", key="week_report_back", width="stretch"):
-                st.switch_page("pages/03_Reports_Page.py")
+            if st.button("Open dashboard", key="week_overview_back", width="stretch"):
+                st.switch_page("app.py")
         with meta_col:
             st.markdown(
                 f'<div class="week-report-filter-note">{len(week_options)} weken beschikbaar in totaal</div>',
@@ -1466,11 +1588,11 @@ def main() -> None:
 
     action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
     with action_cols[0]:
-        if st.button("Open Reports", key="week_report_back_bottom", width="stretch"):
-            st.switch_page("pages/03_Reports_Page.py")
+        if st.button("Open dashboard", key="week_overview_back_bottom", width="stretch"):
+            st.switch_page("app.py")
     with action_cols[1]:
         st.download_button(
-            "Download Week Report PDF",
+            "Download weekoverzicht PDF",
             data=pdf_bytes or b"HTML PDF unavailable",
             file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
             mime="application/pdf",
@@ -1484,9 +1606,15 @@ def main() -> None:
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 
-    tab_overview, tab_spread, tab_monitoring, tab_leaders = st.tabs(["Overview", "Squad Spread", "Wellness & RPE", "Leaders & Notes"])
+    tab_overview, tab_spread, tab_monitoring, tab_leaders = st.tabs(["Weekbelasting", "Teamspreiding", "Wellness & RPE", "Spelers & notities"])
 
     with tab_overview:
+        render_plot_panel(
+            "GPS & belasting per sessie",
+            build_session_load_chart(session_stats),
+            "Teamgemiddelde uit uitsluitend Entire Session - Live; dubbele sessies blijven apart.",
+        )
+
         top_left, top_right = st.columns(2, gap="large")
         with top_left:
             render_plot_panel(
@@ -1504,7 +1632,7 @@ def main() -> None:
         render_plot_panel(
             "Totale weekbelasting per speler",
             build_weekly_player_load_chart(player_table),
-            "Opgetelde Total Distance van alle Summary-sessies binnen de gekozen week",
+            "Opgetelde Total Distance van alle Entire Session - Live-sessies in de gekozen week",
         )
 
         bottom_left, bottom_right = st.columns(2, gap="large")
@@ -1692,7 +1820,7 @@ def main() -> None:
             '<ul class="week-report-note-list">'
             + "".join(f"<li>{escape(note)}</li>" for note in notes)
             + "</ul>"
-            + '<div class="week-report-note-foot">Analyse is gebaseerd op Summary-sessies wanneer beschikbaar; ontbrekende metrics worden niet geschat.</div>'
+            + '<div class="week-report-note-foot">Belasting gebruikt uitsluitend Entire Session - Live (Summary). Ontbrekende metrics worden niet geschat.</div>'
         )
         render_html_panel(
             "Week Notes",

@@ -212,14 +212,10 @@ def _raw_context(session: dict, item: dict, drill: dict) -> dict:
 
 
 def _summary_priority(event_key: str) -> int | None:
-    """Choose the same canonical full-session row used by the CSV workflow."""
+    """Only the live whole-session drill is valid for dashboard load totals."""
 
     if event_key == "entiresessionlive":
         return 0
-    if event_key == "entiresession":
-        return 1
-    if event_key in {"match", "matchentirematch"}:
-        return 2
     return None
 
 
@@ -290,7 +286,7 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
             na_position="last",
         )
         keep_summary_indices = summary_rows.drop_duplicates(
-            subset=["Speler", "Datum", "Type"],
+            subset=["Speler", "Datum", "Type", "Session ID", "Session Start Time", "Session Title"],
             keep="first",
         ).index
         frame = frame.loc[~summary_mask | frame.index.isin(keep_summary_indices)].copy()
@@ -302,7 +298,7 @@ def sessions_to_dataframe(sessions: Iterable[dict]) -> pd.DataFrame:
     ordered = frame.sort_values(keys + ["_event_order", "_original_order"], na_position="last")
     duplicate_index = ordered.groupby(keys).cumcount()
     duplicate_count = ordered.groupby(keys)["Event"].transform("size")
-    duplicate_mask = duplicate_count > 1
+    duplicate_mask = (duplicate_count > 1) & ordered["Event"].ne("Summary")
     ordered.loc[duplicate_mask, "Event"] = (
         ordered.loc[duplicate_mask, "Event"].astype(str)
         + " ("

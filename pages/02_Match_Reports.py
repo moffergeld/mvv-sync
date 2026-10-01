@@ -8,9 +8,8 @@
 # - Data uit:
 #     public.matches
 #     public.v_gps_match_events
-# - Full match:
-#     gebruikt eerst Summary
-#     valt anders terug op First Half + Second Half
+# - Full match gebruikt uitsluitend First Half + Second Half.
+#   Entire Session/Summary hoort alleen bij load-overzichten.
 # - Koppeling GPS-data:
 #     via match_id i.p.v. alleen datum
 # ============================================================
@@ -37,6 +36,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps  # noqa: E402
+from pages.Subscripts.gps_event_rules import (  # noqa: E402
+    MATCH_FIRST as EVENT_FIRST,
+    MATCH_FULL as EVENT_FULL,
+    MATCH_SECOND as EVENT_SECOND,
+    select_match_phase_rows,
+)
 from roles import get_access_token, get_profile, get_sb, render_sidebar_footer, render_sidebar_navigation, require_auth  # noqa: E402
 from report_monitoring import WELLNESS_PARAMETER_SPECS, build_monitoring_dataset, build_monitoring_player_summary, summarize_monitoring_dataset  # noqa: E402
 from utils.streamlit_ui import apply_streamlit_chrome  # noqa: E402
@@ -52,18 +57,6 @@ LOGO_DIR = ROOT / "Assets" / "Afbeeldingen" / "Team_Logos"
 MVV_TEAM_NAME = "MVV Maastricht"
 TEAM_HERO_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
-
-EVENT_FULL = "Full match"
-EVENT_FIRST = "First Half"
-EVENT_SECOND = "Second Half"
-
-# STATSports uses its own drill labels for match segments. Keep the report
-# compatible with the dashboard's historic names as well as current exports.
-MATCH_PHASE_EVENT_KEYS = {
-    EVENT_FULL: {"summary", "matchentirematch", "entiresession", "entiresessionlive", "match"},
-    EVENT_FIRST: {"firsthalf", "matchhalvesfirsthalf", "matchhalfesfirsthalf"},
-    EVENT_SECOND: {"secondhalf", "matchhalvessecondhalf", "matchhalfessecondhalf"},
-}
 
 MATCH_FILTER_ALL = "Alle wedstrijden"
 MATCH_FILTER_REGULAR = "Normale wedstrijd"
@@ -744,26 +737,7 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
     if df_events.empty:
         return df_events
 
-    dff = df_events.copy()
-    dff["event_norm"] = (
-        dff["event"].astype(str).str.lower().str.replace(r"[^a-z0-9]", "", regex=True)
-    )
-
-    if phase == EVENT_FULL:
-        summary_df = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FULL])].copy()
-        if not summary_df.empty:
-            dff = summary_df
-        else:
-            dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FIRST] | MATCH_PHASE_EVENT_KEYS[EVENT_SECOND])].copy()
-
-    elif phase == EVENT_FIRST:
-        dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_FIRST])].copy()
-
-    elif phase == EVENT_SECOND:
-        dff = dff[dff["event_norm"].isin(MATCH_PHASE_EVENT_KEYS[EVENT_SECOND])].copy()
-
-    else:
-        dff = dff[dff["event_norm"].isin(set().union(*MATCH_PHASE_EVENT_KEYS.values()))].copy()
+    dff = select_match_phase_rows(df_events, phase)
 
     if dff.empty:
         return dff
@@ -1235,8 +1209,8 @@ def main() -> None:
         render_reports_intro()
         back_col, _ = st.columns([0.42, 1.58], gap="large")
         with back_col:
-            if st.button("Open Reports", key="mr_back_to_reports", width="stretch"):
-                st.switch_page("pages/03_Reports_Page.py")
+            if st.button("Open dashboard", key="mr_back_to_dashboard", width="stretch"):
+                st.switch_page("app.py")
         hero_meta_l, hero_meta_r = st.columns([1.6, 1], gap="large")
         with hero_meta_l:
             st.markdown('<div class="mr-hero-filter-label">Filters</div>', unsafe_allow_html=True)
@@ -1308,7 +1282,7 @@ def main() -> None:
 
     df_events = fetch_match_events_for_match(match_id)
     if df_events.empty:
-        st.info("Geen match events gevonden in v_gps_match_events voor deze match.")
+        st.info("Geen First Half- of Second Half-data gevonden voor deze wedstrijd.")
         st.stop()
 
     df_phase = build_phase_df(df_events, phase)

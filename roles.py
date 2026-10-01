@@ -61,15 +61,14 @@ COOKIE_SETTLE_SECONDS = 0.10
 
 SIDEBAR_PAGE_LINKS = [
     ("app.py", "Dashboard"),
-    ("pages/10_Data_Page_Beta.py", "Data"),
-    ("pages/03_Reports_Page.py", "Reports"),
-    ("pages/09_Management.py", "Management"),
+    ("pages/01_Week_Overview.py", "Weekoverzicht"),
+    ("pages/12_Session_Load.py", "Session Load"),
+    ("pages/02_Match_Reports.py", "Match Report"),
+    ("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE"),
+    ("pages/06_GPS_Import.py", "GPS Import"),
 ]
 
-SIDEBAR_BETA_PAGE_LINKS = [
-    ("pages/07_Player_Page_Beta.py", "Player Page Beta"),
-    ("pages/08_Team_Page_Beta.py", "Team Page Beta"),
-]
+SIDEBAR_BETA_PAGE_LINKS: list[tuple[str, str]] = []
 LOGIN_PAGE_PATH = "app.py"
 APP_ROOT_PATH = Path(__file__).resolve().parent
 ROLES_FILE_PATH = Path(__file__).resolve()
@@ -304,11 +303,6 @@ def render_sidebar_footer(profile: Optional[Dict[str, Any]] = None, show_debug: 
 
     with st.sidebar:
         st.markdown('<div class="mvv-sidebar-footer-anchor"></div>', unsafe_allow_html=True)
-        if SIDEBAR_BETA_PAGE_LINKS:
-            with st.expander("Beta pagina's", expanded=False):
-                for page_path, label in SIDEBAR_BETA_PAGE_LINKS:
-                    _render_sidebar_page_item(page_path, label, current_page_path)
-
         st.markdown('<div class="mvv-sidebar-divider"></div>', unsafe_allow_html=True)
         st.markdown('<div class="mvv-sidebar-nav-label">Account</div>', unsafe_allow_html=True)
         with st.expander("Account info", expanded=False):

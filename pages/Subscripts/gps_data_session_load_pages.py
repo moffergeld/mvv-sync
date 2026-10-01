@@ -17,6 +17,11 @@ COL_TYPE = "Type"
 COL_TD = "Total Distance"
 COL_SPRINT = "Zone 5"
 COL_HS = "Zone 6"
+COL_HMLD = "HMLD"
+COL_DSL = "Dynamic Stress Load"
+COL_HR_EXERTION = "HR Exertion"
+COL_FATIGUE = "Fatigue Index"
+COL_EXTRA = "Extra Metrics"
 COL_ACC_TOT = "Total Accelerations"
 COL_ACC_HI = "High Accelerations"
 COL_DEC_TOT = "Total Decelerations"
@@ -55,6 +60,43 @@ def _session_display_label(type_value: str) -> str:
     if not raw_value:
         return "Onbekende sessie"
     return f"{_session_family(raw_value)} | {raw_value}"
+
+
+def _extra_value(value: object, *keys: str) -> str:
+    if not isinstance(value, dict):
+        return ""
+    normalized = {str(key).lower().replace(" ", ""): item for key, item in value.items()}
+    for key in keys:
+        item = normalized.get(key.lower().replace(" ", ""))
+        if item is not None and str(item).strip():
+            return str(item).strip()
+    return ""
+
+
+def _session_identity(row: pd.Series) -> str:
+    extra = row.get(COL_EXTRA)
+    session_id = _extra_value(extra, "Session ID", "sessionId")
+    start = _extra_value(extra, "Session Start Time", "sessionStartTime")
+    title = _extra_value(extra, "Session Title", "sessionTitle")
+    session_type = str(row.get(COL_TYPE) or "Sessie").strip()
+    return session_id or "|".join((session_type, start, title))
+
+
+def _session_option_label(row: pd.Series) -> str:
+    extra = row.get(COL_EXTRA)
+    start = _extra_value(extra, "Session Start Time", "sessionStartTime")
+    title = _extra_value(extra, "Session Title", "sessionTitle")
+    time_label = ""
+    if "T" in start:
+        time_label = start.split("T", 1)[1][:5]
+    elif len(start) >= 5:
+        time_label = start[:5]
+    pieces = [_session_display_label(str(row.get(COL_TYPE) or ""))]
+    if time_label:
+        pieces.append(time_label)
+    if title and title.lower() not in str(row.get(COL_TYPE) or "").lower():
+        pieces.append(title)
+    return " · ".join(pieces)
 
 
 SELECT_ALL_OPT = "-- Select all --"
@@ -104,7 +146,8 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
 
     numeric_cols = [
-        COL_TD, COL_SPRINT, COL_HS, COL_ACC_TOT, COL_ACC_HI,
+        COL_TD, COL_SPRINT, COL_HS, COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE,
+        COL_ACC_TOT, COL_ACC_HI,
         COL_DEC_TOT, COL_DEC_HI, *HR_COLS, "TRIMP",
     ]
     for c in numeric_cols:
@@ -114,6 +157,9 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
     for c in [COL_PLAYER, COL_TYPE]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
+
+    df["_session_key"] = df.apply(_session_identity, axis=1)
+    df["_session_label"] = df.apply(_session_option_label, axis=1)
 
     return df
 
@@ -163,33 +209,29 @@ def pick_day_from_calendar(df_calendar: pd.DataFrame, key_prefix: str = "sl") ->
     return _pick_day_dateinput(df_calendar, key_prefix=key_prefix)
 
 
-def _session_types_for_day(df: pd.DataFrame, selected_day: date) -> list[str]:
+def _sessions_for_day(df: pd.DataFrame, selected_day: date) -> pd.DataFrame:
     if df.empty or COL_DATE not in df.columns or COL_TYPE not in df.columns:
-        return []
+        return pd.DataFrame(columns=["_session_key", "_session_label"])
 
     day_df = df.copy()
     day_df[COL_DATE] = pd.to_datetime(day_df[COL_DATE], errors="coerce")
     day_df = day_df[day_df[COL_DATE].dt.date == selected_day].copy()
     if day_df.empty:
-        return []
+        return pd.DataFrame(columns=["_session_key", "_session_label"])
 
-    types = (
-        day_df[COL_TYPE]
-        .astype(str)
-        .str.strip()
-        .replace("", pd.NA)
-        .dropna()
-        .unique()
-        .tolist()
+    return (
+        day_df[["_session_key", "_session_label"]]
+        .drop_duplicates()
+        .sort_values(["_session_label", "_session_key"])
+        .reset_index(drop=True)
     )
-    return sorted(types, key=lambda value: (_session_family(value), str(value).strip().lower()))
 
 
 def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS, COL_ACC_TOT, COL_ACC_HI,
+        COL_TD, COL_SPRINT, COL_HS, COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE, COL_ACC_TOT, COL_ACC_HI,
         COL_DEC_TOT, COL_DEC_HI, *HR_COLS, "TRIMP",
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
@@ -508,6 +550,31 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
+def _plot_hmld_dsl(df_agg: pd.DataFrame):
+    available = [column for column in (COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE) if column in df_agg.columns]
+    if not available:
+        st.info("Geen HMLD- of interne-loaddata beschikbaar voor deze sessie.")
+        return
+
+    data = df_agg.sort_values(COL_HMLD if COL_HMLD in df_agg.columns else available[0], ascending=False)
+    players = data[COL_PLAYER].astype(str).tolist()
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    if COL_HMLD in data.columns:
+        fig.add_bar(x=players, y=data[COL_HMLD], name="HMLD", marker_color="#69D5CB", secondary_y=False)
+    for column, label, color in (
+        (COL_DSL, "Dynamic Stress Load", MVV_RED),
+        (COL_HR_EXERTION, "HR Exertion", MVV_ORANGE),
+        (COL_FATIGUE, "Fatigue Index", "#C58AF1"),
+    ):
+        if column in data.columns:
+            fig.add_trace(
+                go.Scatter(x=players, y=data[column], mode="lines+markers", name=label, line=dict(color=color, width=2.5)),
+                secondary_y=True,
+            )
+    _style_fig(fig, title="HMLD & interne load", y_title="HMLD (m)", secondary_y_title="Load-index")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
 def session_load_pages_main(
     df_gps_scope: pd.DataFrame,
     calendar_df_all: Optional[pd.DataFrame] = None,
@@ -545,32 +612,32 @@ def session_load_pages_main(
         st.info("Geen data op deze datum.")
         return
 
-    session_types = _session_types_for_day(df, selected_day)
-    session_label_map = _session_label_map_for_day(df, selected_day)
-    session_type_options = [None] + session_types
-    selected_session_type = st.selectbox(
+    sessions = _sessions_for_day(df, selected_day)
+    session_label_map = sessions.set_index("_session_key")["_session_label"].to_dict()
+    session_options = [None] + sessions["_session_key"].tolist()
+    selected_session = st.selectbox(
         "Sessie op deze dag",
-        options=session_type_options,
+        options=session_options,
         index=0,
         key=f"sl_session_type_{selected_day.isoformat()}",
         format_func=lambda option: (
             "Alle sessies"
             if option is None
-            else session_label_map.get(str(option), _session_display_label(str(option)))
+            else session_label_map.get(str(option), str(option))
         ),
-        help="Gebruik dit filter wanneer er meerdere sessies op dezelfde dag staan, zoals Training | Practice, Wedstrijd | Match of Wedstrijd | Practice Match.",
+        help="Sessies worden gescheiden op STATSports-sessie en starttijd, zodat een dubbele training niet wordt samengevoegd.",
     )
 
-    if selected_session_type is not None and COL_TYPE in df_day.columns:
-        df_day = df_day[df_day[COL_TYPE].astype(str).str.strip() == selected_session_type].copy()
+    if selected_session is not None:
+        df_day = df_day[df_day["_session_key"].astype(str) == str(selected_session)].copy()
         if df_day.empty:
             st.info("Geen data gevonden voor deze sessie op de gekozen datum.")
             return
 
     filter_caption = (
-        f"Actieve sessie: {_session_display_label(selected_session_type)}"
-        if selected_session_type is not None
-        else "Actieve sessie: alle Summary-sessies van deze dag"
+        f"Actieve sessie: {session_label_map.get(str(selected_session), str(selected_session))}"
+        if selected_session is not None
+        else "Actieve sessie: alle Entire Session - Live-sessies van deze dag"
     )
     st.caption(filter_caption)
 
@@ -592,7 +659,7 @@ def session_load_pages_main(
 
     median_td = _median_safe(df_agg[COL_TD].to_numpy()) if COL_TD in df_agg.columns else None
     median_sprint = _median_safe(df_agg[COL_SPRINT].to_numpy()) if COL_SPRINT in df_agg.columns else None
-    median_trimp = _median_safe(df_agg["TRIMP"].to_numpy()) if "TRIMP" in df_agg.columns else None
+    median_hmld = _median_safe(df_agg[COL_HMLD].to_numpy()) if COL_HMLD in df_agg.columns else None
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -602,7 +669,7 @@ def session_load_pages_main(
     with c3:
         _metric_card("Mediaan Zone 5", f"{median_sprint:,.0f} m".replace(",", " ") if median_sprint is not None else "–")
     with c4:
-        _metric_card("Mediaan TRIMP", f"{median_trimp:,.1f}".replace(",", " ") if median_trimp is not None else "–")
+        _metric_card("Mediaan HMLD", f"{median_hmld:,.0f} m".replace(",", " ") if median_hmld is not None else "–")
 
     col_top1, col_top2 = st.columns(2)
     with col_top1:
@@ -610,8 +677,10 @@ def session_load_pages_main(
     with col_top2:
         _plot_sprint_hs(df_agg, groups)
 
-    col_bot1, col_bot2 = st.columns(2)
+    col_bot1, col_bot2, col_bot3 = st.columns(3)
     with col_bot1:
         _plot_acc_dec(df_agg)
     with col_bot2:
         _plot_hr_trimp(df_agg)
+    with col_bot3:
+        _plot_hmld_dsl(df_agg)

@@ -161,10 +161,15 @@ def _synthetic_gps_id(row: pd.Series) -> int:
             pass
         return str(value)
 
+    extra_metrics = row.get("extra_metrics") if isinstance(row.get("extra_metrics"), dict) else {}
+    session_identity = "|".join(
+        clean(extra_metrics.get(key))
+        for key in ("Session ID", "Session Start Time", "Session Title")
+    )
     identity = "|".join(
         clean(row.get(key))
         for key in ("player_id", "player_name", "datum", "type", "event", "session_id", "drill_id")
-    )
+    ) + "|" + session_identity
     digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:15]
     return -int(digest, 16)
 
@@ -244,7 +249,10 @@ def _supabase_query(
     if end_date is not None:
         parts.append(f"datum=lte.{min(end_date, GPS_SUPABASE_LAST_DATE).isoformat()}")
     if event is not None:
-        parts.append(f"event=eq.{quote(str(event), safe='')}")
+        if str(event) == "Summary":
+            parts.append("event=like.Summary*")
+        else:
+            parts.append(f"event=eq.{quote(str(event), safe='')}")
     if session_type is not None:
         parts.append(f"type=eq.{quote(str(session_type), safe='')}")
     if player_id is not None:
@@ -278,7 +286,11 @@ def _filter_api_rows(
     if end_date is not None:
         result = result.loc[dates <= end_date].copy()
     if event is not None:
-        result = result.loc[result["event"].astype(str) == str(event)].copy()
+        if str(event) == "Summary":
+            summary_mask = result["event"].fillna("").astype(str).str.fullmatch(r"Summary(?: \(\d+\))?")
+            result = result.loc[summary_mask].copy()
+        else:
+            result = result.loc[result["event"].astype(str) == str(event)].copy()
     if session_type is not None:
         result = result.loc[result["type"].astype(str) == str(session_type)].copy()
     if player_id is not None:

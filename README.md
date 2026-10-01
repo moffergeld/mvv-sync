@@ -9,7 +9,9 @@ Deze applicatie bevat nu twee PDF-rapportstijlen die naast elkaar blijven bestaa
 
 In de volgende rapportpagina's is een nieuwe keuze `Rapportstijl` beschikbaar:
 
-- `Week Report`
+- `Weekoverzicht` met GPS-load, wellness en RPE
+- `Session Load`
+- `Match Report` op basis van First Half + Second Half
 - `Player Report`
 
 De standaardwaarde blijft `legacy`, zodat bestaande workflows en bestaande aanroepen ongewijzigd blijven werken.

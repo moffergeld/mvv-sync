@@ -110,9 +110,58 @@ class StatsportsApiTests(unittest.TestCase):
 
         frame = sessions_to_dataframe(payload)
 
-        self.assertEqual(frame["Event"].tolist(), ["Summary"])
-        self.assertEqual(frame.iloc[0]["totalTime"], 120)
-        self.assertEqual(frame.iloc[0]["STATSports Raw"]["drill"]["drillName"], "Entire Session - Live")
+        summary = frame.loc[frame["Event"].eq("Summary")]
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary.iloc[0]["totalTime"], 120)
+        self.assertEqual(summary.iloc[0]["STATSports Raw"]["drill"]["drillName"], "Entire Session - Live")
+        self.assertEqual(set(frame["Event"]), {"Entire Session", "Summary", "Match-Entire Match"})
+
+    def test_load_summary_is_absent_when_live_entire_session_is_absent(self):
+        payload = [{
+            "sessionName": "MD Opponent",
+            "sessionDetails": {"sessionDate": "2026-09-30T00:00:00Z", "sessionType": "Match Day"},
+            "sessionPlayers": [{
+                "playerDetails": {"displayName": "Test Speler"},
+                "drills": [
+                    {"drillName": "Entire Session", "drillKpi": {"totalTime": 9000}},
+                    {"drillName": "Match-Entire Match", "drillKpi": {"totalTime": 6000}},
+                ],
+            }],
+        }]
+
+        frame = sessions_to_dataframe(payload)
+
+        self.assertNotIn("Summary", frame["Event"].tolist())
+
+    def test_two_live_sessions_on_one_day_are_both_kept(self):
+        def session(session_id, start, distance):
+            return {
+                "id": session_id,
+                "sessionName": "MD-3",
+                "sessionDetails": {
+                    "sessionDate": "2026-09-30T00:00:00Z",
+                    "sessionType": "Training",
+                    "startTime": start,
+                },
+                "sessionPlayers": [{
+                    "playerDetails": {"displayName": "Test Speler"},
+                    "drills": [{
+                        "drillName": "Entire Session - Live",
+                        "startTime": start,
+                        "drillKpi": {"distanceTotal": distance},
+                    }],
+                }],
+            }
+
+        frame = sessions_to_dataframe(
+            [
+                session("morning", "2026-09-30T08:00:00Z", 3000),
+                session("afternoon", "2026-09-30T14:00:00Z", 4000),
+            ]
+        )
+
+        self.assertEqual(frame["Event"].tolist(), ["Summary", "Summary"])
+        self.assertEqual(frame["Session ID"].tolist(), ["morning", "afternoon"])
 
 
 if __name__ == "__main__":
