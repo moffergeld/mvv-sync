@@ -42,7 +42,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "MD-GROUPS-MINIMAL-HEROES-20261001"
+APP_BUILD_STAMP = "FAST-DATA-LAZY-PDF-20261002"
 HOME_RECENT_MAX_AGE_DAYS = 1
 
 
@@ -754,6 +754,57 @@ def fetch_gps_weekly_acwr(_sb, access_scope: str, start_iso: str, end_iso: str) 
     return weekly
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_gps_load_history(_sb, access_scope: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    """Fetch and aggregate GPS once for both the homepage snapshot and ACWR."""
+
+    metric_cols = [metric for metric, _ in ACWR_HOME_METRICS]
+    df = load_hybrid_gps(
+        str(st.session_state.get("access_token") or ""),
+        ["player_id", "datum", *metric_cols],
+        start=start_iso,
+        end=end_iso,
+        event="Summary",
+    )
+    if df.empty:
+        return df
+
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
+    df = df.dropna(subset=["player_id", "datum"]).copy()
+    for metric in metric_cols:
+        if metric not in df.columns:
+            df[metric] = 0.0
+        df[metric] = pd.to_numeric(df[metric], errors="coerce").fillna(0.0)
+    return (
+        df.groupby(["player_id", "datum"], as_index=False)[metric_cols]
+        .sum()
+        .sort_values(["player_id", "datum"])
+    )
+
+
+def build_gps_weekly_history(daily_df: pd.DataFrame) -> pd.DataFrame:
+    if daily_df.empty:
+        return daily_df
+
+    metric_cols = [metric for metric, _ in ACWR_HOME_METRICS]
+    df = daily_df.copy()
+    df["datum"] = pd.to_datetime(df["datum"], errors="coerce")
+    df = df.dropna(subset=["player_id", "datum"])
+    iso = df["datum"].dt.isocalendar()
+    df["iso_year"] = iso["year"].astype("Int64")
+    df["iso_week"] = iso["week"].astype("Int64")
+    df["week_key"] = (df["iso_year"] * 100 + df["iso_week"]).astype("Int64")
+    df["week_label"] = df.apply(
+        lambda row: f"{int(row['iso_year']):04d}-W{int(row['iso_week']):02d}",
+        axis=1,
+    )
+    return (
+        df.groupby(["player_id", "week_key", "week_label"], as_index=False)[metric_cols]
+        .sum()
+        .sort_values(["player_id", "week_key"])
+    )
+
+
 def build_snapshot_lookup(df: pd.DataFrame, date_col: str, value_col: str) -> Dict[str, Dict[str, Any]]:
     if df.empty:
         return {}
@@ -928,8 +979,14 @@ def assemble_home_rows(sb, access_scope: str) -> pd.DataFrame:
 
     wellness_df = fetch_wellness_snapshot(sb, access_scope, start_wellness.isoformat(), today_value.isoformat())
     rpe_df = fetch_rpe_snapshot(sb, access_scope, start_rpe.isoformat(), today_value.isoformat())
-    gps_df = fetch_gps_snapshot(sb, access_scope, start_gps.isoformat(), today_value.isoformat())
-    acwr_weekly_df = fetch_gps_weekly_acwr(sb, access_scope, start_acwr.isoformat(), today_value.isoformat())
+    gps_history_df = fetch_gps_load_history(
+        sb,
+        access_scope,
+        start_acwr.isoformat(),
+        today_value.isoformat(),
+    )
+    gps_df = gps_history_df.loc[gps_history_df["datum"] >= start_gps].copy() if not gps_history_df.empty else gps_history_df
+    acwr_weekly_df = build_gps_weekly_history(gps_history_df)
 
     wellness_recent_date, wellness_is_recent, wellness_lookup = build_recent_wellness_snapshot_lookup(
         wellness_df,

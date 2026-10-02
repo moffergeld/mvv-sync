@@ -104,7 +104,11 @@ class HybridGpsSourceTests(unittest.TestCase):
         self.assertEqual(result["total_distance"].tolist(), [1000, 2000, 3000])
         self.assertIn("datum=lt.2026-08-24", supabase_fetch.call_args.args[2])
         self.assertIn("event=like.Summary*", supabase_fetch.call_args.args[2])
-        api_fetch.assert_called_once()
+        api_fetch.assert_called_once_with(
+            "token",
+            source.GPS_API_CUTOVER_DATE,
+            pd.Timestamp("2026-08-25").date(),
+        )
 
     def test_period_before_cutover_never_calls_statsports(self):
         old = pd.DataFrame([_row(1, "2026-08-20", 1000)])
@@ -127,7 +131,7 @@ class HybridGpsSourceTests(unittest.TestCase):
         api = pd.DataFrame([_row(-2, "2026-08-24", 2000)])
         with (
             patch.object(source, "_rest_get_paged") as supabase_fetch,
-            patch.object(source, "_statsports_db_frame", return_value=api),
+            patch.object(source, "_statsports_db_frame", return_value=api) as api_fetch,
         ):
             result = source.load_hybrid_gps(
                 "token",
@@ -139,6 +143,11 @@ class HybridGpsSourceTests(unittest.TestCase):
 
         self.assertEqual(len(result), 1)
         supabase_fetch.assert_not_called()
+        api_fetch.assert_called_once_with(
+            "token",
+            pd.Timestamp("2026-08-24").date(),
+            pd.Timestamp("2026-08-24").date(),
+        )
 
     def test_api_filters_are_applied_before_page_receives_rows(self):
         api = pd.DataFrame(

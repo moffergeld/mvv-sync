@@ -325,19 +325,6 @@ def fetch_summary_scope_cached(access_token: str, scope_key: str) -> pd.DataFram
 
 
 @st.cache_data(show_spinner=False, ttl=120)
-def fetch_calendar_scope_cached(access_token: str, scope_key: str) -> pd.DataFrame:
-    d0, d1 = _scope_to_dates(scope_key)
-    raw = load_hybrid_gps(
-        access_token,
-        ["datum", "type", "event"],
-        start=d0,
-        end=d1,
-        event="Summary",
-    )
-    return to_calendar_df(raw)
-
-
-@st.cache_data(show_spinner=False, ttl=120)
 def fetch_summary_day_cached(access_token: str, day_iso: str) -> pd.DataFrame:
     raw = load_hybrid_gps(
         access_token,
@@ -406,7 +393,12 @@ def main() -> None:
     try:
         with st.spinner(f"Entire Session - Live-data laden ({scope_key})..."):
             df_scope = fetch_summary_scope_cached(str(token), scope_key)
-            calendar_df_scope = fetch_calendar_scope_cached(str(token), scope_key)
+            calendar_columns = [column for column in ("Datum", "Type", "Event") if column in df_scope.columns]
+            calendar_df_scope = (
+                df_scope[calendar_columns].drop_duplicates().copy()
+                if len(calendar_columns) == 3
+                else pd.DataFrame(columns=["Datum", "Type", "Event"])
+            )
     except Exception as exc:
         st.error(f"Kon Session Load data niet laden: {exc}")
         df_scope = pd.DataFrame()

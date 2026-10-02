@@ -1215,28 +1215,13 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    pdf_error = None
-    pdf_bytes: bytes | None = None
-    try:
-        pdf_bytes = generate_player_report(
-            report_style=report_style,
-            player_name=str(target_player_name),
-            scope_label=scope_mode,
-            period_label=period_label,
-            summary=summary,
-            monitoring_summary=monitoring_summary,
-            sessions_df=recent_sessions_preview,
-            monitoring_group_df=monitoring_group_df,
-            period_df=period_df,
-            type_table=type_table,
-            zone_df=zone_df,
-            recent_sessions_subtitle=recent_sessions_subtitle,
-            notes=notes,
-        )
-    except Exception as exc:
-        pdf_error = str(exc).strip() or exc.__class__.__name__ or "Onbekende fout tijdens HTML/CSS PDF-export."
-    if not pdf_bytes and not pdf_error:
-        pdf_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
+    pdf_state_key = (
+        f"player_report_pdf::{target_player_id}::{scope_mode}::{period_label}::"
+        f"{recent_session_count}::{recent_session_period_key}::{report_style}"
+    )
+    pdf_payload = st.session_state.get(pdf_state_key, {})
+    pdf_bytes = pdf_payload.get("data") if isinstance(pdf_payload, dict) else None
+    pdf_error = pdf_payload.get("error") if isinstance(pdf_payload, dict) else None
 
     action_cols = st.columns([0.42, 0.42, 1.16], gap="large")
     with action_cols[0]:
@@ -1247,18 +1232,46 @@ def main() -> None:
             f"{_safe_filename(target_player_name)}_{scope_mode.lower()}_report.pdf",
             report_style,
         )
-        st.download_button(
-            "Download HTML PDF",
-            data=pdf_bytes or b"HTML PDF unavailable",
-            file_name=file_name,
-            mime="application/pdf",
-            width="stretch",
-            key="player_report_pdf_download",
-            disabled=not bool(pdf_bytes),
-        )
+        if pdf_bytes:
+            st.download_button(
+                "Download HTML PDF",
+                data=pdf_bytes,
+                file_name=file_name,
+                mime="application/pdf",
+                width="stretch",
+                key="player_report_pdf_download",
+            )
+        elif st.button("PDF voorbereiden", key="player_report_pdf_prepare", width="stretch"):
+            prepared_bytes: bytes | None = None
+            prepared_error: str | None = None
+            with st.spinner("Spelersrapport PDF voorbereiden..."):
+                try:
+                    prepared_bytes = generate_player_report(
+                        report_style=report_style,
+                        player_name=str(target_player_name),
+                        scope_label=scope_mode,
+                        period_label=period_label,
+                        summary=summary,
+                        monitoring_summary=monitoring_summary,
+                        sessions_df=recent_sessions_preview,
+                        monitoring_group_df=monitoring_group_df,
+                        period_df=period_df,
+                        type_table=type_table,
+                        zone_df=zone_df,
+                        recent_sessions_subtitle=recent_sessions_subtitle,
+                        notes=notes,
+                    )
+                except Exception as exc:
+                    prepared_error = str(exc).strip() or exc.__class__.__name__
+            if not prepared_bytes and not prepared_error:
+                prepared_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
+            st.session_state[pdf_state_key] = {"data": prepared_bytes, "error": prepared_error}
+            st.rerun()
     with action_cols[2]:
         if pdf_error:
             st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
+        elif not pdf_bytes:
+            st.caption("De PDF wordt pas opgebouwd wanneer je hem nodig hebt. Zo blijft de pagina sneller.")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 

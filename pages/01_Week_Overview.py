@@ -1578,55 +1578,67 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    pdf_error = None
-    pdf_bytes: bytes | None = None
     selected_iso = selected_week.isocalendar()
-    try:
-        pdf_bytes = generate_week_report(
-            report_style=report_style,
-            report_revision=WEEK_REPORT_HTML_REVISION,
-            week_label=_week_label(selected_week),
-            iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
-            hero_week_title=f"Week {int(selected_iso.week)} {selected_iso.year}",
-            hero_week_range=f"{selected_week:%d/%m/%Y} - {week_end:%d/%m/%Y}",
-            summary=summary,
-            monitoring_summary=monitoring_summary,
-            day_table=day_table,
-            session_table=session_table,
-            day_stats=day_stats,
-            session_stats=session_stats,
-            type_table=type_table,
-            player_table=player_table,
-            zone_df=zone_df,
-            zone_day_table=zone_day_table,
-            zone_session_table=zone_session_table,
-            monitoring_day_table=monitoring_day_table,
-            rpe_session_day_table=rpe_session_day_table,
-            monitoring_player_table=monitoring_player_table,
-            notes=notes,
-        )
-    except Exception as exc:
-        pdf_error = str(exc).strip() or exc.__class__.__name__ or "Onbekende fout tijdens HTML/CSS PDF-export."
-    if not pdf_bytes and not pdf_error:
-        pdf_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
+    pdf_state_key = (
+        f"week_report_pdf::{selected_week:%Y-%m-%d}::{report_style}::{WEEK_REPORT_HTML_REVISION}"
+    )
+    pdf_payload = st.session_state.get(pdf_state_key, {})
+    pdf_bytes = pdf_payload.get("data") if isinstance(pdf_payload, dict) else None
+    pdf_error = pdf_payload.get("error") if isinstance(pdf_payload, dict) else None
 
     action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
     with action_cols[0]:
         if st.button("Open dashboard", key="week_overview_back_bottom", width="stretch"):
             st.switch_page("app.py")
     with action_cols[1]:
-        st.download_button(
-            "Download weekoverzicht PDF",
-            data=pdf_bytes or b"HTML PDF unavailable",
-            file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
-            mime="application/pdf",
-            width="stretch",
-            key="week_report_pdf_download",
-            disabled=not bool(pdf_bytes),
-        )
+        if pdf_bytes:
+            st.download_button(
+                "Download weekoverzicht PDF",
+                data=pdf_bytes,
+                file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
+                mime="application/pdf",
+                width="stretch",
+                key="week_report_pdf_download",
+            )
+        elif st.button("PDF voorbereiden", key="week_report_pdf_prepare", width="stretch"):
+            prepared_bytes: bytes | None = None
+            prepared_error: str | None = None
+            with st.spinner("Weekoverzicht PDF voorbereiden..."):
+                try:
+                    prepared_bytes = generate_week_report(
+                        report_style=report_style,
+                        report_revision=WEEK_REPORT_HTML_REVISION,
+                        week_label=_week_label(selected_week),
+                        iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
+                        hero_week_title=f"Week {int(selected_iso.week)} {selected_iso.year}",
+                        hero_week_range=f"{selected_week:%d/%m/%Y} - {week_end:%d/%m/%Y}",
+                        summary=summary,
+                        monitoring_summary=monitoring_summary,
+                        day_table=day_table,
+                        session_table=session_table,
+                        day_stats=day_stats,
+                        session_stats=session_stats,
+                        type_table=type_table,
+                        player_table=player_table,
+                        zone_df=zone_df,
+                        zone_day_table=zone_day_table,
+                        zone_session_table=zone_session_table,
+                        monitoring_day_table=monitoring_day_table,
+                        rpe_session_day_table=rpe_session_day_table,
+                        monitoring_player_table=monitoring_player_table,
+                        notes=notes,
+                    )
+                except Exception as exc:
+                    prepared_error = str(exc).strip() or exc.__class__.__name__
+            if not prepared_bytes and not prepared_error:
+                prepared_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
+            st.session_state[pdf_state_key] = {"data": prepared_bytes, "error": prepared_error}
+            st.rerun()
     with action_cols[2]:
         if pdf_error:
             st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
+        elif not pdf_bytes:
+            st.caption("De PDF wordt pas opgebouwd wanneer je hem nodig hebt. Zo blijft de pagina sneller.")
 
     st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
 

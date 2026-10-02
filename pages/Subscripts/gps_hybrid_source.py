@@ -97,11 +97,12 @@ def _rest_get_paged(access_token: str, table: str, query: str, page_size: int = 
 
 
 @st.cache_data(show_spinner=False, ttl=300)
-def _statsports_frame_cached(api_key: str, end_iso: str) -> pd.DataFrame:
+def _statsports_frame_cached(api_key: str, start_iso: str, end_iso: str) -> pd.DataFrame:
+    start_date = _as_date(start_iso)
     end_date = _as_date(end_iso)
-    if end_date is None or end_date < GPS_API_CUTOVER_DATE:
+    if start_date is None or end_date is None or end_date < start_date:
         return pd.DataFrame()
-    sessions = fetch_statsports_range(api_key, GPS_API_CUTOVER_DATE, end_date)
+    sessions = fetch_statsports_range(api_key, start_date, end_date)
     return sessions_to_dataframe(sessions)
 
 
@@ -204,8 +205,14 @@ def _extend_player_map_for_api_names(name_to_id: dict[str, str], api_names: pd.S
     return result
 
 
-def _statsports_db_frame(access_token: str, api_end: date) -> pd.DataFrame:
-    api_frame = _statsports_frame_cached(get_statsports_api_key(), api_end.isoformat())
+@st.cache_data(show_spinner=False, ttl=300)
+def _statsports_db_frame_cached(
+    access_token: str,
+    api_key: str,
+    api_start_iso: str,
+    api_end_iso: str,
+) -> pd.DataFrame:
+    api_frame = _statsports_frame_cached(api_key, api_start_iso, api_end_iso)
     if api_frame.empty:
         return pd.DataFrame()
 
@@ -230,6 +237,17 @@ def _statsports_db_frame(access_token: str, api_end: date) -> pd.DataFrame:
     frame["gps_id"] = frame.apply(_synthetic_gps_id, axis=1)
     frame["data_source"] = "STATSports API"
     return frame
+
+
+def _statsports_db_frame(access_token: str, api_start: date, api_end: date) -> pd.DataFrame:
+    """Return one cached, normalized API slice for the requested dashboard period."""
+
+    return _statsports_db_frame_cached(
+        access_token,
+        get_statsports_api_key(),
+        api_start.isoformat(),
+        api_end.isoformat(),
+    )
 
 
 def _supabase_query(
@@ -349,11 +367,12 @@ def load_hybrid_gps(
             old_frame["data_source"] = "Supabase"
 
     api_frame = pd.DataFrame()
+    effective_api_start = max(start_date or GPS_API_CUTOVER_DATE, GPS_API_CUTOVER_DATE)
     effective_api_end = min(end_date or date.today(), date.today())
-    if effective_api_end >= GPS_API_CUTOVER_DATE and (start_date is None or end_date is None or end_date >= GPS_API_CUTOVER_DATE):
+    if effective_api_end >= effective_api_start:
         api_frame = _filter_api_rows(
-            _statsports_db_frame(access_token, effective_api_end),
-            max(start_date, GPS_API_CUTOVER_DATE) if start_date else GPS_API_CUTOVER_DATE,
+            _statsports_db_frame(access_token, effective_api_start, effective_api_end),
+            effective_api_start,
             end_date,
             event=event,
             session_type=session_type,
