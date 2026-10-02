@@ -82,29 +82,26 @@ def is_goalkeeper_position(value: object) -> bool:
 
 
 def moment_axis(records: Sequence[Mapping]) -> list[dict[str, object]]:
-    """Create one outer MD/date label with separate inner session moments."""
+    """Create one shared day/date group with an MD/time label per session."""
 
-    keys = [(record.get("datum"), str(record.get("md_label") or "MD onbekend")) for record in records]
+    keys = [record.get("datum") for record in records]
     counts = Counter(keys)
     seen: Counter = Counter()
     result: list[dict[str, object]] = []
     for record, key in zip(records, keys):
         seen[key] += 1
-        date_value, md_value = key
+        date_value = key
+        md_value = str(record.get("md_label") or "MD onbekend")
         date_label = date_value.strftime("%d/%m") if hasattr(date_value, "strftime") else str(date_value)
+        weekday_labels = ("Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo")
+        weekday_label = weekday_labels[date_value.weekday()] if hasattr(date_value, "weekday") else "Dag"
         time_value = str(record.get("session_time") or "")
-        event_group = str(record.get("event_group") or "Training")
-        if counts[key] > 1:
-            moment = f"Moment {seen[key]}"
-            if time_value:
-                moment += f" · {time_value}"
-        else:
-            moment = time_value or ("Wedstrijd" if event_group == "Match" else "Training")
+        moment = f"{md_value} · {time_value}" if time_value else md_value
         result.append(
             {
                 "events_in_day": counts[key],
                 "moment_index": seen[key],
-                "group_label": f"{md_value} · {date_label}",
+                "group_label": f"{weekday_label} · {date_label}",
                 "moment_label": moment,
             }
         )

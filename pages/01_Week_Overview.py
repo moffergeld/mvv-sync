@@ -15,7 +15,6 @@ from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
-from pages.Subscripts.week_session_labels import moment_axis as desktop_moment_axis
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
 from pages.Subscripts.week_session_labels import source_value as session_source_value
 from report_generator import generate_week_report
@@ -765,6 +764,35 @@ def exclude_goalkeepers(df: pd.DataFrame, positions: dict[str, str]) -> pd.DataF
     return df.loc[~player_positions.map(is_goalkeeper)].copy()
 
 
+def _week_moment_axis(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Group all sessions from one date under one shared day/date axis label."""
+
+    weekdays = ("Ma", "Di", "Wo", "Do", "Vr", "Za", "Zo")
+    day_counts: dict[object, int] = {}
+    day_seen: dict[object, int] = {}
+    for record in records:
+        day = record.get("datum")
+        day_counts[day] = day_counts.get(day, 0) + 1
+
+    labels: list[dict[str, object]] = []
+    for record in records:
+        day = record.get("datum")
+        day_seen[day] = day_seen.get(day, 0) + 1
+        date_label = day.strftime("%d/%m") if hasattr(day, "strftime") else str(day)
+        weekday = weekdays[day.weekday()] if hasattr(day, "weekday") else "Dag"
+        md_value = str(record.get("md_label") or "MD onbekend")
+        time_value = str(record.get("session_time") or "")
+        labels.append(
+            {
+                "events_in_day": day_counts[day],
+                "moment_index": day_seen[day],
+                "group_label": f"{weekday} · {date_label}",
+                "moment_label": f"{md_value} · {time_value}" if time_value else md_value,
+            }
+        )
+    return labels
+
+
 def _week_label(week_start: pd.Timestamp) -> str:
     iso = week_start.isocalendar()
     week_end = week_start + pd.Timedelta(days=6)
@@ -1033,7 +1061,7 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     grouped["day_label"] = grouped["datum"].apply(_weekday_label)
     grouped["session_code"] = grouped["type"].apply(_session_short_code)
     grouped["event_group"] = grouped["session_category"].fillna("Training").astype(str)
-    axis_rows = desktop_moment_axis(grouped.to_dict("records"))
+    axis_rows = _week_moment_axis(grouped.to_dict("records"))
     for column in ("events_in_day", "moment_index", "group_label", "moment_label"):
         grouped[column] = [row[column] for row in axis_rows]
     grouped["session_code_display"] = grouped.apply(

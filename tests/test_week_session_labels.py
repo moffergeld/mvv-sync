@@ -32,16 +32,17 @@ class WeekSessionLabelTests(unittest.TestCase):
         self.assertEqual(md_label({}, "Match"), "MD")
         self.assertEqual(md_label({}, "Practice"), "MD onbekend")
 
-    def test_two_sessions_share_one_md_group_with_two_moments(self):
+    def test_two_sessions_share_one_day_group_with_md_and_time_per_column(self):
         rows = [
             {"datum": date(2026, 9, 29), "md_label": "MD+3", "session_time": "10:43", "event_group": "Training"},
-            {"datum": date(2026, 9, 29), "md_label": "MD+3", "session_time": "14:41", "event_group": "Training"},
+            {"datum": date(2026, 9, 29), "md_label": "MD", "session_time": "14:41", "event_group": "Match"},
             {"datum": date(2026, 9, 30), "md_label": "MD-3", "session_time": "11:00", "event_group": "Training"},
         ]
         labels = moment_axis(rows)
-        self.assertEqual([item["group_label"] for item in labels[:2]], ["MD+3 · 29/09", "MD+3 · 29/09"])
-        self.assertEqual([item["moment_label"] for item in labels[:2]], ["Moment 1 · 10:43", "Moment 2 · 14:41"])
-        self.assertEqual(labels[2]["moment_label"], "11:00")
+        self.assertEqual([item["group_label"] for item in labels[:2]], ["Di · 29/09", "Di · 29/09"])
+        self.assertEqual([item["moment_label"] for item in labels[:2]], ["MD+3 · 10:43", "MD · 14:41"])
+        self.assertEqual(labels[2]["group_label"], "Wo · 30/09")
+        self.assertEqual(labels[2]["moment_label"], "MD-3 · 11:00")
 
 
 if __name__ == "__main__":
