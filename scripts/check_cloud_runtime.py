@@ -25,7 +25,9 @@ def check_forms_contracts() -> None:
         "pages/01_Week_Overview.py": (
             "load_hybrid_gps",
             "Entire Session - Live",
-            "build_monitoring_dataset",
+            "build_session_load_chart",
+            "build_weekly_player_load_chart",
+            "build_zone_share_chart",
         ),
         "pages/12_Session_Load.py": (
             "load_hybrid_gps",
