@@ -784,8 +784,7 @@ def _week_moment_axis(records: list[dict[str, object]]) -> list[dict[str, object
 
 def _week_label(week_start: pd.Timestamp) -> str:
     iso = week_start.isocalendar()
-    week_end = week_start + pd.Timedelta(days=6)
-    return f"{iso.year}-W{int(iso.week):02d} | {week_start:%d/%m/%Y} - {week_end:%d/%m/%Y}"
+    return f"{iso.year} | Week {int(iso.week)}"
 
 
 def build_week_history(all_df: pd.DataFrame) -> pd.DataFrame:
@@ -1604,39 +1603,21 @@ def main() -> None:
               {logo_markup}
               <div class="week-report-copyhead">
                 <h1 class="week-report-title">Weekoverzicht</h1>
-                <div class="week-report-kicker">MVV Maastricht | GPS, Wellness &amp; RPE</div>
+                <div class="week-report-kicker">MVV Maastricht | GPS</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        back_col, meta_col = st.columns([0.34, 1.66], gap="large")
-        with back_col:
-            if st.button("Open dashboard", key="week_overview_back", width="stretch"):
-                st.switch_page("app.py")
-        with meta_col:
-            st.markdown(
-                f'<div class="week-report-filter-note">{len(week_options)} weken beschikbaar in totaal</div>',
-                unsafe_allow_html=True,
-            )
-
-        filter_col, detail_col = st.columns([1.2, 0.8], gap="large")
-        with filter_col:
-            st.markdown('<div class="week-report-filter-label">Week</div>', unsafe_allow_html=True)
-            selected_week = st.selectbox(
-                "Week",
-                options=week_options,
-                format_func=_week_label,
-                label_visibility="collapsed",
-                key="week_report_selected_week",
-            )
-        with detail_col:
-            selected_iso = selected_week.isocalendar()
-            st.markdown(
-                f'<div class="week-report-filter-note">ISO week {selected_iso.year}-W{int(selected_iso.week):02d}</div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown('<div class="week-report-filter-label">Week</div>', unsafe_allow_html=True)
+        selected_week = st.selectbox(
+            "Week",
+            options=week_options,
+            format_func=_week_label,
+            label_visibility="collapsed",
+            key="week_report_selected_week",
+        )
 
     selected_week = pd.Timestamp(selected_week).normalize()
     week_end = selected_week + pd.Timedelta(days=6)
