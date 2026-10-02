@@ -35,10 +35,11 @@ def source_value(value: object, *keys: str) -> str:
     return ""
 
 
-def md_label(value: object, canonical_type: object = "") -> str:
+def md_label(value: object, canonical_type: object = "", session_type: object = "") -> str:
     """Return the desktop-style MD notation for one GPS session."""
 
     candidates = [
+        str(session_type or "").strip(),
         source_value(value, "Session Type", "sessionType"),
         source_value(value, "Session Title", "sessionTitle", "sessionName"),
     ]
@@ -55,12 +56,29 @@ def md_label(value: object, canonical_type: object = "") -> str:
     return "MD onbekend"
 
 
-def session_time(value: object) -> str:
-    raw = source_value(value, "Session Start Time", "sessionStartTime", "Drill Start Time", "drillStartTime")
+def session_time(value: object, direct_value: object = "") -> str:
+    raw = str(direct_value or "").strip() or source_value(
+        value,
+        "Session Start Time",
+        "sessionStartTime",
+        "Drill Start Time",
+        "drillStartTime",
+    )
     match = re.search(r"(?:^|[T ])(\d{1,2}):(\d{2})", raw)
     if not match:
         return ""
     return f"{int(match.group(1)):02d}:{match.group(2)}"
+
+
+def is_goalkeeper_position(value: object) -> bool:
+    """Recognise the keeper labels used by MVV and STATSports."""
+
+    text = str(value or "").strip().lower()
+    normalized = re.sub(r"[^a-z]", "", text)
+    return bool(
+        re.search(r"(?:^|[^a-z])gk(?:$|[^a-z])", text)
+        or any(label in normalized for label in ("goalkeeper", "keeper", "doelman", "goalie"))
+    )
 
 
 def moment_axis(records: Sequence[Mapping]) -> list[dict[str, object]]:

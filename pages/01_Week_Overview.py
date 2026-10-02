@@ -15,6 +15,7 @@ from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
+from pages.Subscripts.week_session_labels import is_goalkeeper_position
 from pages.Subscripts.week_session_labels import moment_axis as desktop_moment_axis
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
 from pages.Subscripts.week_session_labels import source_value as session_source_value
@@ -504,19 +505,24 @@ def _extra_metric_value(value: object, *keys: str) -> str:
     return session_source_value(value, *keys)
 
 
+def _row_source_value(row: pd.Series, direct_column: str, *keys: str) -> str:
+    direct_value = row.get(direct_column)
+    if direct_value is not None and not pd.isna(direct_value) and str(direct_value).strip():
+        return str(direct_value).strip()
+    return _extra_metric_value(row.get("extra_metrics"), *keys)
+
+
 def _session_identity(row: pd.Series) -> str:
-    extra = row.get("extra_metrics")
-    session_id = _extra_metric_value(extra, "Session ID", "sessionId")
-    start = _extra_metric_value(extra, "Session Start Time", "sessionStartTime")
-    title = _extra_metric_value(extra, "Session Title", "sessionTitle")
+    session_id = _row_source_value(row, "session_id", "Session ID", "sessionId")
+    start = _row_source_value(row, "session_start_time", "Session Start Time", "sessionStartTime")
+    title = _row_source_value(row, "session_title", "Session Title", "sessionTitle")
     session_type = str(row.get("type") or "Sessie").strip()
     return session_id or "|".join((session_type, start, title))
 
 
 def _session_label(row: pd.Series) -> str:
-    extra = row.get("extra_metrics")
-    start = _extra_metric_value(extra, "Session Start Time", "sessionStartTime")
-    title = _extra_metric_value(extra, "Session Title", "sessionTitle")
+    start = _row_source_value(row, "session_start_time", "Session Start Time", "sessionStartTime")
+    title = _row_source_value(row, "session_title", "Session Title", "sessionTitle")
     session_type = _session_display(row.get("type"))
     time_label = ""
     if "T" in start:
@@ -640,8 +646,14 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
     df["session_category"] = df["type"].apply(_session_category)
     df["session_key"] = df.apply(_session_identity, axis=1)
     df["session_label"] = df.apply(_session_label, axis=1)
-    df["md_label"] = df.apply(lambda row: desktop_md_label(row.get("extra_metrics"), row.get("type")), axis=1)
-    df["session_time"] = df["extra_metrics"].apply(desktop_session_time)
+    df["md_label"] = df.apply(
+        lambda row: desktop_md_label(row.get("extra_metrics"), row.get("type"), row.get("session_type")),
+        axis=1,
+    )
+    df["session_time"] = df.apply(
+        lambda row: desktop_session_time(row.get("extra_metrics"), row.get("session_start_time")),
+        axis=1,
+    )
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     return df
 
@@ -681,6 +693,37 @@ def fetch_summary_period_cached(access_token: str, start_iso: str, end_iso: str)
         event="Summary",
     )
     return _prepare_summary_period_df(raw)
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_player_positions_cached(_sb, access_scope: str) -> dict[str, str]:
+    rows: list[dict] = []
+    for select_clause in ("player_id,position", 'player_id,"Position"', "player_id"):
+        try:
+            rows = _sb.table("players").select(select_clause).execute().data or []
+            break
+        except Exception:
+            rows = []
+
+    positions: dict[str, str] = {}
+    for row in rows:
+        player_id = str(row.get("player_id") or "").strip()
+        position = row.get("Position") if row.get("Position") is not None else row.get("position")
+        if player_id:
+            positions[player_id] = str(position or "").strip()
+    return positions
+
+
+def exclude_goalkeepers(df: pd.DataFrame, positions: dict[str, str]) -> pd.DataFrame:
+    if df.empty:
+        return df
+    player_positions = df["player_id"].fillna("").astype(str).map(positions).fillna("")
+    if "extra_metrics" in df.columns:
+        source_positions = df["extra_metrics"].apply(
+            lambda value: session_source_value(value, "Player Position", "playerPrimaryPosition", "primaryPosition")
+        )
+        player_positions = player_positions.where(player_positions.astype(str).str.strip().ne(""), source_positions)
+    return df.loc[~player_positions.map(is_goalkeeper_position)].copy()
 
 
 def _week_label(week_start: pd.Timestamp) -> str:
@@ -1151,6 +1194,7 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         vertical_spacing=0.13,
         row_heights=[0.56, 0.44],
         subplot_titles=("Totale afstand", "Intensieve afstand"),
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
     )
     required = {
         "label",
@@ -1177,11 +1221,25 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         ),
         row=1,
         col=1,
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            name="HMLD",
+            x=labels,
+            y=session_stats["high_metabolic_load_distance_mean"],
+            mode="lines+markers",
+            line=dict(color="#69D5CB", width=3),
+            marker=dict(size=7, symbol="circle", line=dict(color="#101827", width=1.5)),
+            hovertemplate="%{x}<br>HMLD %{y:,.0f} m<extra></extra>",
+        ),
+        row=1,
+        col=1,
+        secondary_y=True,
     )
     for column, name, color in (
         ("total_distance_zone_5_mean", "Zone 5", "#EDB45B"),
         ("total_distance_zone_6_mean", "Zone 6", "#E84664"),
-        ("high_metabolic_load_distance_mean", "HMLD", "#69D5CB"),
     ):
         fig.add_trace(
             go.Scatter(
@@ -1210,6 +1268,7 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
     fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT), tickangle=0, automargin=True)
     fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
     fig.update_yaxes(title_text="Meters", row=1, col=1)
+    fig.update_yaxes(title_text="HMLD (m)", row=1, col=1, secondary_y=True, showgrid=False)
     fig.update_yaxes(title_text="Meters", row=2, col=1)
     return fig
 
@@ -1436,6 +1495,8 @@ def main() -> None:
 
     with st.spinner("Weekoverzicht laden..."):
         history_source_df = fetch_summary_index_cached(access_token)
+        player_positions = fetch_player_positions_cached(sb, access_token)
+        history_source_df = exclude_goalkeepers(history_source_df, player_positions)
 
     if history_source_df.empty:
         st.info("Geen Entire Session - Live-data gevonden voor het weekoverzicht.")
@@ -1508,6 +1569,7 @@ def main() -> None:
     selected_week = pd.Timestamp(selected_week).normalize()
     week_end = selected_week + pd.Timedelta(days=6)
     week_df = fetch_summary_period_cached(access_token, selected_week.date().isoformat(), week_end.date().isoformat())
+    week_df = exclude_goalkeepers(week_df, player_positions)
     week_df = _merge_summary_context(week_df, history_source_df.loc[history_source_df["week_start"] == selected_week].copy())
     if week_df.empty:
         st.info("Geen data gevonden voor deze week.")

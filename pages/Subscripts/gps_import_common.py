@@ -2034,9 +2034,18 @@ def df_to_db_rows(df: pd.DataFrame, source_file: str, name_to_id: dict) -> tuple
                     base[direct_col] = _source_text_value(val)
                 else:
                     base[direct_col] = coerce_num(val)
+                if is_statsports and direct_col in {"session_start_time", "session_title", "session_type"}:
+                    source_value = json_safe(val)
+                    if source_value is not None and str(source_value).strip():
+                        base["extra_metrics"][str(c).strip()] = source_value
                 continue
 
             if key not in METRIC_MAP:
+                if is_statsports and key in {"sessionid", "drillid", "playerposition"}:
+                    source_value = json_safe(val)
+                    if source_value is not None and str(source_value).strip():
+                        base["extra_metrics"][str(c).strip()] = source_value
+                    continue
                 if is_statsports and not preserve_extra_metrics:
                     continue
                 extra_value = json_safe(val)
