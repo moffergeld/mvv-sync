@@ -42,7 +42,7 @@ TEAM_LOGO = ASSETS_DIR / "Team_Logos" / "MVV Maastricht.png"
 HOME_BG = ASSETS_DIR / "Backgrounds" / "team_page_hero.png"
 
 ACWR_HOME_METRICS = [("total_distance", "ACWR TD")]
-APP_BUILD_STAMP = "WEEK-NO-SUBTITLES-20261002"
+APP_BUILD_STAMP = "PERFORMANCE-SUITE-20261003"
 HOME_RECENT_MAX_AGE_DAYS = 1
 
 
@@ -1260,6 +1260,9 @@ if not profile:
 
 
 role = str(st.session_state.get("role") or profile.get("role") or "").lower()
+if role in roles_mod.STAFF_ROLES:
+    st.switch_page("pages/01_Week_Overview.py")
+    st.stop()
 render_sidebar_navigation(profile)
 
 if DIAG_MODE:

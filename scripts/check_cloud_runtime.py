@@ -34,6 +34,16 @@ def check_forms_contracts() -> None:
             "Entire Session - Live",
             "session_load_pages_main",
         ),
+        "pages/05_ACWR.py": (
+            "load_acwr_gps_cached",
+            "ACWR_METRICS",
+            "metric_chart",
+        ),
+        "pages/07_Player_Monitor.py": (
+            "build_player_monitor",
+            "Nog nodig tot 0,80",
+            "Ruimte tot 1,50",
+        ),
         "pages/02_Match_Reports.py": (
             "select_match_phase_rows",
             "First Half",

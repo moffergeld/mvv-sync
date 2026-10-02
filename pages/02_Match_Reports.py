@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 # -----------------------------
 # Project root / imports
@@ -36,6 +37,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps  # noqa: E402
+from pages.Subscripts.acwr_shared import exclude_goalkeepers, fetch_player_positions_cached  # noqa: E402
 from pages.Subscripts.gps_event_rules import (  # noqa: E402
     MATCH_FIRST as EVENT_FIRST,
     MATCH_FULL as EVENT_FULL,
@@ -69,6 +71,10 @@ COL_SPR = "total_distance_zone_5"
 COL_HSPR = "total_distance_zone_6"
 COL_MAX = "maximum_speed"
 COL_DUR = "duration"
+COL_HMLD = "high_metabolic_load_distance"
+COL_DSL = "dynamic_stress_load"
+COL_HR_EXERTION = "heart_rate_exertion"
+HR_ZONE_COLS = [f"heart_rate_zone_{index}" for index in range(1, 6)]
 
 LABEL_PLAYER = "Player"
 LABEL_TD = "TD"
@@ -709,9 +715,10 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
     df = load_hybrid_gps(
         str(get_access_token() or ""),
         [
-            "gps_id", "match_id", "player_id", "player_name", "datum", "type", "event",
+            "gps_id", "match_id", "player_id", "player_name", "datum", "type", "event", "extra_metrics",
             "duration", "total_distance", "total_distance_zone_4", "total_distance_zone_5",
-            "total_distance_zone_6", "maximum_speed",
+            "total_distance_zone_6", "maximum_speed", "high_metabolic_load_distance",
+            "dynamic_stress_load", "heart_rate_exertion", *HR_ZONE_COLS,
         ],
         session_type="Match",
         match_id=match_id,
@@ -721,7 +728,7 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
 
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
 
-    for c in [COL_DUR, COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX]:
+    for c in [COL_DUR, COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX, COL_HMLD, COL_DSL, COL_HR_EXERTION, *HR_ZONE_COLS]:
         if c in df.columns:
             df[c] = _safe_num(df[c]).fillna(0.0)
 
@@ -750,6 +757,10 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
         total_distance_zone_5=(COL_SPR, "sum"),
         total_distance_zone_6=(COL_HSPR, "sum"),
         maximum_speed=(COL_MAX, "max"),
+        high_metabolic_load_distance=(COL_HMLD, "sum"),
+        dynamic_stress_load=(COL_DSL, "sum"),
+        heart_rate_exertion=(COL_HR_EXERTION, "sum"),
+        **{column: (column, "sum") for column in HR_ZONE_COLS},
     )
 
     dur_min = g["duration"].replace(0, np.nan)
@@ -942,6 +953,62 @@ def plot_sprint_vs_high(df: pd.DataFrame, title: str) -> None:
     _base_plot_layout(fig, title)
     fig.update_layout(barmode="group")
     fig.update_yaxes(title_text="Meters")
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
+def plot_match_load_overview(df: pd.DataFrame, phase: str) -> None:
+    if df.empty:
+        st.info("Geen externe-load data voor deze fase.")
+        return
+    data = df.sort_values(COL_TD, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str)
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=.12, row_heights=[.58, .42], specs=[[{"secondary_y": True}], [{"secondary_y": False}]])
+    fig.add_trace(go.Bar(x=players, y=data[COL_TD], name="TD", marker_color="#526986", text=[_fmt_int0(v) for v in data[COL_TD]], textposition="outside"), row=1, col=1, secondary_y=False)
+    fig.add_trace(go.Scatter(x=players, y=data[COL_HMLD], name="HMLD", mode="lines+markers", line=dict(color="#69D5CB", width=3), marker=dict(size=7)), row=1, col=1, secondary_y=True)
+    fig.add_trace(go.Bar(x=players, y=data[COL_SPR], name="Zone 5", marker_color="#EDB45B"), row=2, col=1)
+    fig.add_trace(go.Bar(x=players, y=data[COL_HSPR], name="Zone 6", marker_color="#E84664"), row=2, col=1)
+    fig.update_layout(height=560, barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(255,255,255,.012)", font=dict(color=MVV_TEXT), legend=dict(orientation="h", y=1.07, x=0), margin=dict(l=30, r=30, t=55, b=90), hovermode="x unified")
+    fig.update_xaxes(tickangle=-45, showgrid=False, automargin=True)
+    fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False)
+    fig.update_yaxes(title_text="Meters", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="HMLD (m)", row=1, col=1, secondary_y=True, showgrid=False)
+    fig.update_yaxes(title_text="Meters", row=2, col=1)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
+def plot_match_internal_load(df: pd.DataFrame) -> None:
+    data = df.sort_values(COL_DSL, ascending=False).reset_index(drop=True)
+    if data.empty:
+        st.info("Geen interne-load data voor deze fase.")
+        return
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    colors = ["#526986", "#4F91A5", "#69D5CB", "#EDB45B", "#E84664"]
+    for column, color in zip(HR_ZONE_COLS, colors):
+        fig.add_trace(
+            go.Bar(
+                x=data[COL_PLAYER],
+                y=pd.to_numeric(data[column], errors="coerce").div(60),
+                name=column.replace("heart_rate_zone_", "HR Z"),
+                marker_color=color,
+            ),
+            secondary_y=False,
+        )
+    fig.add_trace(go.Scatter(x=data[COL_PLAYER], y=data[COL_HR_EXERTION], name="HR Exertion", mode="lines+markers", line=dict(color="#C58AF1", width=3)), secondary_y=True)
+    fig.update_layout(height=430, barmode="stack", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(255,255,255,.012)", font=dict(color=MVV_TEXT), legend=dict(orientation="h", y=1.08, x=0), margin=dict(l=30, r=30, t=55, b=90))
+    fig.update_xaxes(tickangle=-45, showgrid=False)
+    fig.update_yaxes(title_text="Tijd in HR-zone (min)", gridcolor=MVV_GRID, secondary_y=False)
+    fig.update_yaxes(title_text="HR Exertion", showgrid=False, secondary_y=True)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
+def plot_match_dsl(df: pd.DataFrame) -> None:
+    data = df[[COL_PLAYER, COL_DSL]].dropna().sort_values(COL_DSL, ascending=False)
+    if data.empty:
+        st.info("Geen Dynamic Stress Load-data voor deze fase.")
+        return
+    fig = go.Figure(go.Bar(x=data[COL_PLAYER], y=data[COL_DSL], marker_color=MVV_RED_LIGHT, text=[f"{float(v):.1f}" for v in data[COL_DSL]], textposition="outside"))
+    _base_plot_layout(fig, "Dynamic Stress Load")
+    fig.update_yaxes(title_text="DSL")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
@@ -1282,6 +1349,7 @@ def main() -> None:
     )
 
     df_events = fetch_match_events_for_match(match_id)
+    df_events = exclude_goalkeepers(df_events, fetch_player_positions_cached(sb, str(get_access_token() or "")))
     if df_events.empty:
         st.info("Geen First Half- of Second Half-data gevonden voor deze wedstrijd.")
         st.stop()
@@ -1291,37 +1359,15 @@ def main() -> None:
         st.info("Geen data voor deze fase.")
         st.stop()
 
-    player_lookup = (
-        df_events.assign(player_id=df_events["player_id"].astype(str), player_name=df_events["player_name"].fillna("Onbekend").astype(str))
-        .drop_duplicates(subset=["player_id"])
-        .set_index("player_id")["player_name"]
-        .to_dict()
-    )
-    monitoring_df = build_monitoring_dataset(
-        SUPABASE_URL or "default",
-        sb,
-        match_row["match_date"],
-        match_row["match_date"],
-        player_ids=df_events["player_id"].astype(str).tolist(),
-        player_lookup=player_lookup,
-    )
-    monitoring_summary = summarize_monitoring_dataset(monitoring_df)
-    monitoring_players = build_monitoring_player_summary(monitoring_df)
-
     render_kpi_row(df_phase)
 
-    st.markdown('<div class="mr-section-label">Wellness &amp; RPE</div>', unsafe_allow_html=True)
-    if monitoring_df.empty:
-        st.info("Geen wellness- of RPE-data beschikbaar voor deze wedstrijddag.")
-    else:
-        render_monitoring_summary_row(monitoring_summary)
-        render_monitoring_player_table(monitoring_players)
-
-    chart_l, chart_r = st.columns(2)
-    with chart_l:
-        plot_td_bar(df_phase, title=f"Total Distance ({phase})")
-    with chart_r:
-        plot_sprint_vs_high(df_phase, title=f"Zone 5 vs Zone 6 ({phase})")
+    st.markdown("### Belastingsoverzicht")
+    plot_match_load_overview(df_phase, phase)
+    internal_cols = st.columns(2, gap="large")
+    with internal_cols[0]:
+        plot_match_internal_load(df_phase)
+    with internal_cols[1]:
+        plot_match_dsl(df_phase)
 
     st.markdown("### Tables")
     render_tables_row(df_phase)

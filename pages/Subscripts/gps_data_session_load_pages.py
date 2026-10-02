@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 from typing import Callable, Optional
 
 import numpy as np
@@ -47,7 +48,8 @@ SELECT_ALL_OPT = "— Select all —"
 
 
 def _normalize_event(e: str) -> str:
-    return "summary" if str(e).strip().lower() == "summary" else str(e).strip().lower()
+    normalized = str(e).strip().lower()
+    return "summary" if re.fullmatch(r"summary(?:\s*\(\d+\))?", normalized) else normalized
 
 
 def _session_family(type_value: str) -> str:
@@ -428,6 +430,104 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
+def _plot_player_gps_load(df_agg: pd.DataFrame) -> None:
+    required = {COL_PLAYER, COL_TD, COL_SPRINT, COL_HS, COL_HMLD}
+    if df_agg.empty or not required.issubset(df_agg.columns):
+        st.info("Geen complete TD-, Zone 5-, Zone 6- en HMLD-data voor deze sessie.")
+        return
+    data = df_agg.sort_values(COL_TD, ascending=False).reset_index(drop=True)
+    players = data[COL_PLAYER].astype(str)
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=.12,
+        row_heights=[.58, .42],
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
+    )
+    fig.add_trace(
+        go.Bar(
+            x=players,
+            y=data[COL_TD],
+            name="TD",
+            marker_color="#526986",
+            text=[f"{float(value):,.0f}".replace(",", ".") for value in data[COL_TD]],
+            textposition="outside",
+            hovertemplate="<b>%{x}</b><br>TD %{y:,.0f} m<extra></extra>",
+        ),
+        row=1,
+        col=1,
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=players,
+            y=data[COL_HMLD],
+            name="HMLD",
+            mode="lines+markers",
+            line=dict(color="#69D5CB", width=3),
+            marker=dict(size=7),
+            hovertemplate="<b>%{x}</b><br>HMLD %{y:,.0f} m<extra></extra>",
+        ),
+        row=1,
+        col=1,
+        secondary_y=True,
+    )
+    for column, label, color in ((COL_SPRINT, "Zone 5", "#EDB45B"), (COL_HS, "Zone 6", "#E84664")):
+        fig.add_trace(
+            go.Bar(
+                x=players,
+                y=data[column],
+                name=label,
+                marker_color=color,
+                hovertemplate=f"<b>%{{x}}</b><br>{label} %{{y:,.0f}} m<extra></extra>",
+            ),
+            row=2,
+            col=1,
+        )
+    fig.update_layout(
+        height=560,
+        barmode="group",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=PLOT_BG,
+        font=dict(color=TEXT),
+        legend=dict(orientation="h", y=1.07, x=0),
+        margin=dict(l=30, r=30, t=55, b=90),
+        hovermode="x unified",
+    )
+    fig.update_xaxes(tickangle=-45, showgrid=False, automargin=True)
+    fig.update_yaxes(gridcolor=GRID, zeroline=False)
+    fig.update_yaxes(title_text="Meters", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="HMLD (m)", row=1, col=1, secondary_y=True, showgrid=False)
+    fig.update_yaxes(title_text="Meters", row=2, col=1)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
+def _plot_single_metric(df_agg: pd.DataFrame, column: str, label: str, color: str, decimals: int = 1) -> None:
+    if column not in df_agg.columns:
+        st.info(f"Geen {label}-data beschikbaar voor deze sessie.")
+        return
+    data = df_agg[[COL_PLAYER, column]].dropna().sort_values(column, ascending=False)
+    if data.empty:
+        st.info(f"Geen {label}-data beschikbaar voor deze sessie.")
+        return
+    mean = float(data[column].mean())
+    fig = go.Figure(
+        go.Bar(
+            x=data[COL_PLAYER],
+            y=data[column],
+            marker_color=color,
+            text=[f"{float(value):.{decimals}f}" for value in data[column]],
+            textposition="outside",
+            hovertemplate=f"<b>%{{x}}</b><br>{label} %{{y:.{decimals}f}}<extra></extra>",
+        )
+    )
+    fig.add_hline(y=mean, line_dash="dash", line_color="#F8FAFC", annotation_text=f"Gem. {mean:.{decimals}f}")
+    _style_fig(fig, title=label, y_title=label)
+    fig.update_layout(showlegend=False, height=380)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
+
+
 def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     if COL_SPRINT not in df_agg.columns or COL_HS not in df_agg.columns:
         st.info("Zone 5 / Zone 6 kolommen niet compleet.")
@@ -501,54 +601,46 @@ def _plot_acc_dec(df_agg: pd.DataFrame):
 
 def _plot_hr_trimp(df_agg: pd.DataFrame):
     have_hr = [c for c in HR_COLS if c in df_agg.columns]
-    has_trimp = "TRIMP" in df_agg.columns
-    if not have_hr and not has_trimp:
-        st.info("Geen HR zone/TRIMP data gevonden.")
+    has_exertion = COL_HR_EXERTION in df_agg.columns
+    if not have_hr and not has_exertion:
+        st.info("Geen HR-zone- of HR Exertion-data gevonden.")
         return
 
     players = df_agg[COL_PLAYER].astype(str).tolist()
-    base_x = np.arange(len(players))
-
-    fig = make_subplots(specs=[[{"secondary_y": has_trimp}]])
+    fig = make_subplots(specs=[[{"secondary_y": has_exertion}]])
     color_map = {
-        "HRzone1": "rgba(190,190,190,0.88)",
-        "HRzone2": "rgba(84,168,255,0.88)",
-        "HRzone3": "rgba(0,196,106,0.88)",
-        "HRzone4": "rgba(245,166,35,0.90)",
-        "HRzone5": "rgba(232,33,63,0.92)",
+        "HRzone1": "#526986",
+        "HRzone2": "#4F91A5",
+        "HRzone3": "#69D5CB",
+        "HRzone4": "#EDB45B",
+        "HRzone5": "#E84664",
     }
 
-    if have_hr:
-        n = len(have_hr)
-        group_w = 0.8
-        bar_w = group_w / max(n, 1)
-        start = -group_w / 2 + bar_w / 2
-        for idx, z in enumerate(have_hr):
-            x = base_x + (start + idx * bar_w)
-            fig.add_bar(
-                x=x,
-                y=df_agg[z],
-                name=z,
-                marker_color=color_map.get(z, "gray"),
-                width=bar_w * 0.95,
-                secondary_y=False,
-            )
+    for zone in have_hr:
+        fig.add_bar(
+            x=players,
+            y=pd.to_numeric(df_agg[zone], errors="coerce").div(60),
+            name=zone.replace("HRzone", "HR Z"),
+            marker_color=color_map.get(zone, "gray"),
+            secondary_y=False,
+            hovertemplate=f"<b>%{{x}}</b><br>{zone.replace('HRzone', 'HR Z')}: %{{y:.1f}} min<extra></extra>",
+        )
 
-    if has_trimp:
+    if has_exertion:
         fig.add_trace(
             go.Scatter(
-                x=base_x,
-                y=df_agg["TRIMP"],
+                x=players,
+                y=df_agg[COL_HR_EXERTION],
                 mode="lines+markers",
-                name="HR Trimp",
-                line=dict(color=MVV_GREEN, width=3, shape="spline"),
+                name="HR Exertion",
+                line=dict(color="#C58AF1", width=3),
                 marker=dict(size=7),
             ),
             secondary_y=True,
         )
 
-    fig.update_xaxes(tickvals=base_x, ticktext=players)
-    _style_fig(fig, title="Time in HR Zone", y_title="Time in zone (min)", secondary_y_title="HR Trimp")
+    fig.update_layout(barmode="stack")
+    _style_fig(fig, title="HR-zones & HR Exertion", y_title="Tijd in zone (min)", secondary_y_title="HR Exertion")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
@@ -648,41 +740,12 @@ def session_load_pages_main(
         st.warning("Geen data om te aggregeren.")
         return
 
-    players_all = sorted(df_agg[COL_PLAYER].astype(str).unique().tolist())
-    team_on, starters, subs = _team_selection_ui_inline(players_all)
-
-    groups: dict[str, list[str]] | None = None
-    if team_on:
-        groups = {}
-        if starters:
-            groups["Vaste selectie"] = starters
-        if subs:
-            groups["Wissels"] = subs
-
-    median_td = _median_safe(df_agg[COL_TD].to_numpy()) if COL_TD in df_agg.columns else None
-    median_sprint = _median_safe(df_agg[COL_SPRINT].to_numpy()) if COL_SPRINT in df_agg.columns else None
-    median_hmld = _median_safe(df_agg[COL_HMLD].to_numpy()) if COL_HMLD in df_agg.columns else None
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        _metric_card("Spelers", str(len(players_all)))
-    with c2:
-        _metric_card("Mediaan TD", f"{median_td:,.0f} m".replace(",", " ") if median_td is not None else "–")
-    with c3:
-        _metric_card("Mediaan Zone 5", f"{median_sprint:,.0f} m".replace(",", " ") if median_sprint is not None else "–")
-    with c4:
-        _metric_card("Mediaan HMLD", f"{median_hmld:,.0f} m".replace(",", " ") if median_hmld is not None else "–")
-
-    col_top1, col_top2 = st.columns(2)
-    with col_top1:
-        _plot_total_distance(df_agg, groups)
-    with col_top2:
-        _plot_sprint_hs(df_agg, groups)
-
-    col_bot1, col_bot2, col_bot3 = st.columns(3)
-    with col_bot1:
-        _plot_acc_dec(df_agg)
-    with col_bot2:
-        _plot_hr_trimp(df_agg)
-    with col_bot3:
-        _plot_hmld_dsl(df_agg)
+    st.markdown("### GPS & belasting per speler")
+    _plot_player_gps_load(df_agg)
+    st.markdown("### HR-zones & HR Exertion")
+    _plot_hr_trimp(df_agg)
+    load_cols = st.columns(2, gap="large")
+    with load_cols[0]:
+        _plot_single_metric(df_agg, COL_DSL, "Dynamic Stress Load", MVV_RED, 1)
+    with load_cols[1]:
+        _plot_single_metric(df_agg, COL_FATIGUE, "Fatigue Index", "#EDB45B", 2)

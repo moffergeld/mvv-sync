@@ -8,6 +8,7 @@ import streamlit as st
 
 import pages.Subscripts.gps_data_session_load_pages as session_load_pages
 from auth_session import ensure_auth_restored, get_sb_client
+from pages.Subscripts.acwr_shared import exclude_goalkeepers, fetch_player_positions_cached
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation
@@ -205,6 +206,7 @@ def rest_get_paged(
 
 GPS_SELECT_COLS = [
     "gps_id",
+    "player_id",
     "datum",
     "week",
     "year",
@@ -236,6 +238,7 @@ GPS_SELECT_COLS = [
 ]
 
 DB_TO_DASH = {
+    "player_id": "player_id",
     "datum": "Datum",
     "player_name": "Speler",
     "type": "Type",
@@ -277,7 +280,7 @@ def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     for numeric_col in [
         col
         for col in GPS_SELECT_COLS
-        if col not in {"datum", "player_name", "type", "event", "extra_metrics"}
+        if col not in {"datum", "player_id", "player_name", "type", "event", "extra_metrics"}
     ]:
         if numeric_col in df.columns:
             df[numeric_col] = pd.to_numeric(df[numeric_col], errors="coerce")
@@ -393,6 +396,8 @@ def main() -> None:
     try:
         with st.spinner(f"Entire Session - Live-data laden ({scope_key})..."):
             df_scope = fetch_summary_scope_cached(str(token), scope_key)
+            positions = fetch_player_positions_cached(sb, str(token))
+            df_scope = exclude_goalkeepers(df_scope, positions)
             calendar_columns = [column for column in ("Datum", "Type", "Event") if column in df_scope.columns]
             calendar_df_scope = (
                 df_scope[calendar_columns].drop_duplicates().copy()

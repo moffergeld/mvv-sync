@@ -60,11 +60,11 @@ REFRESH_COOKIE_SECONDS = 60 * 60 * 24 * REFRESH_COOKIE_DAYS
 COOKIE_SETTLE_SECONDS = 0.10
 
 SIDEBAR_PAGE_LINKS = [
-    ("app.py", "Dashboard"),
-    ("pages/01_Week_Overview.py", "Weekoverzicht"),
+    ("pages/01_Week_Overview.py", "Dashboard"),
     ("pages/12_Session_Load.py", "Session Load"),
     ("pages/02_Match_Reports.py", "Match Report"),
-    ("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE"),
+    ("pages/05_ACWR.py", "ACWR"),
+    ("pages/07_Player_Monitor.py", "Speler Monitor"),
     ("pages/06_GPS_Import.py", "GPS Import"),
 ]
 

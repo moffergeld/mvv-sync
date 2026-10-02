@@ -16,6 +16,12 @@ from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_ur
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
 from pages.Subscripts.week_session_labels import source_value as session_source_value
+from report_monitoring import (
+    WELLNESS_PARAMETER_SPECS,
+    build_monitoring_dataset,
+    build_monitoring_grouped_summary,
+    build_rpe_session_day_summary,
+)
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from speed_outlier_utils import sanitize_progressive_max_speed
 from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
@@ -1297,6 +1303,57 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def build_weekly_wellness_chart(day_table: pd.DataFrame) -> go.Figure:
+    fig = base_figure("Wellness", height=380)
+    if day_table is None or day_table.empty:
+        return fig
+    colors = ["#E84664", "#EDB45B", "#69D5CB", "#C58AF1", "#526986"]
+    for (column, label), color in zip(WELLNESS_PARAMETER_SPECS, colors):
+        if column not in day_table.columns:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=day_table["label"],
+                y=day_table[column],
+                name=label,
+                mode="lines+markers",
+                line=dict(color=color, width=2.5),
+                marker=dict(size=7),
+                hovertemplate=f"%{{x}}<br>{label}: %{{y:.1f}}<extra></extra>",
+            )
+        )
+    fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.08, x=0))
+    fig.update_yaxes(title_text="Score", range=[0, 10], dtick=2)
+    fig.update_xaxes(showgrid=False)
+    return fig
+
+
+def build_weekly_rpe_chart(rpe_table: pd.DataFrame) -> go.Figure:
+    fig = base_figure("RPE", height=380)
+    if rpe_table is None or rpe_table.empty:
+        return fig
+    labels = [rpe_table["label"].astype(str).tolist(), rpe_table["session_label"].astype(str).tolist()]
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=rpe_table["avg_rpe"],
+            marker_color="#C58AF1",
+            error_y=dict(type="data", array=rpe_table["avg_rpe_std"], color="#F8FAFC", thickness=1.4),
+            text=[f"{float(value):.1f}" for value in rpe_table["avg_rpe"]],
+            textposition="outside",
+            customdata=rpe_table["rpe_players"],
+            hovertemplate="%{x}<br>Gemiddelde RPE %{y:.1f}<br>%{customdata} spelers<extra></extra>",
+        )
+    )
+    fig.add_hrect(y0=0, y1=4.5, fillcolor="#3FC58A", opacity=.08, line_width=0)
+    fig.add_hrect(y0=4.5, y1=7.5, fillcolor="#EDB45B", opacity=.08, line_width=0)
+    fig.add_hrect(y0=7.5, y1=10, fillcolor="#E84664", opacity=.08, line_width=0)
+    fig.update_layout(showlegend=False)
+    fig.update_yaxes(title_text="RPE", range=[0, 10], dtick=2)
+    fig.update_xaxes(showgrid=False)
+    return fig
+
+
 def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
     """Team average per session with volume and intensity on honest separate scales."""
 
@@ -1601,7 +1658,7 @@ def main() -> None:
               {logo_markup}
               <div class="week-report-copyhead">
                 <h1 class="week-report-title">Weekoverzicht</h1>
-                <div class="week-report-kicker">MVV Maastricht | GPS</div>
+                <div class="week-report-kicker">MVV Maastricht | GPS, Wellness &amp; RPE</div>
               </div>
             </div>
             """,
@@ -1627,6 +1684,31 @@ def main() -> None:
 
     session_stats = build_week_session_stats(week_df)
     player_table = build_week_player_table(week_df)
+    player_lookup = (
+        week_df.assign(
+            player_id=week_df["player_id"].astype(str),
+            player_name=week_df["player_name"].fillna("Onbekend").astype(str),
+        )
+        .drop_duplicates("player_id")
+        .set_index("player_id")["player_name"]
+        .to_dict()
+    )
+    monitoring_df = build_monitoring_dataset(
+        SUPABASE_URL or "default",
+        sb,
+        selected_week.date(),
+        week_end.date(),
+        player_ids=week_df["player_id"].astype(str).tolist(),
+        player_lookup=player_lookup,
+    )
+    monitoring_days = build_monitoring_grouped_summary(monitoring_df, "day")
+    rpe_moments = build_rpe_session_day_summary(
+        SUPABASE_URL or "default",
+        sb,
+        selected_week.date(),
+        week_end.date(),
+        player_ids=week_df["player_id"].astype(str).tolist(),
+    )
     render_plot_panel(
         "GPS & belasting per sessie",
         build_session_load_chart(session_stats),
@@ -1636,6 +1718,18 @@ def main() -> None:
         "Totale weekbelasting per speler",
         build_weekly_player_load_chart(player_table),
     )
+
+    monitoring_cols = st.columns(2, gap="large")
+    with monitoring_cols[0]:
+        if monitoring_days.empty:
+            st.info("Geen Wellness-data in deze week.")
+        else:
+            render_plot_panel("Wellness van de week", build_weekly_wellness_chart(monitoring_days))
+    with monitoring_cols[1]:
+        if rpe_moments.empty:
+            st.info("Geen RPE-data in deze week.")
+        else:
+            render_plot_panel("RPE van de week", build_weekly_rpe_chart(rpe_moments))
 
     render_sidebar_footer(profile)
 
