@@ -27,7 +27,7 @@ def check_forms_contracts() -> None:
             "Entire Session - Live",
             "build_session_load_chart",
             "build_weekly_player_load_chart",
-            "build_zone_share_chart",
+            "high_metabolic_load_distance",
         ),
         "pages/12_Session_Load.py": (
             "load_hybrid_gps",

@@ -818,6 +818,9 @@ def build_week_player_table(week_df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             sessions=("datum", "size"),
             total_distance=("total_distance", "sum"),
+            high_metabolic_load_distance=("high_metabolic_load_distance", "sum"),
+            total_distance_zone_5=("total_distance_zone_5", "sum"),
+            total_distance_zone_6=("total_distance_zone_6", "sum"),
             hsr_hsd=("hsr_hsd", "sum"),
             sprints=("number_of_sprints", "sum"),
             total_accelerations=("total_accelerations", "sum"),
@@ -1083,18 +1086,6 @@ def build_week_type_table(week_df: pd.DataFrame) -> pd.DataFrame:
     return grouped
 
 
-def build_zone_totals(week_df: pd.DataFrame) -> pd.DataFrame:
-    zone_rows = [
-        ("Walking", float(week_df["total_distance_zone_1_and_2"].sum())),
-        ("Jogging", float(week_df["total_distance_zone_3"].sum())),
-        ("Running", float(week_df["total_distance_zone_4"].sum())),
-        ("Zone 5", float(week_df["total_distance_zone_5"].sum())),
-        ("Zone 6", float(week_df["total_distance_zone_6"].sum())),
-    ]
-    zone_df = pd.DataFrame(zone_rows, columns=["zone", "value"])
-    return zone_df[zone_df["value"] > 0].reset_index(drop=True)
-
-
 def build_week_notes(summary: dict[str, object], day_table: pd.DataFrame, player_table: pd.DataFrame) -> list[str]:
     notes: list[str] = []
     week_start = summary["week_start"]
@@ -1217,26 +1208,94 @@ def build_daily_bar_chart(
 
 
 def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
-    fig = base_figure("Totale weekbelasting per speler", height=390)
-    if player_table.empty or "total_distance" not in player_table.columns:
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.13,
+        row_heights=[0.58, 0.42],
+        subplot_titles=("Totale afstand", "Intensieve afstand"),
+        specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
+    )
+    required = {
+        "player_name",
+        "total_distance",
+        "high_metabolic_load_distance",
+        "total_distance_zone_5",
+        "total_distance_zone_6",
+    }
+    if player_table.empty or not required.issubset(player_table.columns):
+        fig.update_layout(height=540, paper_bgcolor="rgba(0,0,0,0)")
         return fig
 
     data = player_table.sort_values("total_distance", ascending=False).reset_index(drop=True)
-    values = pd.to_numeric(data["total_distance"], errors="coerce").fillna(0)
+    players = data["player_name"].fillna("Onbekend").astype(str)
+    total_distance = pd.to_numeric(data["total_distance"], errors="coerce").fillna(0)
+    hmld = pd.to_numeric(data["high_metabolic_load_distance"], errors="coerce").fillna(0)
     fig.add_trace(
         go.Bar(
-            x=data["player_name"],
-            y=values,
-            marker_color=MVV_RED_DEEP,
-            text=[_format_distance(value) for value in values],
+            name="Total Distance",
+            x=players,
+            y=total_distance,
+            marker_color="#526986",
+            text=[_format_distance(value) for value in total_distance],
             textposition="outside",
             cliponaxis=False,
             hovertemplate="<b>%{x}</b><br>Total Distance: %{y:,.0f} m<extra></extra>",
-        )
+        ),
+        row=1,
+        col=1,
+        secondary_y=False,
     )
-    fig.update_layout(showlegend=False)
-    fig.update_xaxes(tickangle=-35, automargin=True)
-    fig.update_yaxes(title_text="Meters")
+    fig.add_trace(
+        go.Scatter(
+            name="HMLD",
+            x=players,
+            y=hmld,
+            mode="lines+markers",
+            line=dict(color="#69D5CB", width=3),
+            marker=dict(size=7, symbol="circle", line=dict(color="#101827", width=1.5)),
+            hovertemplate="<b>%{x}</b><br>HMLD: %{y:,.0f} m<extra></extra>",
+        ),
+        row=1,
+        col=1,
+        secondary_y=True,
+    )
+    for column, name, color in (
+        ("total_distance_zone_5", "Zone 5", "#EDB45B"),
+        ("total_distance_zone_6", "Zone 6", "#E84664"),
+    ):
+        values = pd.to_numeric(data[column], errors="coerce").fillna(0)
+        fig.add_trace(
+            go.Bar(
+                name=name,
+                x=players,
+                y=values,
+                marker=dict(color=color, line=dict(color="#101827", width=1)),
+                offsetgroup=name,
+                hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y:,.0f}} m<extra></extra>",
+            ),
+            row=2,
+            col=1,
+        )
+    fig.update_layout(
+        height=560,
+        margin=dict(l=20, r=20, t=56, b=70),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.012)",
+        font=dict(color=MVV_TEXT, size=12),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        barmode="group",
+        bargap=0.34,
+        bargroupgap=0.1,
+    )
+    fig.update_annotations(font=dict(color=MVV_TEXT_SOFT, size=12), xanchor="left", x=0)
+    fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT), tickangle=-35, automargin=True)
+    fig.update_yaxes(gridcolor=MVV_GRID, zeroline=False, tickfont=dict(color=MVV_TEXT_SOFT))
+    fig.update_yaxes(title_text="Meters", row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="HMLD (m)", row=1, col=1, secondary_y=True, showgrid=False)
+    fig.update_yaxes(title_text="Meters", row=2, col=1)
     return fig
 
 
@@ -1385,32 +1444,6 @@ def build_grouped_error_chart(day_stats: pd.DataFrame) -> go.Figure:
         )
     )
     fig.update_layout(barmode="group")
-    return fig
-
-
-def build_zone_share_chart(zone_df: pd.DataFrame) -> go.Figure:
-    fig = base_figure("Distance Zone Share", height=340)
-    if zone_df.empty:
-        return fig
-    fig = go.Figure(
-        data=[
-            go.Pie(
-                labels=zone_df["zone"],
-                values=zone_df["value"],
-                hole=0.42,
-                textinfo="percent+label",
-                marker=dict(colors=["#F5D2D8", "#F1A4B5", "#E97A93", "#D92B4D", "#6E1222"]),
-            )
-        ]
-    )
-    fig.update_layout(
-        title=dict(text="Distance Zone Share", x=0.02, xanchor="left", font=dict(size=20, color=MVV_TEXT)),
-        height=340,
-        margin=dict(l=18, r=18, t=56, b=18),
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=MVV_TEXT, size=12),
-        legend=dict(orientation="v", x=1.02, y=0.5, xanchor="left", yanchor="middle"),
-    )
     return fig
 
 
@@ -1615,26 +1648,17 @@ def main() -> None:
 
     session_stats = build_week_session_stats(week_df)
     player_table = build_week_player_table(week_df)
-    zone_df = build_zone_totals(week_df)
     render_plot_panel(
         "GPS & belasting per sessie",
         build_session_load_chart(session_stats),
         "Teamgemiddelde van veldspelers uit uitsluitend Entire Session - Live; dubbele sessies blijven apart.",
     )
 
-    support_cols = st.columns(2, gap="large")
-    with support_cols[0]:
-        render_plot_panel(
-            "Totale weekbelasting per speler",
-            build_weekly_player_load_chart(player_table),
-            "Opgetelde Total Distance van alle Entire Session - Live-sessies in de gekozen week",
-        )
-    with support_cols[1]:
-        render_plot_panel(
-            "Distance Zone Share",
-            build_zone_share_chart(zone_df),
-            "Verdeling van de afstandszones binnen de gekozen week",
-        )
+    render_plot_panel(
+        "Totale weekbelasting per speler",
+        build_weekly_player_load_chart(player_table),
+        "Total Distance, HMLD en gegroepeerde Zone 5/6-belasting van alle Entire Session - Live-sessies.",
+    )
 
     render_sidebar_footer(profile)
 
