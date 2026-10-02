@@ -4,7 +4,7 @@ import streamlit as st
 
 from roles import get_profile, get_sb, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Reports", layout="wide", initial_sidebar_state="expanded")
@@ -251,6 +251,7 @@ def render_tile(
 
 def main() -> None:
     render_css()
+    apply_dashboard_polish()
     require_auth()
     sb = get_sb()
     if sb is None:

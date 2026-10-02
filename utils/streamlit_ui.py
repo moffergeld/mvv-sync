@@ -87,6 +87,120 @@ def apply_dashboard_polish() -> None:
           padding-bottom: 3rem !important;
         }
 
+        /* Page heroes are compact control bars, not oversized banners. */
+        div[data-testid="stVerticalBlock"]:has(.week-report-hero-anchor),
+        div[data-testid="stVerticalBlock"]:has(.session-load-beta-hero-anchor),
+        div[data-testid="stVerticalBlock"]:has(.mr-page-hero-anchor),
+        div[data-testid="stVerticalBlock"]:has(.year-report-hero-anchor),
+        div[data-testid="stVerticalBlock"]:has(.month-report-hero-anchor),
+        div[data-testid="stVerticalBlock"]:has(.player-report-hero-anchor) {
+          min-height: 0 !important;
+          padding: .85rem 1rem !important;
+          margin-bottom: .8rem !important;
+          border-radius: 14px !important;
+          border: 1px solid var(--mvv-line) !important;
+          background: rgba(13,20,34,.9) !important;
+          box-shadow: 0 10px 28px rgba(0,0,0,.14) !important;
+        }
+
+        .week-report-head,
+        .session-load-beta-head,
+        .mr-page-header-row,
+        .year-report-head,
+        .month-report-head,
+        .player-report-head {
+          justify-content: flex-start !important;
+          gap: .7rem !important;
+          margin-bottom: .55rem !important;
+        }
+
+        .week-report-logo,
+        .session-load-beta-logo,
+        .mr-page-logo,
+        .year-report-logo,
+        .month-report-logo,
+        .player-report-logo {
+          width: 44px !important;
+          height: 44px !important;
+        }
+
+        .week-report-title,
+        .session-load-beta-title,
+        .mr-page-title,
+        .year-report-title,
+        .month-report-title,
+        .player-report-title {
+          font-size: 1.65rem !important;
+          line-height: 1.05 !important;
+          letter-spacing: -.025em;
+        }
+
+        .week-report-copy,
+        .session-load-beta-copy {
+          display: none !important;
+        }
+
+        .week-report-filter-note,
+        .session-load-beta-filter-note,
+        .mr-hero-filter-note,
+        .year-report-filter-note,
+        .month-report-filter-note,
+        .player-report-filter-note {
+          margin-top: .75rem !important;
+          font-size: .78rem !important;
+        }
+
+        .reports-hero,
+        .bench-hero,
+        .mvv-hero-shell {
+          padding: .85rem 1rem !important;
+          margin-bottom: .8rem !important;
+          border-radius: 14px !important;
+          border: 1px solid var(--mvv-line) !important;
+          background: rgba(13,20,34,.9) !important;
+          box-shadow: 0 10px 28px rgba(0,0,0,.14) !important;
+        }
+
+        .mvv-hero-shell .mvv-hero {
+          min-height: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+
+        .reports-head,
+        .bench-head,
+        .mvv-page-head {
+          justify-content: flex-start !important;
+          gap: .7rem !important;
+          margin-bottom: 0 !important;
+        }
+
+        .reports-logo,
+        .bench-logo,
+        .mvv-page-logo {
+          width: 44px !important;
+          height: 44px !important;
+        }
+
+        .reports-title,
+        .bench-title,
+        .mvv-page-title {
+          font-size: 1.65rem !important;
+          line-height: 1.05 !important;
+          letter-spacing: -.025em;
+        }
+
+        .reports-copy,
+        .bench-copy,
+        .mvv-page-copy,
+        .reports-pill-row,
+        .bench-pill-row,
+        .mvv-pill-row {
+          display: none !important;
+        }
+
         /* One calm surface level: no card-in-card framing around charts. */
         div[data-testid="stVerticalBlock"]:has(.week-report-panel-anchor) {
           padding: 1.15rem 1.1rem 0.55rem !important;
@@ -182,6 +296,16 @@ def apply_dashboard_polish() -> None:
           .block-container {
             padding-left: .8rem !important;
             padding-right: .8rem !important;
+          }
+
+          .week-report-head,
+          .session-load-beta-head,
+          .mr-page-header-row,
+          .year-report-head,
+          .month-report-head,
+          .player-report-head {
+            flex-direction: row !important;
+            text-align: left !important;
           }
         }
         </style>

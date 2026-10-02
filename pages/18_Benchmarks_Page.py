@@ -20,7 +20,7 @@ from roles import (
     render_sidebar_navigation,
     require_auth,
 )
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Benchmarks", layout="wide", initial_sidebar_state="expanded")
@@ -2969,6 +2969,7 @@ def render_match_averages_tab(sb) -> None:
 
 def main() -> None:
     render_css()
+    apply_dashboard_polish()
     require_auth()
     sb = get_sb()
     if sb is None:

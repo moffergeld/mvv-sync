@@ -20,7 +20,7 @@ from report_monitoring import (
 )
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from speed_outlier_utils import sanitize_progressive_max_speed
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 
 st.set_page_config(page_title="Month Report", layout="wide", initial_sidebar_state="expanded")
@@ -1073,6 +1073,7 @@ def render_html_panel(title: str, html_content: str, subtitle: str | None = None
 
 def main() -> None:
     render_css()
+    apply_dashboard_polish()
     require_auth()
 
     sb = get_sb_client()

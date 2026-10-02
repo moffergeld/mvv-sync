@@ -9,7 +9,7 @@ from pages.Subscripts.wr_common import fetch_active_players_cached
 from pages.Subscripts.wr_tab_day import render_wellness_rpe_tab_day
 from pages.Subscripts.wr_tab_week import render_wellness_rpe_tab_week
 from pages.Subscripts.wr_tab_checklist import render_wellness_rpe_tab_checklist
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 st.set_page_config(page_title="Wellness & RPE Overview", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
@@ -426,6 +426,7 @@ def render_staff_wellness_rpe_page():
 
     # Inject CSS
     st.markdown(MVV_CSS, unsafe_allow_html=True)
+    apply_dashboard_polish()
 
     # cache key per project/env
     sb_url_key = str(st.secrets.get("SUPABASE_URL", "sb"))

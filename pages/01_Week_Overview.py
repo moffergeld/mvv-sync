@@ -14,6 +14,10 @@ import streamlit as st
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from pages.Subscripts.week_session_labels import md_label as desktop_md_label
+from pages.Subscripts.week_session_labels import moment_axis as desktop_moment_axis
+from pages.Subscripts.week_session_labels import session_time as desktop_session_time
+from pages.Subscripts.week_session_labels import source_value as session_source_value
 from report_generator import generate_week_report
 from report_monitoring import (
     WELLNESS_PARAMETER_SPECS,
@@ -497,17 +501,7 @@ def _session_short_code(type_value: object) -> str:
 
 
 def _extra_metric_value(value: object, *keys: str) -> str:
-    if not isinstance(value, dict):
-        return ""
-    normalized = {
-        str(key).lower().replace(" ", ""): item
-        for key, item in value.items()
-    }
-    for key in keys:
-        item = normalized.get(key.lower().replace(" ", ""))
-        if item is not None and str(item).strip():
-            return str(item).strip()
-    return ""
+    return session_source_value(value, *keys)
 
 
 def _session_identity(row: pd.Series) -> str:
@@ -646,6 +640,8 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
     df["session_category"] = df["type"].apply(_session_category)
     df["session_key"] = df.apply(_session_identity, axis=1)
     df["session_label"] = df.apply(_session_label, axis=1)
+    df["md_label"] = df.apply(lambda row: desktop_md_label(row.get("extra_metrics"), row.get("type")), axis=1)
+    df["session_time"] = df["extra_metrics"].apply(desktop_session_time)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     return df
 
@@ -891,7 +887,7 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     player_session = (
         week_df.groupby(
-            ["datum", "type", "session_category", "session_key", "session_label", "player_name"],
+            ["datum", "type", "session_category", "session_key", "session_label", "md_label", "session_time", "player_name"],
             dropna=False,
         )
         .agg(
@@ -924,7 +920,7 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
 
     grouped = (
         player_session.groupby(
-            ["datum", "type", "session_category", "session_key", "session_label"],
+            ["datum", "type", "session_category", "session_key", "session_label", "md_label", "session_time"],
             dropna=False,
         )
         .agg(player_count=("player_name", "nunique"))
@@ -933,7 +929,7 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
     for metric in metric_columns:
         stats = (
             player_session.groupby(
-                ["datum", "type", "session_category", "session_key", "session_label"],
+                ["datum", "type", "session_category", "session_key", "session_label", "md_label", "session_time"],
                 dropna=False,
             )[metric]
             .agg(["mean", "std"])
@@ -942,28 +938,28 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
         )
         grouped = grouped.merge(
             stats,
-            on=["datum", "type", "session_category", "session_key", "session_label"],
+            on=["datum", "type", "session_category", "session_key", "session_label", "md_label", "session_time"],
             how="left",
         )
 
     grouped["session_display"] = grouped["type"].apply(_session_display)
     grouped["session_sort"] = grouped["type"].apply(_session_sort_value)
-    grouped = grouped.sort_values(["datum", "session_sort", "session_display"]).reset_index(drop=True)
+    grouped["session_time_sort"] = grouped["session_time"].replace("", "99:99")
+    grouped = grouped.sort_values(["datum", "session_time_sort", "session_sort", "session_display"]).reset_index(drop=True)
     grouped["event_index"] = grouped.groupby("datum").cumcount() + 1
     grouped["label"] = grouped["datum"].dt.strftime("%d/%m")
     grouped["day_label"] = grouped["datum"].apply(_weekday_label)
     grouped["session_code"] = grouped["type"].apply(_session_short_code)
     grouped["event_group"] = grouped["session_category"].fillna("Training").astype(str)
-    grouped["events_in_day"] = grouped.groupby("datum")["datum"].transform("size")
+    axis_rows = desktop_moment_axis(grouped.to_dict("records"))
+    for column in ("events_in_day", "moment_index", "group_label", "moment_label"):
+        grouped[column] = [row[column] for row in axis_rows]
     grouped["session_code_display"] = grouped.apply(
         lambda row: row["session_code"] if int(row.get("events_in_day", 1) or 1) > 1 else ("M" if row["event_group"] == "Match" else "T"),
         axis=1,
     )
-    grouped["label"] = grouped.apply(
-        lambda row: f"{row['datum']:%d/%m} · {row['session_label']}",
-        axis=1,
-    )
-    return grouped
+    grouped["label"] = grouped["session_label"]
+    return grouped.drop(columns=["session_time_sort"])
 
 
 def build_week_type_table(week_df: pd.DataFrame) -> pd.DataFrame:
@@ -1167,7 +1163,7 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         fig.update_layout(height=460, paper_bgcolor="rgba(0,0,0,0)")
         return fig
 
-    labels = session_stats["label"]
+    labels = [session_stats["group_label"].tolist(), session_stats["moment_label"].tolist()]
     fig.add_trace(
         go.Bar(
             name="Total Distance",
@@ -1475,9 +1471,6 @@ def main() -> None:
                 <h1 class="week-report-title">Weekoverzicht</h1>
                 <div class="week-report-kicker">MVV Maastricht | GPS, Wellness &amp; RPE</div>
               </div>
-            </div>
-            <div class="week-report-copy">
-              Hetzelfde weekbeeld als in de MVV-desktopapp: volledige live sessies, spelersbelasting, wellness en RPE in één overzicht.
             </div>
             """,
             unsafe_allow_html=True,

@@ -21,7 +21,7 @@ from pages.Subscripts.gps_import_tab_export import tab_export_main
 from pages.Subscripts.gps_import_tab_manual import tab_manual_add_main
 from pages.Subscripts.gps_import_tab_matches import tab_matches_main
 from roles import render_sidebar_footer, render_sidebar_navigation
-from utils.streamlit_ui import apply_streamlit_chrome
+from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
 st.set_page_config(page_title="GPS Import | MVV Dashboard", layout="wide", initial_sidebar_state="expanded")
 apply_streamlit_chrome()
@@ -522,6 +522,7 @@ f"""
 """,
 unsafe_allow_html=True,
 )
+apply_dashboard_polish()
 
 
 # ============================================================
