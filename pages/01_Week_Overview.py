@@ -1309,13 +1309,12 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         ("total_distance_zone_6_mean", "Zone 6", "#E84664"),
     ):
         fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 name=name,
                 x=labels,
                 y=session_stats[column],
-                mode="lines+markers",
-                line=dict(color=color, width=3),
-                marker=dict(size=7, symbol="circle", line=dict(color="#101827", width=1.5)),
+                marker=dict(color=color, line=dict(color="#101827", width=1)),
+                offsetgroup=name,
                 hovertemplate=f"%{{x}}<br>{name} %{{y:,.0f}} m<extra></extra>",
             ),
             row=2,
@@ -1329,7 +1328,9 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         font=dict(color=MVV_TEXT, size=12),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.08, xanchor="left", x=0),
+        barmode="group",
         bargap=0.42,
+        bargroupgap=0.12,
     )
     fig.update_annotations(font=dict(color=MVV_TEXT_SOFT, size=12), xanchor="left", x=0)
     fig.update_xaxes(showgrid=False, tickfont=dict(color=MVV_TEXT_SOFT), tickangle=0, automargin=True)
