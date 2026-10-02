@@ -7,7 +7,6 @@ from typing import Callable
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import report_monitoring as report_monitoring_module
 import requests
 import streamlit as st
 
@@ -17,14 +16,6 @@ from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_ur
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
 from pages.Subscripts.week_session_labels import source_value as session_source_value
-from report_generator import generate_week_report
-from report_monitoring import (
-    WELLNESS_PARAMETER_SPECS,
-    build_monitoring_dataset,
-    build_monitoring_grouped_summary,
-    build_monitoring_player_summary,
-    summarize_monitoring_dataset,
-)
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation, require_auth
 from speed_outlier_utils import sanitize_progressive_max_speed
 from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
@@ -46,9 +37,7 @@ MVV_TEXT = "#F8FAFC"
 MVV_TEXT_SOFT = "rgba(248,250,252,0.76)"
 MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
-BUILD_RPE_SESSION_DAY_SUMMARY = getattr(report_monitoring_module, "build_rpe_session_day_summary", None)
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
-WEEK_REPORT_HTML_REVISION = "REV-20260803D"
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -1461,19 +1450,6 @@ def build_cards_html(summary: dict[str, object], monitoring_summary: dict[str, o
     return _render_card_grid(cards)
 
 
-def build_monitoring_cards_html(monitoring_summary: dict[str, object]) -> str:
-    cards = [
-        (
-            label,
-            _format_decimal(monitoring_summary[column], 1),
-            f"Gemiddelde {label.lower()} in deze week",
-        )
-        for column, label in WELLNESS_PARAMETER_SPECS
-    ]
-    cards.append(("Avg RPE", _format_decimal(monitoring_summary["avg_rpe"], 1), "Gemiddelde team-RPE in deze week"))
-    return _render_card_grid(cards)
-
-
 def _render_card_grid(cards: list[tuple[str, str, str]]) -> str:
     html_blocks = []
     for label, value, foot in cards:
@@ -1535,11 +1511,6 @@ def render_html_panel(title: str, html_content: str, subtitle: str | None = None
 
 
 def main() -> None:
-    build_state_key = "_week_report_build_revision"
-    if st.session_state.get(build_state_key) != WEEK_REPORT_HTML_REVISION:
-        st.session_state[build_state_key] = WEEK_REPORT_HTML_REVISION
-        st.rerun()
-
     render_css()
     apply_dashboard_polish()
     require_auth()
@@ -1570,8 +1541,10 @@ def main() -> None:
         st.info("Geen Entire Session - Live-data gevonden voor het weekoverzicht.")
         st.stop()
 
-    history_df = build_week_history(history_source_df)
-    week_options = history_df.sort_values("week_start", ascending=False)["week_start"].tolist()
+    week_options = sorted(
+        (pd.Timestamp(value).normalize() for value in history_source_df["week_start"].dropna().unique()),
+        reverse=True,
+    )
     if not week_options:
         st.info("Geen weken beschikbaar in de Entire Session - Live-data.")
         st.stop()
@@ -1632,367 +1605,35 @@ def main() -> None:
                 unsafe_allow_html=True,
             )
 
-    report_style = "html"
-
     selected_week = pd.Timestamp(selected_week).normalize()
     week_end = selected_week + pd.Timedelta(days=6)
     week_df = fetch_summary_period_cached(access_token, selected_week.date().isoformat(), week_end.date().isoformat())
     week_df = exclude_goalkeepers(week_df, player_positions)
-    week_df = _merge_summary_context(week_df, history_source_df.loc[history_source_df["week_start"] == selected_week].copy())
     if week_df.empty:
         st.info("Geen data gevonden voor deze week.")
         st.stop()
 
-    player_lookup = (
-        week_df.assign(player_id=week_df["player_id"].astype(str), player_name=week_df["player_name"].fillna("Onbekend").astype(str))
-        .drop_duplicates(subset=["player_id"])
-        .set_index("player_id")["player_name"]
-        .to_dict()
-    )
-    monitoring_df = build_monitoring_dataset(
-        SUPABASE_URL or "default",
-        sb,
-        selected_week.date(),
-        week_end.date(),
-        player_ids=week_df["player_id"].astype(str).tolist(),
-        player_lookup=player_lookup,
-    )
-    monitoring_summary = summarize_monitoring_dataset(monitoring_df)
-    monitoring_day_table = build_monitoring_grouped_summary(monitoring_df, "day")
-    monitoring_player_table = build_monitoring_player_summary(monitoring_df)
-    if callable(BUILD_RPE_SESSION_DAY_SUMMARY):
-        rpe_session_day_table = BUILD_RPE_SESSION_DAY_SUMMARY(
-            SUPABASE_URL or "default",
-            sb,
-            selected_week.date(),
-            week_end.date(),
-            player_ids=week_df["player_id"].astype(str).tolist(),
-        )
-    else:
-        rpe_session_day_table = pd.DataFrame()
-
-    day_table = build_week_day_table(week_df)
-    session_table = build_week_session_table(week_df)
-    day_stats = build_week_day_stats(week_df)
     session_stats = build_week_session_stats(week_df)
     player_table = build_week_player_table(week_df)
-    type_table = build_week_type_table(week_df)
     zone_df = build_zone_totals(week_df)
-    zone_day_table = build_week_zone_day_table(week_df)
-    zone_session_table = build_week_zone_session_table(week_df)
-    history_row = history_df.loc[history_df["week_start"] == selected_week]
-    summary = build_week_summary(week_df, history_row.iloc[0] if not history_row.empty else None)
-    notes = build_week_notes(summary, day_table, player_table)
-    if monitoring_summary["wellness_entries"]:
-        wellness_note = ", ".join(
-            f"{label.lower()} {_format_decimal(monitoring_summary[column], 1)}"
-            for column, label in WELLNESS_PARAMETER_SPECS
-        )
-        notes.append(f"Wellness gemiddeld: {wellness_note}.")
-    if monitoring_summary["rpe_entries"]:
-        notes.append(f"RPE gemiddeld: {_format_decimal(monitoring_summary['avg_rpe'], 1)}.")
-
-    badges = [
-        f"{summary['active_days']} actieve dagen",
-        f"{summary['training_sessions']} training sessions",
-        f"{summary['match_sessions']} match sessions",
-    ]
-    if pd.notna(summary["td_vs_prev"]):
-        badges.append(f"TD vs vorige 4 weken: {_format_signed_pct(summary['td_vs_prev'])}")
-    if pd.notna(summary["hsr_vs_prev"]):
-        badges.append(f"HSR vs vorige 4 weken: {_format_signed_pct(summary['hsr_vs_prev'])}")
-    st.markdown(
-        '<div class="week-report-badge-row">' +
-        "".join(f'<span class="week-report-badge">{escape(badge)}</span>' for badge in badges) +
-        "</div>",
-        unsafe_allow_html=True,
+    render_plot_panel(
+        "GPS & belasting per sessie",
+        build_session_load_chart(session_stats),
+        "Teamgemiddelde van veldspelers uit uitsluitend Entire Session - Live; dubbele sessies blijven apart.",
     )
 
-    selected_iso = selected_week.isocalendar()
-    pdf_state_key = (
-        f"week_report_pdf::{selected_week:%Y-%m-%d}::{report_style}::{WEEK_REPORT_HTML_REVISION}"
-    )
-    pdf_payload = st.session_state.get(pdf_state_key, {})
-    pdf_bytes = pdf_payload.get("data") if isinstance(pdf_payload, dict) else None
-    pdf_error = pdf_payload.get("error") if isinstance(pdf_payload, dict) else None
-
-    action_cols = st.columns([0.34, 0.34, 1.32], gap="large")
-    with action_cols[0]:
-        if st.button("Open dashboard", key="week_overview_back_bottom", width="stretch"):
-            st.switch_page("app.py")
-    with action_cols[1]:
-        if pdf_bytes:
-            st.download_button(
-                "Download weekoverzicht PDF",
-                data=pdf_bytes,
-                file_name=_report_file_name(_week_pdf_filename(selected_week), report_style, WEEK_REPORT_HTML_REVISION),
-                mime="application/pdf",
-                width="stretch",
-                key="week_report_pdf_download",
-            )
-        elif st.button("PDF voorbereiden", key="week_report_pdf_prepare", width="stretch"):
-            prepared_bytes: bytes | None = None
-            prepared_error: str | None = None
-            with st.spinner("Weekoverzicht PDF voorbereiden..."):
-                try:
-                    prepared_bytes = generate_week_report(
-                        report_style=report_style,
-                        report_revision=WEEK_REPORT_HTML_REVISION,
-                        week_label=_week_label(selected_week),
-                        iso_label=f"ISO week {selected_iso.year}-W{int(selected_iso.week):02d}",
-                        hero_week_title=f"Week {int(selected_iso.week)} {selected_iso.year}",
-                        hero_week_range=f"{selected_week:%d/%m/%Y} - {week_end:%d/%m/%Y}",
-                        summary=summary,
-                        monitoring_summary=monitoring_summary,
-                        day_table=day_table,
-                        session_table=session_table,
-                        day_stats=day_stats,
-                        session_stats=session_stats,
-                        type_table=type_table,
-                        player_table=player_table,
-                        zone_df=zone_df,
-                        zone_day_table=zone_day_table,
-                        zone_session_table=zone_session_table,
-                        monitoring_day_table=monitoring_day_table,
-                        rpe_session_day_table=rpe_session_day_table,
-                        monitoring_player_table=monitoring_player_table,
-                        notes=notes,
-                    )
-                except Exception as exc:
-                    prepared_error = str(exc).strip() or exc.__class__.__name__
-            if not prepared_bytes and not prepared_error:
-                prepared_error = "HTML/CSS PDF-export leverde geen downloadbaar bestand op."
-            st.session_state[pdf_state_key] = {"data": prepared_bytes, "error": prepared_error}
-            st.rerun()
-    with action_cols[2]:
-        if pdf_error:
-            st.warning(f"HTML/CSS PDF-export is nog niet beschikbaar: {pdf_error}")
-        elif not pdf_bytes:
-            st.caption("De PDF wordt pas opgebouwd wanneer je hem nodig hebt. Zo blijft de pagina sneller.")
-
-    st.markdown(build_cards_html(summary, monitoring_summary), unsafe_allow_html=True)
-
-    tab_overview, tab_spread, tab_monitoring, tab_leaders = st.tabs(["Weekbelasting", "Teamspreiding", "Wellness & RPE", "Spelers & notities"])
-
-    with tab_overview:
-        render_plot_panel(
-            "GPS & belasting per sessie",
-            build_session_load_chart(session_stats),
-            "Teamgemiddelde uit uitsluitend Entire Session - Live; dubbele sessies blijven apart.",
-        )
-
-        top_left, top_right = st.columns(2, gap="large")
-        with top_left:
-            render_plot_panel(
-                "Daily Team Distance",
-                build_daily_bar_chart(day_table, "total_distance", "Daily Team Total Distance", MVV_RED_DEEP, _format_distance),
-                f"Week {selected_week:%d/%m/%Y} - {week_end:%d/%m/%Y}",
-            )
-        with top_right:
-            render_plot_panel(
-                "Daily Team HSR",
-                build_daily_bar_chart(day_table, "hsr_hsd", "Daily Team HSR", MVV_RED_BRIGHT, _format_distance),
-                "Sprint plus high total_distance_zone_5 per dag",
-            )
-
+    support_cols = st.columns(2, gap="large")
+    with support_cols[0]:
         render_plot_panel(
             "Totale weekbelasting per speler",
             build_weekly_player_load_chart(player_table),
             "Opgetelde Total Distance van alle Entire Session - Live-sessies in de gekozen week",
         )
-
-        bottom_left, bottom_right = st.columns(2, gap="large")
-        with bottom_left:
-            render_plot_panel(
-                "Distance Zone Share",
-                build_zone_share_chart(zone_df),
-                "Verdeling over total_distance_zone_1_and_2, total_distance_zone_3, total_distance_zone_4, total_distance_zone_5 en high total_distance_zone_5",
-            )
-        with bottom_right:
-            render_html_panel(
-                "Training vs Match",
-                build_table_html(
-                    type_table,
-                    [
-                        ("session_category", "Type", None),
-                        ("active_players", "Players", _format_int),
-                        ("player_sessions", "Sessions", _format_int),
-                        ("total_distance", "Distance", _format_distance),
-                        ("hsr_hsd", "HSR", _format_distance),
-                        ("sprints", "Sprints", _format_int),
-                        ("maximum_speed", "Top Speed", _format_speed),
-                    ],
-                ),
-                "Weeksamenvatting per sessiecategorie",
-            )
-
-        render_html_panel(
-            "Weekdays",
-            build_table_html(
-                day_table,
-                [
-                    ("label", "Dag", None),
-                    ("active_players", "Players", _format_int),
-                    ("player_sessions", "Sessions", _format_int),
-                    ("total_distance", "Distance", _format_distance),
-                    ("hsr_hsd", "HSR", _format_distance),
-                    ("sprints", "Sprints", _format_int),
-                    ("distance_per_player", "Dist / Player", _format_distance),
-                ],
-            ),
-            "Dagselectie voor teamload binnen de gekozen week",
-        )
-
-    with tab_spread:
-        spread_row_one = st.columns(2, gap="large")
-        with spread_row_one[0]:
-            render_plot_panel(
-                "Player Avg Distance +/- SD",
-                build_error_bar_chart(day_stats, "total_distance_mean", "total_distance_std", "Daily Player Average Total Distance +/- SD", MVV_RED_DEEP, _format_distance),
-                "Per dag gemiddelde spelerload met spreiding",
-            )
-        with spread_row_one[1]:
-            render_plot_panel(
-                "Player Avg HSR +/- SD",
-                build_error_bar_chart(day_stats, "hsr_hsd_mean", "hsr_hsd_std", "Daily Player Average HSR +/- SD", MVV_RED_BRIGHT, _format_distance),
-                "Per dag gemiddelde high-speed distance met spreiding",
-            )
-
-        spread_row_two = st.columns(2, gap="large")
-        with spread_row_two[0]:
-            render_plot_panel(
-                "Player Avg Accel / Decel +/- SD",
-                build_grouped_error_chart(day_stats),
-                "Accelerations en decelerations als daggemiddelde per speler",
-            )
-        with spread_row_two[1]:
-            render_plot_panel(
-                "Player Avg Sprints +/- SD",
-                build_error_bar_chart(day_stats, "sprints_mean", "sprints_std", "Daily Player Average Sprints +/- SD", MVV_RED_DEEP, _format_int),
-                "Sprints per speler per dag met standaarddeviatie",
-            )
-
-    with tab_monitoring:
-        st.markdown(build_monitoring_cards_html(monitoring_summary), unsafe_allow_html=True)
-        if monitoring_df.empty:
-            st.info("Geen wellness- of RPE-data beschikbaar voor deze week.")
-        else:
-            monitoring_specs = [
-                ("muscle_soreness", "Muscle Soreness", "Gemiddelde muscle soreness per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
-                ("fatigue", "Fatigue", "Gemiddelde fatigue per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
-                ("sleep_quality", "Sleep Quality", "Gemiddelde sleep quality per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
-                ("stress", "Stress", "Gemiddelde stress per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
-                ("mood", "Mood", "Gemiddelde mood per dag", MVV_RED_DEEP, _format_decimal, ":.1f", (0, 10)),
-                ("avg_rpe", "Avg RPE", "Gemiddelde team-RPE per dag", MVV_RED_BRIGHT, _format_decimal, ":.1f", (0, 10)),
-            ]
-            for idx in range(0, len(monitoring_specs), 2):
-                cols = st.columns(2, gap="large")
-                for col_container, spec in zip(cols, monitoring_specs[idx : idx + 2]):
-                    column, label, subtitle, color, formatter, hover_format, y_range = spec
-                    with col_container:
-                        render_plot_panel(
-                            f"Daily {label} +/- SD",
-                            build_daily_bar_chart(
-                                monitoring_day_table,
-                                column,
-                                f"Daily Team {label}",
-                                color,
-                                formatter,
-                                hover_format=hover_format,
-                                y_range=y_range,
-                                error_column=f"{column}_std",
-                            ),
-                            subtitle,
-                        )
-
-            render_html_panel(
-                "Monitoring by Day",
-                build_table_html(
-                    monitoring_day_table,
-                    [
-                        ("label", "Dag", None),
-                        ("wellness_players", "Wellness Players", _format_int),
-                        ("rpe_players", "RPE Players", _format_int),
-                        ("muscle_soreness", "Muscle", _format_decimal),
-                        ("fatigue", "Fatigue", _format_decimal),
-                        ("sleep_quality", "Sleep", _format_decimal),
-                        ("stress", "Stress", _format_decimal),
-                        ("mood", "Mood", _format_decimal),
-                        ("readiness_score", "Readiness", _format_decimal),
-                        ("avg_rpe", "Avg RPE", _format_decimal),
-                    ],
-                ),
-                "Dagoverzicht van alle wellness-parameters, readiness en RPE",
-            )
-
-            render_html_panel(
-                "Monitoring Players",
-                build_table_html(
-                    monitoring_player_table.head(12),
-                    [
-                        ("player_name", "Speler", None),
-                        ("wellness_days", "Wellness Days", _format_int),
-                        ("rpe_days", "RPE Days", _format_int),
-                        ("muscle_soreness", "Muscle", _format_decimal),
-                        ("fatigue", "Fatigue", _format_decimal),
-                        ("sleep_quality", "Sleep", _format_decimal),
-                        ("stress", "Stress", _format_decimal),
-                        ("mood", "Mood", _format_decimal),
-                        ("readiness_score", "Readiness", _format_decimal),
-                        ("avg_rpe", "Avg RPE", _format_decimal),
-                    ],
-                ),
-                "Top 12 spelers op basis van monitoringvolume in deze week",
-            )
-
-    with tab_leaders:
-        leader_row = st.columns(3, gap="large")
-        with leader_row[0]:
-            render_plot_panel(
-                "Top 10 Total Distance",
-                build_leaderboard_chart(player_table, "total_distance", "Top 10 Players by Total Distance", _format_distance),
-                "Weekranking op totaal afgelegde afstand",
-            )
-        with leader_row[1]:
-            render_plot_panel(
-                "Top 10 HSR",
-                build_leaderboard_chart(player_table, "hsr_hsd", "Top 10 Players by HSR", _format_distance),
-                "Weekranking op high-speed distance",
-            )
-        with leader_row[2]:
-            render_plot_panel(
-                "Top 10 Sprints",
-                build_leaderboard_chart(player_table, "sprints", "Top 10 Players by Sprints", _format_int),
-                "Weekranking op sprintacties",
-            )
-
-        render_html_panel(
-            "Player Summary",
-            build_table_html(
-                player_table.head(12),
-                [
-                    ("player_name", "Speler", None),
-                    ("sessions", "Sessies", _format_int),
-                    ("total_distance", "Distance", _format_distance),
-                    ("hsr_hsd", "HSR", _format_distance),
-                    ("sprints", "Sprints", _format_int),
-                    ("distance_per_minute", "Dist / Min", _format_decimal),
-                    ("maximum_speed", "Top Speed", _format_speed),
-                ],
-            ),
-            "Top 12 spelers binnen deze week op totaal volume",
-        )
-
-        notes_html = (
-            '<ul class="week-report-note-list">'
-            + "".join(f"<li>{escape(note)}</li>" for note in notes)
-            + "</ul>"
-            + '<div class="week-report-note-foot">Belasting gebruikt uitsluitend Entire Session - Live (Summary). Ontbrekende metrics worden niet geschat.</div>'
-        )
-        render_html_panel(
-            "Week Notes",
-            notes_html,
-            "Korte staffsamenvatting van de geselecteerde week",
+    with support_cols[1]:
+        render_plot_panel(
+            "Distance Zone Share",
+            build_zone_share_chart(zone_df),
+            "Verdeling van de afstandszones binnen de gekozen week",
         )
 
     render_sidebar_footer(profile)
