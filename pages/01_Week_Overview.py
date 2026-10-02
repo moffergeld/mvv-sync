@@ -1213,7 +1213,6 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
         shared_xaxes=True,
         vertical_spacing=0.13,
         row_heights=[0.58, 0.42],
-        subplot_titles=("Totale afstand", "Intensieve afstand"),
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
     )
     required = {
@@ -1307,7 +1306,6 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
         shared_xaxes=True,
         vertical_spacing=0.13,
         row_heights=[0.56, 0.44],
-        subplot_titles=("Totale afstand", "Intensieve afstand"),
         specs=[[{"secondary_y": True}], [{"secondary_y": False}]],
     )
     required = {
@@ -1632,13 +1630,11 @@ def main() -> None:
     render_plot_panel(
         "GPS & belasting per sessie",
         build_session_load_chart(session_stats),
-        "Teamgemiddelde van veldspelers uit uitsluitend Entire Session - Live; dubbele sessies blijven apart.",
     )
 
     render_plot_panel(
         "Totale weekbelasting per speler",
         build_weekly_player_load_chart(player_table),
-        "Total Distance, HMLD en gegroepeerde Zone 5/6-belasting van alle Entire Session - Live-sessies.",
     )
 
     render_sidebar_footer(profile)
