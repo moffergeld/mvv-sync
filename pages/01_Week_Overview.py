@@ -15,7 +15,6 @@ from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
-from pages.Subscripts.week_session_labels import is_goalkeeper_position
 from pages.Subscripts.week_session_labels import moment_axis as desktop_moment_axis
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
 from pages.Subscripts.week_session_labels import source_value as session_source_value
@@ -505,11 +504,43 @@ def _extra_metric_value(value: object, *keys: str) -> str:
     return session_source_value(value, *keys)
 
 
+def _session_context(row: pd.Series) -> dict:
+    extra = row.get("extra_metrics")
+    context = dict(extra) if isinstance(extra, dict) else {}
+    direct_fields = {
+        "Session ID": row.get("session_id"),
+        "Session Title": row.get("session_title"),
+        "Session Type": row.get("session_type"),
+        "Session Start Time": row.get("session_start_time"),
+    }
+    for key, value in direct_fields.items():
+        if value is not None and not pd.isna(value) and str(value).strip():
+            context[key] = value
+
+    raw = context.get("STATSports Raw")
+    if isinstance(raw, dict):
+        session = raw.get("session") if isinstance(raw.get("session"), dict) else {}
+        details = session.get("sessionDetails") if isinstance(session.get("sessionDetails"), dict) else {}
+        player = raw.get("player") if isinstance(raw.get("player"), dict) else {}
+        player_details = player.get("playerDetails") if isinstance(player.get("playerDetails"), dict) else {}
+        raw_fields = {
+            "Session ID": session.get("id"),
+            "Session Title": session.get("sessionName") or session.get("name"),
+            "Session Type": details.get("sessionType"),
+            "Session Start Time": details.get("startTime"),
+            "Player Position": player_details.get("primaryPosition"),
+        }
+        for key, value in raw_fields.items():
+            if key not in context and value is not None and str(value).strip():
+                context[key] = value
+    return context
+
+
 def _row_source_value(row: pd.Series, direct_column: str, *keys: str) -> str:
     direct_value = row.get(direct_column)
     if direct_value is not None and not pd.isna(direct_value) and str(direct_value).strip():
         return str(direct_value).strip()
-    return _extra_metric_value(row.get("extra_metrics"), *keys)
+    return _extra_metric_value(_session_context(row), *keys)
 
 
 def _session_identity(row: pd.Series) -> str:
@@ -646,14 +677,8 @@ def _prepare_summary_period_df(raw: pd.DataFrame) -> pd.DataFrame:
     df["session_category"] = df["type"].apply(_session_category)
     df["session_key"] = df.apply(_session_identity, axis=1)
     df["session_label"] = df.apply(_session_label, axis=1)
-    df["md_label"] = df.apply(
-        lambda row: desktop_md_label(row.get("extra_metrics"), row.get("type"), row.get("session_type")),
-        axis=1,
-    )
-    df["session_time"] = df.apply(
-        lambda row: desktop_session_time(row.get("extra_metrics"), row.get("session_start_time")),
-        axis=1,
-    )
+    df["md_label"] = df.apply(lambda row: desktop_md_label(_session_context(row), row.get("type")), axis=1)
+    df["session_time"] = df.apply(lambda row: desktop_session_time(_session_context(row)), axis=1)
     df["week_start"] = (df["datum"] - pd.to_timedelta(df["datum"].dt.weekday, unit="D")).dt.normalize()
     return df
 
@@ -719,11 +744,25 @@ def exclude_goalkeepers(df: pd.DataFrame, positions: dict[str, str]) -> pd.DataF
         return df
     player_positions = df["player_id"].fillna("").astype(str).map(positions).fillna("")
     if "extra_metrics" in df.columns:
-        source_positions = df["extra_metrics"].apply(
-            lambda value: session_source_value(value, "Player Position", "playerPrimaryPosition", "primaryPosition")
+        source_positions = df.apply(
+            lambda row: session_source_value(
+                _session_context(row),
+                "Player Position",
+                "playerPrimaryPosition",
+                "primaryPosition",
+            ),
+            axis=1,
         )
         player_positions = player_positions.where(player_positions.astype(str).str.strip().ne(""), source_positions)
-    return df.loc[~player_positions.map(is_goalkeeper_position)].copy()
+    def is_goalkeeper(value: object) -> bool:
+        text = str(value or "").strip().lower()
+        normalized = re.sub(r"[^a-z]", "", text)
+        return bool(
+            re.search(r"(?:^|[^a-z])gk(?:$|[^a-z])", text)
+            or any(label in normalized for label in ("goalkeeper", "keeper", "doelman", "goalie"))
+        )
+
+    return df.loc[~player_positions.map(is_goalkeeper)].copy()
 
 
 def _week_label(week_start: pd.Timestamp) -> str:
