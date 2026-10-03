@@ -33,6 +33,8 @@ def check_forms_contracts() -> None:
             "load_hybrid_gps",
             "Entire Session - Live",
             "session_load_pages_main",
+            "time_in_heart_rate_zone_6_absolute",
+            "HR Exertion",
         ),
         "pages/05_ACWR.py": (
             "load_acwr_gps_cached",

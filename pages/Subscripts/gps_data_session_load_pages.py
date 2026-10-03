@@ -23,21 +23,14 @@ COL_DSL = "Dynamic Stress Load"
 COL_HR_EXERTION = "HR Exertion"
 COL_FATIGUE = "Fatigue Index"
 COL_EXTRA = "Extra Metrics"
-COL_ACC_TOT = "Total Accelerations"
-COL_ACC_HI = "High Accelerations"
-COL_DEC_TOT = "Total Decelerations"
-COL_DEC_HI = "High Decelerations"
 
-HR_COLS = ["HRzone1", "HRzone2", "HRzone3", "HRzone4", "HRzone5"]
-TRIMP_CANDIDATES = ["HRTrimp", "HR Trimp", "HRtrimp", "Trimp", "TRIMP"]
+HR_COLS = [f"HRzone{index}" for index in range(1, 7)]
 
 MVV_RED = "#C8102E"
 MVV_RED_LIGHT = "#E8213F"
 MVV_RED_SOFT = "rgba(232,33,63,0.28)"
 MVV_GREEN = "#00C46A"
 MVV_ORANGE = "#F5A623"
-MVV_BLUE = "#55A8FF"
-MVV_BLUE_SOFT = "#A8D0FF"
 TEXT = "#F5F7FB"
 TEXT_MUTED = "rgba(245,247,251,0.68)"
 GRID = "rgba(255,255,255,0.08)"
@@ -140,17 +133,9 @@ def _prepare_gps(df_gps: pd.DataFrame) -> pd.DataFrame:
         df["_event_norm"] = df[COL_EVENT].map(_normalize_event)
         df = df[df["_event_norm"] == "summary"].copy()
 
-    trimp_col = None
-    for c in TRIMP_CANDIDATES:
-        if c in df.columns:
-            trimp_col = c
-            break
-    df["TRIMP"] = pd.to_numeric(df[trimp_col], errors="coerce").fillna(0.0) if trimp_col else 0.0
-
     numeric_cols = [
         COL_TD, COL_SPRINT, COL_HS, COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE,
-        COL_ACC_TOT, COL_ACC_HI,
-        COL_DEC_TOT, COL_DEC_HI, *HR_COLS, "TRIMP",
+        *HR_COLS,
     ]
     for c in numeric_cols:
         if c in df.columns:
@@ -233,8 +218,7 @@ def _agg_by_player(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     metric_cols = [
-        COL_TD, COL_SPRINT, COL_HS, COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE, COL_ACC_TOT, COL_ACC_HI,
-        COL_DEC_TOT, COL_DEC_HI, *HR_COLS, "TRIMP",
+        COL_TD, COL_SPRINT, COL_HS, COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE, *HR_COLS,
     ]
     metric_cols = [c for c in metric_cols if c in df.columns]
     return df.groupby(COL_PLAYER, as_index=False)[metric_cols].sum()
@@ -572,34 +556,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
-def _plot_acc_dec(df_agg: pd.DataFrame):
-    have_cols = [c for c in [COL_ACC_TOT, COL_ACC_HI, COL_DEC_TOT, COL_DEC_HI] if c in df_agg.columns]
-    if not have_cols:
-        st.info("Geen Acceleration/Deceleration kolommen gevonden.")
-        return
-
-    sort_col = COL_ACC_TOT if COL_ACC_TOT in df_agg.columns else have_cols[0]
-    data = df_agg.sort_values(sort_col, ascending=False).reset_index(drop=True)
-    players = data[COL_PLAYER].astype(str).tolist()
-    x = np.arange(len(players))
-    w = 0.18
-
-    fig = go.Figure()
-    if COL_ACC_TOT in data.columns:
-        fig.add_bar(x=x - 1.5 * w, y=data[COL_ACC_TOT], width=w, name="Total Acc", marker_color=MVV_RED)
-    if COL_ACC_HI in data.columns:
-        fig.add_bar(x=x - 0.5 * w, y=data[COL_ACC_HI], width=w, name="High Acc", marker_color=MVV_RED_LIGHT)
-    if COL_DEC_TOT in data.columns:
-        fig.add_bar(x=x + 0.5 * w, y=data[COL_DEC_TOT], width=w, name="Total Dec", marker_color=MVV_BLUE)
-    if COL_DEC_HI in data.columns:
-        fig.add_bar(x=x + 1.5 * w, y=data[COL_DEC_HI], width=w, name="High Dec", marker_color=MVV_BLUE_SOFT)
-
-    fig.update_xaxes(tickvals=x, ticktext=players)
-    _style_fig(fig, title="Accelerations / Decelerations", y_title="Aantal (N)")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-
-
-def _plot_hr_trimp(df_agg: pd.DataFrame):
+def _plot_hr_zones(df_agg: pd.DataFrame):
     have_hr = [c for c in HR_COLS if c in df_agg.columns]
     has_exertion = COL_HR_EXERTION in df_agg.columns
     if not have_hr and not has_exertion:
@@ -613,7 +570,8 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
         "HRzone2": "#4F91A5",
         "HRzone3": "#69D5CB",
         "HRzone4": "#EDB45B",
-        "HRzone5": "#E84664",
+        "HRzone5": "#E9854F",
+        "HRzone6": "#E84664",
     }
 
     for zone in have_hr:
@@ -641,31 +599,6 @@ def _plot_hr_trimp(df_agg: pd.DataFrame):
 
     fig.update_layout(barmode="stack")
     _style_fig(fig, title="HR-zones & HR Exertion", y_title="Tijd in zone (min)", secondary_y_title="HR Exertion")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
-
-
-def _plot_hmld_dsl(df_agg: pd.DataFrame):
-    available = [column for column in (COL_HMLD, COL_DSL, COL_HR_EXERTION, COL_FATIGUE) if column in df_agg.columns]
-    if not available:
-        st.info("Geen HMLD- of interne-loaddata beschikbaar voor deze sessie.")
-        return
-
-    data = df_agg.sort_values(COL_HMLD if COL_HMLD in df_agg.columns else available[0], ascending=False)
-    players = data[COL_PLAYER].astype(str).tolist()
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    if COL_HMLD in data.columns:
-        fig.add_bar(x=players, y=data[COL_HMLD], name="HMLD", marker_color="#69D5CB", secondary_y=False)
-    for column, label, color in (
-        (COL_DSL, "Dynamic Stress Load", MVV_RED),
-        (COL_HR_EXERTION, "HR Exertion", MVV_ORANGE),
-        (COL_FATIGUE, "Fatigue Index", "#C58AF1"),
-    ):
-        if column in data.columns:
-            fig.add_trace(
-                go.Scatter(x=players, y=data[column], mode="lines+markers", name=label, line=dict(color=color, width=2.5)),
-                secondary_y=True,
-            )
-    _style_fig(fig, title="HMLD & interne load", y_title="HMLD (m)", secondary_y_title="Load-index")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
@@ -743,7 +676,7 @@ def session_load_pages_main(
     st.markdown("### GPS & belasting per speler")
     _plot_player_gps_load(df_agg)
     st.markdown("### HR-zones & HR Exertion")
-    _plot_hr_trimp(df_agg)
+    _plot_hr_zones(df_agg)
     load_cols = st.columns(2, gap="large")
     with load_cols[0]:
         _plot_single_metric(df_agg, COL_DSL, "Dynamic Stress Load", MVV_RED, 1)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import re
 
 import pandas as pd
 import requests
@@ -225,16 +226,12 @@ GPS_SELECT_COLS = [
     "heart_rate_exertion",
     "fatigue_index",
     "player_load_two_dimensional",
-    "total_accelerations",
-    "high_accelerations",
-    "total_decelerations",
-    "high_decelerations",
-    "heart_rate_zone_1",
-    "heart_rate_zone_2",
-    "heart_rate_zone_3",
-    "heart_rate_zone_4",
-    "heart_rate_zone_5",
-    "heart_rate_training_impulse",
+    "time_in_heart_rate_zone_1_absolute",
+    "time_in_heart_rate_zone_2_absolute",
+    "time_in_heart_rate_zone_3_absolute",
+    "time_in_heart_rate_zone_4_absolute",
+    "time_in_heart_rate_zone_5_absolute",
+    "time_in_heart_rate_zone_6_absolute",
 ]
 
 DB_TO_DASH = {
@@ -255,19 +252,37 @@ DB_TO_DASH = {
     "heart_rate_exertion": "HR Exertion",
     "fatigue_index": "Fatigue Index",
     "player_load_two_dimensional": "playerload2D",
-    "total_accelerations": "Total Accelerations",
-    "high_accelerations": "High Accelerations",
-    "total_decelerations": "Total Decelerations",
-    "high_decelerations": "High Decelerations",
-    "heart_rate_zone_1": "HRzone1",
-    "heart_rate_zone_2": "HRzone2",
-    "heart_rate_zone_3": "HRzone3",
-    "heart_rate_zone_4": "HRzone4",
-    "heart_rate_zone_5": "HRzone5",
-    "heart_rate_training_impulse": "HRtrimp",
+    "time_in_heart_rate_zone_1_absolute": "HRzone1",
+    "time_in_heart_rate_zone_2_absolute": "HRzone2",
+    "time_in_heart_rate_zone_3_absolute": "HRzone3",
+    "time_in_heart_rate_zone_4_absolute": "HRzone4",
+    "time_in_heart_rate_zone_5_absolute": "HRzone5",
+    "time_in_heart_rate_zone_6_absolute": "HRzone6",
     "week": "Week",
     "year": "Year",
 }
+
+HR_TIME_COLUMNS = [f"time_in_heart_rate_zone_{index}_absolute" for index in range(1, 7)]
+
+
+def _duration_seconds(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if pd.notna(value) else None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+        return float(raw)
+    match = re.fullmatch(r"(?:(\d+)\s+days?\s+)?(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?", raw, re.I)
+    if not match:
+        return None
+    days = int(match.group(1) or 0)
+    first = int(match.group(2))
+    second = int(match.group(3))
+    third = float(match.group(4)) if match.group(4) is not None else None
+    return days * 86400 + (first * 60 + second if third is None else first * 3600 + second * 60 + third)
 
 
 def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -280,12 +295,16 @@ def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     for numeric_col in [
         col
         for col in GPS_SELECT_COLS
-        if col not in {"datum", "player_id", "player_name", "type", "event", "extra_metrics"}
+        if col not in {"datum", "player_id", "player_name", "type", "event", "extra_metrics", *HR_TIME_COLUMNS}
     ]:
         if numeric_col in df.columns:
             df[numeric_col] = pd.to_numeric(df[numeric_col], errors="coerce")
 
     dashboard_df = df.rename(columns=DB_TO_DASH)
+    for index in range(1, 7):
+        column = f"HRzone{index}"
+        if column in dashboard_df.columns:
+            dashboard_df[column] = dashboard_df[column].map(_duration_seconds)
     if "Datum" in dashboard_df.columns:
         dashboard_df["Datum"] = dashboard_df["Datum"].dt.date
     return dashboard_df
