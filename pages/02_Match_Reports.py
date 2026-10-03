@@ -380,31 +380,6 @@ st.markdown(
         color: rgba(255,255,255,.82);
     }
 
-    .mr-kpi-card {
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 8px;
-        padding: 14px 16px;
-        background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.018) 100%);
-        box-shadow: 0 10px 24px rgba(0,0,0,.14);
-        min-height: 96px;
-    }
-
-    .mr-kpi-label {
-        font-size: 11px;
-        letter-spacing: .22em;
-        text-transform: uppercase;
-        font-weight: 800;
-        color: rgba(255,255,255,.62);
-        margin-bottom: 10px;
-    }
-
-    .mr-kpi-value {
-        font-size: 20px;
-        line-height: 1.1;
-        font-weight: 850;
-        color: #FFFFFF;
-    }
-
     div[data-testid="stTabs"] button {
         border-radius: 999px !important;
         padding: 10px 16px !important;
@@ -591,18 +566,6 @@ def _percentile_color(val: float, q25: float, q50: float, q75: float) -> str:
     return green
 
 
-def _kpi_card(label: str, value: str) -> None:
-    st.markdown(
-        f"""
-        <div class="mr-kpi-card">
-            <div class="mr-kpi-label">{label}</div>
-            <div class="mr-kpi-value">{value}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def _ha_tag(x: str) -> str:
     x2 = _norm_text(x)
     return "A" if x2.startswith("a") else "H"
@@ -771,29 +734,6 @@ def build_phase_df(df_events: pd.DataFrame, phase: str) -> pd.DataFrame:
 
     g = g.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return g
-
-
-# -----------------------------
-# KPI row
-# -----------------------------
-def render_kpi_row(df_phase: pd.DataFrame) -> None:
-    if df_phase.empty:
-        return
-
-    n_players = len(df_phase)
-    med_td = float(df_phase[COL_TD].median()) if COL_TD in df_phase.columns else 0.0
-    med_spr = float(df_phase[COL_SPR].median()) if COL_SPR in df_phase.columns else 0.0
-    peak_speed = float(df_phase[COL_MAX].max()) if COL_MAX in df_phase.columns else 0.0
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        _kpi_card("Spelers", str(n_players))
-    with c2:
-        _kpi_card("Mediaan TD", f"{_fmt_int0(med_td)} m")
-    with c3:
-        _kpi_card("Mediaan Zone 5", f"{_fmt_int0(med_spr)} m")
-    with c4:
-        _kpi_card("Peak Speed", f"{_fmt_max_speed2(peak_speed)}")
 
 
 def render_monitoring_summary_row(summary: dict[str, Any]) -> None:
@@ -1294,7 +1234,7 @@ def main() -> None:
                 "Wedstrijdtype",
                 options=match_type_options,
                 index=0,
-                key="mr_match_type_filter",
+                key="mr_match_type_filter_v2",
             )
 
         filtered_matches = matches_df.copy()
@@ -1305,20 +1245,19 @@ def main() -> None:
             st.info("Geen wedstrijden gevonden voor dit wedstrijdtype.")
             st.stop()
 
-        opponents = sorted(
-            [
-                o
-                for o in filtered_matches["opponent"].dropna().astype(str).unique().tolist()
-                if o.strip()
-            ],
-            key=lambda x: x.lower(),
+        opponents = (
+            filtered_matches.assign(opponent=filtered_matches["opponent"].fillna("").astype(str).str.strip())
+            .loc[lambda frame: frame["opponent"].ne("")]
+            .sort_values(["match_date", "match_id"], ascending=[False, False])
+            .drop_duplicates("opponent")["opponent"]
+            .tolist()
         )
         if not opponents:
             st.info("Geen geldige tegenstanders gevonden voor dit wedstrijdtype.")
             st.stop()
 
         with select_b:
-            sel_opp = st.selectbox("Tegenstander", options=opponents, index=0, key="mr_opp")
+            sel_opp = st.selectbox("Tegenstander", options=opponents, index=0, key="mr_opp_v2")
 
         df_opp = (
             filtered_matches[filtered_matches["opponent"].astype(str) == str(sel_opp)]
@@ -1332,7 +1271,7 @@ def main() -> None:
             st.stop()
 
         with select_c:
-            sel_date_label = st.selectbox("Wedstrijd", options=date_options, index=0, key="mr_date")
+            sel_date_label = st.selectbox("Wedstrijd", options=date_options, index=0, key="mr_date_v2")
 
     match_row = df_opp[df_opp["date_label"] == sel_date_label].iloc[0]
     match_id = int(match_row["match_id"])
@@ -1358,8 +1297,6 @@ def main() -> None:
     if df_phase.empty:
         st.info("Geen data voor deze fase.")
         st.stop()
-
-    render_kpi_row(df_phase)
 
     st.markdown("### Belastingsoverzicht")
     plot_match_load_overview(df_phase, phase)
