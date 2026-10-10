@@ -70,6 +70,21 @@ class AcwrSharedTests(unittest.TestCase):
         self.assertEqual(len(weekly), 3)
         self.assertTrue(pd.isna(weekly.iloc[1]["total_distance"]))
 
+    def test_name_variants_do_not_create_duplicate_week_labels(self):
+        source = pd.DataFrame(
+            [
+                {"player_id": "p1", "player_name": "Speler Oud", "datum": "2026-09-28", "total_distance": 1000, "total_distance_zone_5": 50, "total_distance_zone_6": 10, "high_metabolic_load_distance": 200},
+                {"player_id": "p1", "player_name": "Speler Nieuw", "datum": "2026-09-30", "total_distance": 2000, "total_distance_zone_5": 70, "total_distance_zone_6": 20, "high_metabolic_load_distance": 300},
+                {"player_id": "p1", "player_name": "Speler Nieuw", "datum": "2026-10-05", "total_distance": 1500, "total_distance_zone_5": 60, "total_distance_zone_6": 15, "high_metabolic_load_distance": 250},
+            ]
+        )
+
+        weekly = build_weekly_loads(source, through_week=pd.Timestamp("2026-10-05"))
+
+        self.assertEqual(weekly["week_start"].nunique(), len(weekly))
+        self.assertEqual(float(weekly.iloc[0]["total_distance"]), 3000)
+        self.assertEqual(weekly["player_name"].unique().tolist(), ["Speler Nieuw"])
+
 
 if __name__ == "__main__":
     unittest.main()

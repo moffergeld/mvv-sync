@@ -97,15 +97,23 @@ def build_weekly_loads(gps_df: pd.DataFrame, *, through_week: pd.Timestamp | Non
     if work.empty:
         return pd.DataFrame(columns=columns)
     work["player_id"] = work["player_id"].astype(str)
-    work["player_name"] = work["player_name"].fillna(work["player_id"]).astype(str)
+    work["player_name"] = work["player_name"].fillna("").astype(str).str.strip()
+    work["player_name"] = work["player_name"].where(work["player_name"].ne(""), work["player_id"])
     for metric in ACWR_METRICS:
         work[metric] = pd.to_numeric(work.get(metric), errors="coerce")
     work["week_start"] = work["datum"] - pd.to_timedelta(work["datum"].dt.weekday, unit="D")
-    grouped = (
-        work.groupby(["week_start", "player_id", "player_name"], as_index=False)[list(ACWR_METRICS)]
-        .sum(min_count=1)
-        .sort_values(["player_name", "week_start"])
+    player_names = (
+        work.sort_values("datum")
+        .drop_duplicates("player_id", keep="last")
+        .set_index("player_id")["player_name"]
+        .to_dict()
     )
+    grouped = (
+        work.groupby(["week_start", "player_id"], as_index=False)[list(ACWR_METRICS)]
+        .sum(min_count=1)
+        .sort_values(["player_id", "week_start"])
+    )
+    grouped["player_name"] = grouped["player_id"].map(player_names).fillna(grouped["player_id"])
     calendar_end = (
         pd.Timestamp(through_week).normalize()
         if through_week is not None
@@ -117,7 +125,7 @@ def build_weekly_loads(gps_df: pd.DataFrame, *, through_week: pd.Timestamp | Non
         first_week = pd.Timestamp(player["week_start"].min()).normalize()
         if first_week > calendar_end:
             continue
-        player_name = str(player["player_name"].dropna().iloc[-1])
+        player_name = str(player_names.get(str(player_id)) or player_id)
         player = player.set_index("week_start").reindex(pd.date_range(first_week, calendar_end, freq="7D"))
         player.index.name = "week_start"
         player["player_id"] = str(player_id)
