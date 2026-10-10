@@ -40,6 +40,8 @@ def check_forms_contracts() -> None:
             "load_acwr_gps_cached",
             "ACWR_METRICS",
             "metric_chart",
+            "fetch_active_player_ids_cached",
+            "include_active_players",
         ),
         "pages/07_Player_Monitor.py": (
             "build_player_monitor",

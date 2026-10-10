@@ -16,7 +16,9 @@ from pages.Subscripts.acwr_shared import (
     current_week_start,
     default_history_start,
     exclude_goalkeepers,
+    fetch_active_player_ids_cached,
     fetch_player_positions_cached,
+    include_active_players,
     load_acwr_gps_cached,
 )
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
@@ -118,16 +120,20 @@ def main() -> None:
         with st.spinner("ACWR-historie laden..."):
             raw = load_acwr_gps_cached(str(token), default_history_start(today).isoformat(), today.isoformat())
             positions = fetch_player_positions_cached(sb, str(token))
-            weekly = build_weekly_loads(exclude_goalkeepers(raw, positions), through_week=current_week_start(today))
+            active_player_ids = fetch_active_player_ids_cached(sb, str(token))
+            active_outfield = include_active_players(exclude_goalkeepers(raw, positions), active_player_ids)
+            weekly = build_weekly_loads(active_outfield, through_week=current_week_start(today))
             history = add_acwr_columns(weekly, mode)
     except Exception as exc:
         st.error(f"ACWR-data kon niet worden geladen: {exc}")
         st.stop()
     if history.empty:
-        st.info("Nog geen bruikbare Entire Session - Live-data voor ACWR.")
+        st.info("Nog geen bruikbare Entire Session - Live-data voor actieve veldspelers.")
         st.stop()
 
     players = sorted(history["player_name"].dropna().astype(str).unique(), key=str.lower)
+    if st.session_state.get("acwr_page_player") not in players:
+        st.session_state.pop("acwr_page_player", None)
     selected = st.selectbox("Speler", players, key="acwr_page_player")
     player_df = history[history["player_name"].astype(str) == str(selected)].copy()
     current = player_df[player_df["week_start"] == current_week_start(today)]

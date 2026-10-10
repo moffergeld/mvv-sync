@@ -18,10 +18,23 @@ sys.modules.setdefault(
 sys.modules.setdefault("roles", SimpleNamespace(cookie_mgr=lambda: SimpleNamespace(get=lambda *_args, **_kwargs: None)))
 
 from acwr_settings import ACWR_MODE_STANDARD
-from pages.Subscripts.acwr_shared import build_player_monitor, build_weekly_loads
+from pages.Subscripts.acwr_shared import build_player_monitor, build_weekly_loads, include_active_players
 
 
 class AcwrSharedTests(unittest.TestCase):
+    def test_only_active_player_ids_remain_in_acwr_source(self):
+        source = pd.DataFrame(
+            [
+                {"player_id": "active", "player_name": "Actieve speler"},
+                {"player_id": "inactive", "player_name": "Inactieve speler"},
+                {"player_id": None, "player_name": "Niet gekoppeld"},
+            ]
+        )
+
+        filtered = include_active_players(source, {"active"})
+
+        self.assertEqual(filtered["player_name"].tolist(), ["Actieve speler"])
+
     def test_weekly_loads_aggregate_four_required_metrics(self):
         source = pd.DataFrame(
             [

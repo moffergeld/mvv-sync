@@ -59,6 +59,33 @@ def fetch_player_positions_cached(_sb, access_scope: str) -> dict[str, str]:
     }
 
 
+@st.cache_data(show_spinner=False, ttl=300)
+def fetch_active_player_ids_cached(_sb, access_scope: str) -> set[str]:
+    del access_scope
+    rows = (
+        _sb.table("players")
+        .select("player_id,is_active")
+        .eq("is_active", True)
+        .execute()
+        .data
+        or []
+    )
+    return {
+        str(row.get("player_id"))
+        for row in rows
+        if row.get("is_active") is True and str(row.get("player_id") or "").strip()
+    }
+
+
+def include_active_players(df: pd.DataFrame, active_player_ids: set[str]) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+    if not active_player_ids or "player_id" not in df.columns:
+        return df.iloc[0:0].copy()
+    player_ids = df["player_id"].fillna("").astype(str)
+    return df.loc[player_ids.isin({str(player_id) for player_id in active_player_ids})].copy()
+
+
 def _is_goalkeeper(value: object) -> bool:
     text = str(value or "").strip().lower()
     normalized = re.sub(r"[^a-z]", "", text)
