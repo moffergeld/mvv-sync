@@ -50,6 +50,8 @@ def check_forms_contracts() -> None:
             "select_match_phase_rows",
             "First Half",
             "Second Half",
+            "time_in_heart_rate_zone_6_absolute",
+            "HR Exertion",
         ),
         "tablet_app/app.py": (
             "tablet_cookie_mgr",

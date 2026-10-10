@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-import re
 
 import pandas as pd
 import requests
@@ -12,6 +11,7 @@ from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.acwr_shared import exclude_goalkeepers, fetch_player_positions_cached
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
+from pages.Subscripts.time_metrics import duration_seconds
 from roles import get_profile, is_staff_user, render_sidebar_footer, render_sidebar_navigation
 from utils.streamlit_ui import apply_dashboard_polish, apply_streamlit_chrome
 
@@ -265,26 +265,6 @@ DB_TO_DASH = {
 HR_TIME_COLUMNS = [f"time_in_heart_rate_zone_{index}_absolute" for index in range(1, 7)]
 
 
-def _duration_seconds(value: object) -> float | None:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value) if pd.notna(value) else None
-    raw = str(value).strip()
-    if not raw:
-        return None
-    if re.fullmatch(r"\d+(?:\.\d+)?", raw):
-        return float(raw)
-    match = re.fullmatch(r"(?:(\d+)\s+days?\s+)?(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?", raw, re.I)
-    if not match:
-        return None
-    days = int(match.group(1) or 0)
-    first = int(match.group(2))
-    second = int(match.group(3))
-    third = float(match.group(4)) if match.group(4) is not None else None
-    return days * 86400 + (first * 60 + second if third is None else first * 3600 + second * 60 + third)
-
-
 def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     if raw_df.empty:
         return pd.DataFrame(columns=list(DB_TO_DASH.values()))
@@ -304,7 +284,7 @@ def to_dashboard_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     for index in range(1, 7):
         column = f"HRzone{index}"
         if column in dashboard_df.columns:
-            dashboard_df[column] = dashboard_df[column].map(_duration_seconds)
+            dashboard_df[column] = dashboard_df[column].map(duration_seconds)
     if "Datum" in dashboard_df.columns:
         dashboard_df["Datum"] = dashboard_df["Datum"].dt.date
     return dashboard_df

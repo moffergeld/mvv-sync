@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
 
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps  # noqa: E402
 from pages.Subscripts.acwr_shared import exclude_goalkeepers, fetch_player_positions_cached  # noqa: E402
+from pages.Subscripts.time_metrics import normalize_hr_zone_seconds  # noqa: E402
 from pages.Subscripts.gps_event_rules import (  # noqa: E402
     MATCH_FIRST as EVENT_FIRST,
     MATCH_FULL as EVENT_FULL,
@@ -74,7 +75,15 @@ COL_DUR = "duration"
 COL_HMLD = "high_metabolic_load_distance"
 COL_DSL = "dynamic_stress_load"
 COL_HR_EXERTION = "heart_rate_exertion"
-HR_ZONE_COLS = [f"heart_rate_zone_{index}" for index in range(1, 6)]
+HR_ZONE_COLS = [
+    "time_in_heart_rate_zone_1_absolute",
+    "time_in_heart_rate_zone_2_absolute",
+    "time_in_heart_rate_zone_3_absolute",
+    "time_in_heart_rate_zone_4_absolute",
+    "time_in_heart_rate_zone_5_absolute",
+    "time_in_heart_rate_zone_6_absolute",
+]
+LEGACY_HR_ZONE_COLS = [f"heart_rate_zone_{index}" for index in range(1, 6)]
 
 LABEL_PLAYER = "Player"
 LABEL_TD = "TD"
@@ -681,7 +690,7 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
             "gps_id", "match_id", "player_id", "player_name", "datum", "type", "event", "extra_metrics",
             "duration", "total_distance", "total_distance_zone_4", "total_distance_zone_5",
             "total_distance_zone_6", "maximum_speed", "high_metabolic_load_distance",
-            "dynamic_stress_load", "heart_rate_exertion", *HR_ZONE_COLS,
+            "dynamic_stress_load", "heart_rate_exertion", *HR_ZONE_COLS, *LEGACY_HR_ZONE_COLS,
         ],
         session_type="Match",
         match_id=match_id,
@@ -691,9 +700,10 @@ def fetch_match_events_for_match(match_id: int) -> pd.DataFrame:
 
     df["datum"] = pd.to_datetime(df["datum"], errors="coerce").dt.date
 
-    for c in [COL_DUR, COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX, COL_HMLD, COL_DSL, COL_HR_EXERTION, *HR_ZONE_COLS]:
+    for c in [COL_DUR, COL_TD, COL_RUN, COL_SPR, COL_HSPR, COL_MAX, COL_HMLD, COL_DSL, COL_HR_EXERTION]:
         if c in df.columns:
             df[c] = _safe_num(df[c]).fillna(0.0)
+    df = normalize_hr_zone_seconds(df, HR_ZONE_COLS, LEGACY_HR_ZONE_COLS)
 
     if "event" in df.columns:
         df["event"] = df["event"].astype(str).str.strip()
@@ -922,13 +932,13 @@ def plot_match_internal_load(df: pd.DataFrame) -> None:
         st.info("Geen interne-load data voor deze fase.")
         return
     fig = make_subplots(specs=[[{"secondary_y": True}]])
-    colors = ["#526986", "#4F91A5", "#69D5CB", "#EDB45B", "#E84664"]
-    for column, color in zip(HR_ZONE_COLS, colors):
+    colors = ["#526986", "#4F91A5", "#69D5CB", "#EDB45B", "#E9854F", "#E84664"]
+    for zone_index, (column, color) in enumerate(zip(HR_ZONE_COLS, colors), start=1):
         fig.add_trace(
             go.Bar(
                 x=data[COL_PLAYER],
                 y=pd.to_numeric(data[column], errors="coerce").div(60),
-                name=column.replace("heart_rate_zone_", "HR Z"),
+                name=f"HR Z{zone_index}",
                 marker_color=color,
             ),
             secondary_y=False,
