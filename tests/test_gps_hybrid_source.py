@@ -77,6 +77,7 @@ class HybridGpsSourceTests(unittest.TestCase):
     def test_navigation_has_no_beta_or_management_routes(self):
         root = Path(__file__).resolve().parents[1]
         roles_source = (root / "roles.py").read_text(encoding="utf-8")
+        self.assertIn('("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE")', roles_source)
         self.assertNotIn("_Beta.py", roles_source)
         self.assertNotIn("09_Management.py", roles_source)
 

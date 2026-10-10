@@ -15,6 +15,12 @@ def check_forms_contracts() -> None:
     expected_markers = {
         "app.py": ("login_form", "form_submit_button"),
         "roles.py": ("extra_streamlit_components", "CookieManager", "mvv_cookie_mgr"),
+        "pages/04_Wellness_&_RPE_Overview.py": (
+            "render_staff_wellness_rpe_page",
+            "render_wellness_rpe_tab_day",
+            "render_wellness_rpe_tab_week",
+            "render_wellness_rpe_tab_checklist",
+        ),
         "pages/Subscripts/player_tab_forms.py": (
             "render_forms_tab",
             "asrm_form",

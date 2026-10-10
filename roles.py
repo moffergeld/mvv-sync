@@ -63,6 +63,7 @@ SIDEBAR_PAGE_LINKS = [
     ("pages/01_Week_Overview.py", "Dashboard"),
     ("pages/12_Session_Load.py", "Session Load"),
     ("pages/02_Match_Reports.py", "Match Report"),
+    ("pages/04_Wellness_&_RPE_Overview.py", "Wellness & RPE"),
     ("pages/05_ACWR.py", "ACWR"),
     ("pages/07_Player_Monitor.py", "Speler Monitor"),
     ("pages/06_GPS_Import.py", "GPS Import"),
