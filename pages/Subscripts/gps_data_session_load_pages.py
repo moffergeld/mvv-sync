@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from pages.Subscripts.median_reference import build_selected_medians, display_median_table, median_map
+
 COL_DATE = "Datum"
 COL_PLAYER = "Speler"
 COL_EVENT = "Event"
@@ -25,6 +27,17 @@ COL_FATIGUE = "Fatigue Index"
 COL_EXTRA = "Extra Metrics"
 
 HR_COLS = [f"HRzone{index}" for index in range(1, 7)]
+
+SESSION_MEDIAN_SPECS = [
+    (COL_TD, "Total Distance", "m", 1.0, 0),
+    (COL_HMLD, "HMLD", "m", 1.0, 0),
+    (COL_SPRINT, "Zone 5", "m", 1.0, 0),
+    (COL_HS, "Zone 6", "m", 1.0, 0),
+    *((column, column.replace("HRzone", "HR Z"), "min", 1 / 60, 1) for column in HR_COLS),
+    (COL_HR_EXERTION, "HR Exertion", "score", 1.0, 1),
+    (COL_DSL, "Dynamic Stress Load", "score", 1.0, 1),
+    (COL_FATIGUE, "Fatigue Index", "score", 1.0, 2),
+]
 
 MVV_RED = "#C8102E"
 MVV_RED_LIGHT = "#E8213F"
@@ -313,6 +326,34 @@ def _add_median_line(fig: go.Figure, y: float, label: str) -> None:
     )
 
 
+def _add_median_trace(
+    fig: go.Figure,
+    x_values: list[str],
+    value: float | None,
+    name: str,
+    color: str,
+    *,
+    row: int,
+    col: int,
+    secondary_y: bool = False,
+) -> None:
+    if value is None or not x_values:
+        return
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=[float(value)] * len(x_values),
+            name=f"Mediaan {name}",
+            mode="lines",
+            line=dict(color=color, width=2, dash="dot"),
+            hovertemplate=f"Mediaan {name}: %{{y:,.1f}}<extra></extra>",
+        ),
+        row=row,
+        col=col,
+        secondary_y=secondary_y,
+    )
+
+
 def _metric_card(label: str, value: str) -> None:
     st.markdown(
         f"""
@@ -414,7 +455,7 @@ def _plot_total_distance(df_agg: pd.DataFrame, groups: dict[str, list[str]] | No
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
-def _plot_player_gps_load(df_agg: pd.DataFrame) -> None:
+def _plot_player_gps_load(df_agg: pd.DataFrame, medians: dict[str, float]) -> None:
     required = {COL_PLAYER, COL_TD, COL_SPRINT, COL_HS, COL_HMLD}
     if df_agg.empty or not required.issubset(df_agg.columns):
         st.info("Geen complete TD-, Zone 5-, Zone 6- en HMLD-data voor deze sessie.")
@@ -469,6 +510,11 @@ def _plot_player_gps_load(df_agg: pd.DataFrame) -> None:
             row=2,
             col=1,
         )
+    player_axis = players.astype(str).tolist()
+    _add_median_trace(fig, player_axis, medians.get(COL_TD), "TD", "#AFC4DF", row=1, col=1)
+    _add_median_trace(fig, player_axis, medians.get(COL_HMLD), "HMLD", "#69D5CB", row=1, col=1, secondary_y=True)
+    _add_median_trace(fig, player_axis, medians.get(COL_SPRINT), "Zone 5", "#FFD17A", row=2, col=1)
+    _add_median_trace(fig, player_axis, medians.get(COL_HS), "Zone 6", "#FF7089", row=2, col=1)
     fig.update_layout(
         height=560,
         barmode="group",
@@ -487,7 +533,14 @@ def _plot_player_gps_load(df_agg: pd.DataFrame) -> None:
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
-def _plot_single_metric(df_agg: pd.DataFrame, column: str, label: str, color: str, decimals: int = 1) -> None:
+def _plot_single_metric(
+    df_agg: pd.DataFrame,
+    column: str,
+    label: str,
+    color: str,
+    decimals: int = 1,
+    median_value: float | None = None,
+) -> None:
     if column not in df_agg.columns:
         st.info(f"Geen {label}-data beschikbaar voor deze sessie.")
         return
@@ -495,7 +548,6 @@ def _plot_single_metric(df_agg: pd.DataFrame, column: str, label: str, color: st
     if data.empty:
         st.info(f"Geen {label}-data beschikbaar voor deze sessie.")
         return
-    mean = float(data[column].mean())
     fig = go.Figure(
         go.Bar(
             x=data[COL_PLAYER],
@@ -506,7 +558,14 @@ def _plot_single_metric(df_agg: pd.DataFrame, column: str, label: str, color: st
             hovertemplate=f"<b>%{{x}}</b><br>{label} %{{y:.{decimals}f}}<extra></extra>",
         )
     )
-    fig.add_hline(y=mean, line_dash="dash", line_color="#F8FAFC", annotation_text=f"Gem. {mean:.{decimals}f}")
+    if median_value is not None:
+        fig.add_hline(
+            y=float(median_value),
+            line_dash="dot",
+            line_color="#F8FAFC",
+            annotation_text=f"Mediaan selectie {float(median_value):.{decimals}f}",
+            annotation_position="top left",
+        )
     _style_fig(fig, title=label, y_title=label)
     fig.update_layout(showlegend=False, height=380)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
@@ -556,7 +615,7 @@ def _plot_sprint_hs(df_agg: pd.DataFrame, groups: dict[str, list[str]] | None):
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
-def _plot_hr_zones(df_agg: pd.DataFrame):
+def _plot_hr_zones(df_agg: pd.DataFrame, medians: dict[str, float]):
     have_hr = [c for c in HR_COLS if c in df_agg.columns]
     has_exertion = COL_HR_EXERTION in df_agg.columns
     if not have_hr and not has_exertion:
@@ -597,7 +656,31 @@ def _plot_hr_zones(df_agg: pd.DataFrame):
             secondary_y=True,
         )
 
-    fig.update_layout(barmode="stack")
+    player_axis = players.astype(str).tolist()
+    for zone in have_hr:
+        _add_median_trace(
+            fig,
+            player_axis,
+            medians.get(zone),
+            zone.replace("HRzone", "HR Z"),
+            color_map.get(zone, "#F8FAFC"),
+            row=1,
+            col=1,
+        )
+    if has_exertion:
+        _add_median_trace(
+            fig,
+            player_axis,
+            medians.get(COL_HR_EXERTION),
+            "HR Exertion",
+            "#C58AF1",
+            row=1,
+            col=1,
+            secondary_y=True,
+        )
+
+    # Grouping keeps every HR-zone median on the same honest baseline as its bars.
+    fig.update_layout(barmode="group")
     _style_fig(fig, title="HR-zones & HR Exertion", y_title="Tijd in zone (min)", secondary_y_title="HR Exertion")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
@@ -673,12 +756,44 @@ def session_load_pages_main(
         st.warning("Geen data om te aggregeren.")
         return
 
+    players_all = sorted(df_agg[COL_PLAYER].dropna().astype(str).unique(), key=str.lower)
+    session_index = session_options.index(selected_session)
+    median_key = f"sl_median_players_{selected_day.isoformat()}_{session_index}"
+    if median_key not in st.session_state:
+        st.session_state[median_key] = players_all
+    else:
+        st.session_state[median_key] = [
+            player for player in st.session_state[median_key] if player in players_all
+        ]
+    with st.expander("Mediaan referentiegroep", expanded=False):
+        selected_median_players = st.multiselect(
+            "Spelers voor de mediaan",
+            options=players_all,
+            key=median_key,
+            help="De grafieken blijven alle spelers tonen. Alleen de mediaanlijnen gebruiken deze selectie.",
+        )
+        st.caption(f"{len(selected_median_players)} van {len(players_all)} spelers geselecteerd voor de mediaan.")
+
+    median_summary = build_selected_medians(
+        df_agg,
+        selected_median_players,
+        SESSION_MEDIAN_SPECS,
+        player_column=COL_PLAYER,
+    )
+    medians = median_map(median_summary)
+
     st.markdown("### GPS & belasting per speler")
-    _plot_player_gps_load(df_agg)
+    _plot_player_gps_load(df_agg, medians)
     st.markdown("### HR-zones & HR Exertion")
-    _plot_hr_zones(df_agg)
+    _plot_hr_zones(df_agg, medians)
     load_cols = st.columns(2, gap="large")
     with load_cols[0]:
-        _plot_single_metric(df_agg, COL_DSL, "Dynamic Stress Load", MVV_RED, 1)
+        _plot_single_metric(df_agg, COL_DSL, "Dynamic Stress Load", MVV_RED, 1, medians.get(COL_DSL))
     with load_cols[1]:
-        _plot_single_metric(df_agg, COL_FATIGUE, "Fatigue Index", "#EDB45B", 2)
+        _plot_single_metric(df_agg, COL_FATIGUE, "Fatigue Index", "#EDB45B", 2, medians.get(COL_FATIGUE))
+
+    st.markdown("### Mediaanwaarden")
+    if median_summary.empty:
+        st.info("Selecteer minimaal één speler om mediaanwaarden te tonen.")
+    else:
+        st.table(display_median_table(median_summary))

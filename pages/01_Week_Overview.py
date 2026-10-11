@@ -12,6 +12,7 @@ import streamlit as st
 
 from auth_session import ensure_auth_restored, get_sb_client
 from pages.Subscripts.gps_hybrid_source import load_hybrid_gps
+from pages.Subscripts.median_reference import build_selected_medians, median_map
 from pages.Subscripts.mvv_branding import TEAM_HERO_BG, TEAM_LOGO, build_data_uri
 from pages.Subscripts.week_session_labels import md_label as desktop_md_label
 from pages.Subscripts.week_session_labels import session_time as desktop_session_time
@@ -44,6 +45,13 @@ MVV_TEXT_SOFT = "rgba(248,250,252,0.76)"
 MVV_TEXT_MUTED = "rgba(248,250,252,0.62)"
 MVV_GRID = "rgba(255,255,255,0.10)"
 MVV_PANEL_BG = "rgba(18, 25, 42, 0.92)"
+
+WEEK_LOAD_MEDIAN_SPECS = [
+    ("total_distance", "Total Distance", "m", 1.0, 0),
+    ("high_metabolic_load_distance", "HMLD", "m", 1.0, 0),
+    ("total_distance_zone_5", "Zone 5", "m", 1.0, 0),
+    ("total_distance_zone_6", "Zone 6", "m", 1.0, 0),
+]
 
 GPS_SELECT_COLS = [
     "gps_id",
@@ -1039,9 +1047,15 @@ def build_week_session_stats(week_df: pd.DataFrame) -> pd.DataFrame:
                 ["datum", "type", "session_category", "session_key", "session_label", "md_label", "session_time"],
                 dropna=False,
             )[metric]
-            .agg(["mean", "std"])
+            .agg(["mean", "std", "median"])
             .reset_index()
-            .rename(columns={"mean": f"{metric}_mean", "std": f"{metric}_std"})
+            .rename(
+                columns={
+                    "mean": f"{metric}_mean",
+                    "std": f"{metric}_std",
+                    "median": f"{metric}_median",
+                }
+            )
         )
         grouped = grouped.merge(
             stats,
@@ -1178,6 +1192,18 @@ def base_figure(title: str, height: int = 330) -> go.Figure:
     return fig
 
 
+def _median_line_trace(x_values: object, y_values: object, name: str, color: str) -> go.Scatter:
+    return go.Scatter(
+        x=x_values,
+        y=y_values,
+        name=f"Mediaan {name}",
+        mode="lines+markers",
+        line=dict(color=color, width=2, dash="dot"),
+        marker=dict(size=6, symbol="circle-open"),
+        hovertemplate=f"%{{x}}<br>Mediaan {name}: %{{y:,.1f}}<extra></extra>",
+    )
+
+
 def build_daily_bar_chart(
     day_table: pd.DataFrame,
     column: str,
@@ -1212,7 +1238,10 @@ def build_daily_bar_chart(
     return fig
 
 
-def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
+def build_weekly_player_load_chart(
+    player_table: pd.DataFrame,
+    median_values: dict[str, float] | None = None,
+) -> go.Figure:
     fig = make_subplots(
         rows=2,
         cols=1,
@@ -1282,6 +1311,28 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
             row=2,
             col=1,
         )
+    median_values = median_values or {}
+    player_axis = players.astype(str).tolist()
+    median_specs = (
+        ("total_distance", "TD", "#AFC4DF", 1, False),
+        ("high_metabolic_load_distance", "HMLD", "#69D5CB", 1, True),
+        ("total_distance_zone_5", "Zone 5", "#FFD17A", 2, False),
+        ("total_distance_zone_6", "Zone 6", "#FF7089", 2, False),
+    )
+    for metric, label, color, row, secondary_y in median_specs:
+        if metric not in median_values:
+            continue
+        fig.add_trace(
+            _median_line_trace(
+                player_axis,
+                [median_values[metric]] * len(player_axis),
+                label,
+                color,
+            ),
+            row=row,
+            col=1,
+            secondary_y=secondary_y,
+        )
     fig.update_layout(
         height=560,
         margin=dict(l=20, r=20, t=56, b=70),
@@ -1303,7 +1354,10 @@ def build_weekly_player_load_chart(player_table: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def build_weekly_wellness_chart(day_table: pd.DataFrame) -> go.Figure:
+def build_weekly_wellness_chart(
+    day_table: pd.DataFrame,
+    median_table: pd.DataFrame | None = None,
+) -> go.Figure:
     fig = base_figure("Wellness", height=380)
     if day_table is None or day_table.empty:
         return fig
@@ -1322,13 +1376,26 @@ def build_weekly_wellness_chart(day_table: pd.DataFrame) -> go.Figure:
                 hovertemplate=f"%{{x}}<br>{label}: %{{y:.1f}}<extra></extra>",
             )
         )
+        median_column = f"{column}_median"
+        if median_table is not None and not median_table.empty and median_column in median_table.columns:
+            fig.add_trace(
+                _median_line_trace(
+                    median_table["label"],
+                    median_table[median_column],
+                    label,
+                    color,
+                )
+            )
     fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.08, x=0))
     fig.update_yaxes(title_text="Score", range=[0, 10], dtick=2)
     fig.update_xaxes(showgrid=False)
     return fig
 
 
-def build_weekly_rpe_chart(rpe_table: pd.DataFrame) -> go.Figure:
+def build_weekly_rpe_chart(
+    rpe_table: pd.DataFrame,
+    median_table: pd.DataFrame | None = None,
+) -> go.Figure:
     fig = base_figure("RPE", height=380)
     if rpe_table is None or rpe_table.empty:
         return fig
@@ -1345,16 +1412,32 @@ def build_weekly_rpe_chart(rpe_table: pd.DataFrame) -> go.Figure:
             hovertemplate="%{x}<br>Gemiddelde RPE %{y:.1f}<br>%{customdata} spelers<extra></extra>",
         )
     )
+    if median_table is not None and not median_table.empty and "median_rpe" in median_table.columns:
+        median_labels = [
+            median_table["label"].astype(str).tolist(),
+            median_table["session_label"].astype(str).tolist(),
+        ]
+        fig.add_trace(
+            _median_line_trace(
+                median_labels,
+                median_table["median_rpe"],
+                "RPE",
+                "#E0B7FF",
+            )
+        )
     fig.add_hrect(y0=0, y1=4.5, fillcolor="#3FC58A", opacity=.08, line_width=0)
     fig.add_hrect(y0=4.5, y1=7.5, fillcolor="#EDB45B", opacity=.08, line_width=0)
     fig.add_hrect(y0=7.5, y1=10, fillcolor="#E84664", opacity=.08, line_width=0)
-    fig.update_layout(showlegend=False)
+    fig.update_layout(legend=dict(orientation="h", y=1.08, x=0))
     fig.update_yaxes(title_text="RPE", range=[0, 10], dtick=2)
     fig.update_xaxes(showgrid=False)
     return fig
 
 
-def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
+def build_session_load_chart(
+    session_stats: pd.DataFrame,
+    median_stats: pd.DataFrame | None = None,
+) -> go.Figure:
     """Team average per session with volume and intensity on honest separate scales."""
 
     fig = make_subplots(
@@ -1422,6 +1505,24 @@ def build_session_load_chart(session_stats: pd.DataFrame) -> go.Figure:
             row=2,
             col=1,
         )
+    if median_stats is not None and not median_stats.empty and "session_key" in median_stats.columns:
+        median_lookup = median_stats.drop_duplicates("session_key").set_index("session_key")
+        median_specs = (
+            ("total_distance_median", "TD", "#AFC4DF", 1, False),
+            ("high_metabolic_load_distance_median", "HMLD", "#69D5CB", 1, True),
+            ("total_distance_zone_5_median", "Zone 5", "#FFD17A", 2, False),
+            ("total_distance_zone_6_median", "Zone 6", "#FF7089", 2, False),
+        )
+        for column, label, color, row, secondary_y in median_specs:
+            if column not in median_lookup.columns:
+                continue
+            aligned = session_stats["session_key"].map(median_lookup[column])
+            fig.add_trace(
+                _median_line_trace(labels, aligned, label, color),
+                row=row,
+                col=1,
+                secondary_y=secondary_y,
+            )
     fig.update_layout(
         height=510,
         margin=dict(l=20, r=20, t=56, b=42),
@@ -1597,6 +1698,79 @@ def render_html_panel(title: str, html_content: str, subtitle: str | None = None
         st.markdown(html_content, unsafe_allow_html=True)
 
 
+def build_week_median_table(
+    weekly_medians: pd.DataFrame,
+    session_medians: pd.DataFrame,
+    wellness_medians: pd.DataFrame,
+    rpe_medians: pd.DataFrame,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+
+    for row in weekly_medians.itertuples(index=False):
+        rows.append(
+            {
+                "Onderdeel": "Totale weekbelasting",
+                "Moment": "Hele week",
+                "Parameter": row.parameter,
+                "Mediaan": _format_decimal(row.median, int(row.decimals)),
+                "Eenheid": row.unit,
+                "Spelers": int(row.players),
+            }
+        )
+
+    session_specs = (
+        ("total_distance_median", "Total Distance"),
+        ("high_metabolic_load_distance_median", "HMLD"),
+        ("total_distance_zone_5_median", "Zone 5"),
+        ("total_distance_zone_6_median", "Zone 6"),
+    )
+    for row in session_medians.itertuples(index=False):
+        moment = f"{row.group_label} | {row.moment_label}"
+        for column, label in session_specs:
+            value = getattr(row, column, float("nan"))
+            if pd.notna(value):
+                rows.append(
+                    {
+                        "Onderdeel": "GPS per sessie",
+                        "Moment": moment,
+                        "Parameter": label,
+                        "Mediaan": _format_decimal(value, 0),
+                        "Eenheid": "m",
+                        "Spelers": int(row.player_count),
+                    }
+                )
+
+    for row in wellness_medians.itertuples(index=False):
+        for column, label in WELLNESS_PARAMETER_SPECS:
+            value = getattr(row, f"{column}_median", float("nan"))
+            if pd.notna(value):
+                rows.append(
+                    {
+                        "Onderdeel": "Wellness",
+                        "Moment": str(row.label),
+                        "Parameter": label,
+                        "Mediaan": _format_decimal(value, 1),
+                        "Eenheid": "score",
+                        "Spelers": int(row.wellness_players),
+                    }
+                )
+
+    for row in rpe_medians.itertuples(index=False):
+        if pd.notna(row.median_rpe):
+            rows.append(
+                {
+                    "Onderdeel": "RPE",
+                    "Moment": f"{row.label} | {row.session_label}",
+                    "Parameter": "RPE",
+                    "Mediaan": _format_decimal(row.median_rpe, 1),
+                    "Eenheid": "score",
+                    "Spelers": int(row.rpe_players),
+                }
+            )
+
+    return pd.DataFrame(rows, columns=["Onderdeel", "Moment", "Parameter", "Mediaan", "Eenheid", "Spelers"])
+
+
 def main() -> None:
     render_css()
     apply_dashboard_polish()
@@ -1682,8 +1856,37 @@ def main() -> None:
         st.info("Geen data gevonden voor deze week.")
         st.stop()
 
+    players_all = sorted(week_df["player_name"].dropna().astype(str).unique(), key=str.lower)
+    iso_week = selected_week.isocalendar()
+    median_key = f"week_median_players_{iso_week.year}_{int(iso_week.week)}"
+    if median_key not in st.session_state:
+        st.session_state[median_key] = players_all
+    else:
+        st.session_state[median_key] = [
+            player for player in st.session_state[median_key] if player in players_all
+        ]
+    with st.expander("Mediaan referentiegroep", expanded=False):
+        selected_median_players = st.multiselect(
+            "Spelers voor de mediaan",
+            options=players_all,
+            key=median_key,
+            help="Alle spelers blijven zichtbaar. Alleen de mediaanlijnen en de tabel gebruiken deze selectie.",
+        )
+        st.caption(f"{len(selected_median_players)} van {len(players_all)} spelers geselecteerd voor de mediaan.")
+
+    median_week_df = week_df[
+        week_df["player_name"].fillna("").astype(str).isin(selected_median_players)
+    ].copy()
     session_stats = build_week_session_stats(week_df)
+    median_session_stats = build_week_session_stats(median_week_df)
     player_table = build_week_player_table(week_df)
+    weekly_median_summary = build_selected_medians(
+        player_table,
+        selected_median_players,
+        WEEK_LOAD_MEDIAN_SPECS,
+        player_column="player_name",
+    )
+    weekly_median_values = median_map(weekly_median_summary)
     player_lookup = (
         week_df.assign(
             player_id=week_df["player_id"].astype(str),
@@ -1702,6 +1905,16 @@ def main() -> None:
         player_lookup=player_lookup,
     )
     monitoring_days = build_monitoring_grouped_summary(monitoring_df, "day")
+    selected_player_ids = set(
+        week_df.loc[
+            week_df["player_name"].fillna("").astype(str).isin(selected_median_players),
+            "player_id",
+        ].astype(str)
+    )
+    median_monitoring_df = monitoring_df[
+        monitoring_df["player_id"].astype(str).isin(selected_player_ids)
+    ].copy()
+    median_monitoring_days = build_monitoring_grouped_summary(median_monitoring_df, "day")
     rpe_moments = build_rpe_session_day_summary(
         SUPABASE_URL or "default",
         sb,
@@ -1709,14 +1922,21 @@ def main() -> None:
         week_end.date(),
         player_ids=week_df["player_id"].astype(str).tolist(),
     )
+    median_rpe_moments = build_rpe_session_day_summary(
+        SUPABASE_URL or "default",
+        sb,
+        selected_week.date(),
+        week_end.date(),
+        player_ids=selected_player_ids,
+    )
     render_plot_panel(
         "GPS & belasting per sessie",
-        build_session_load_chart(session_stats),
+        build_session_load_chart(session_stats, median_session_stats),
     )
 
     render_plot_panel(
         "Totale weekbelasting per speler",
-        build_weekly_player_load_chart(player_table),
+        build_weekly_player_load_chart(player_table, weekly_median_values),
     )
 
     monitoring_cols = st.columns(2, gap="large")
@@ -1724,12 +1944,27 @@ def main() -> None:
         if monitoring_days.empty:
             st.info("Geen Wellness-data in deze week.")
         else:
-            render_plot_panel("Wellness van de week", build_weekly_wellness_chart(monitoring_days))
+            render_plot_panel(
+                "Wellness van de week",
+                build_weekly_wellness_chart(monitoring_days, median_monitoring_days),
+            )
     with monitoring_cols[1]:
         if rpe_moments.empty:
             st.info("Geen RPE-data in deze week.")
         else:
-            render_plot_panel("RPE van de week", build_weekly_rpe_chart(rpe_moments))
+            render_plot_panel("RPE van de week", build_weekly_rpe_chart(rpe_moments, median_rpe_moments))
+
+    week_median_table = build_week_median_table(
+        weekly_median_summary,
+        median_session_stats,
+        median_monitoring_days,
+        median_rpe_moments,
+    )
+    render_panel_header("Mediaanwaarden", "Gebaseerd op de gekozen mediaanreferentiegroep")
+    if week_median_table.empty:
+        st.info("Selecteer minimaal één speler om mediaanwaarden te tonen.")
+    else:
+        st.table(week_median_table)
 
     render_sidebar_footer(profile)
 

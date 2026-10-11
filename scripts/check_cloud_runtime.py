@@ -34,6 +34,8 @@ def check_forms_contracts() -> None:
             "build_session_load_chart",
             "build_weekly_player_load_chart",
             "high_metabolic_load_distance",
+            "Mediaan referentiegroep",
+            "build_week_median_table",
         ),
         "pages/12_Session_Load.py": (
             "load_hybrid_gps",
@@ -41,6 +43,11 @@ def check_forms_contracts() -> None:
             "session_load_pages_main",
             "time_in_heart_rate_zone_6_absolute",
             "HR Exertion",
+        ),
+        "pages/Subscripts/gps_data_session_load_pages.py": (
+            "SESSION_MEDIAN_SPECS",
+            "Mediaanwaarden",
+            "Mediaan referentiegroep",
         ),
         "pages/05_ACWR.py": (
             "load_acwr_gps_cached",

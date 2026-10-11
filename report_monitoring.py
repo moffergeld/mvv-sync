@@ -59,7 +59,9 @@ def _empty_grouped_summary() -> pd.DataFrame:
         "readiness_score",
         "avg_rpe",
         "avg_rpe_std",
+        "avg_rpe_median",
     ]
+    base_columns.extend(f"{column}_median" for column in WELLNESS_PARAMETER_COLUMNS)
     return pd.DataFrame(columns=base_columns)
 
 
@@ -291,10 +293,12 @@ def build_monitoring_grouped_summary(df: pd.DataFrame, period: str = "day") -> p
         "readiness_score": ("readiness_score", "mean"),
         "avg_rpe": ("avg_rpe", "mean"),
         "avg_rpe_std": ("avg_rpe", "std"),
+        "avg_rpe_median": ("avg_rpe", "median"),
     }
     for column in WELLNESS_PARAMETER_COLUMNS:
         aggregation[column] = (column, "mean")
         aggregation[f"{column}_std"] = (column, "std")
+        aggregation[f"{column}_median"] = (column, "median")
 
     grouped = (
         tmp.groupby(["bucket", "label"], as_index=False)
@@ -332,20 +336,24 @@ def build_rpe_session_day_summary(
     *,
     player_ids: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
+    output_columns = [
+        "entry_date", "label", "session_index", "session_label",
+        "avg_rpe", "avg_rpe_std", "median_rpe", "rpe_players",
+    ]
     headers_df = fetch_report_rpe_headers_range_cached(sb_url_key, sb, start_date.isoformat(), end_date.isoformat())
     if headers_df.empty:
-        return pd.DataFrame(columns=["entry_date", "label", "session_index", "session_label", "avg_rpe", "avg_rpe_std", "rpe_players"])
+        return pd.DataFrame(columns=output_columns)
 
     if player_ids is not None:
         valid_ids = {str(player_id) for player_id in player_ids if str(player_id).strip()}
         headers_df = headers_df[headers_df["player_id"].astype(str).isin(valid_ids)].copy()
         if headers_df.empty:
-            return pd.DataFrame(columns=["entry_date", "label", "session_index", "session_label", "avg_rpe", "avg_rpe_std", "rpe_players"])
+            return pd.DataFrame(columns=output_columns)
 
     entry_ids = headers_df["id"].astype(str).tolist()
     sess = fetch_report_rpe_sessions_for_ids_cached(sb_url_key, sb, tuple(entry_ids))
     if sess.empty:
-        return pd.DataFrame(columns=["entry_date", "label", "session_index", "session_label", "avg_rpe", "avg_rpe_std", "rpe_players"])
+        return pd.DataFrame(columns=output_columns)
 
     merged = sess.merge(
         headers_df[["id", "player_id", "entry_date"]],
@@ -360,13 +368,14 @@ def build_rpe_session_day_summary(
     merged["rpe"] = pd.to_numeric(merged["rpe"], errors="coerce")
     merged = merged.dropna(subset=["entry_date", "rpe"]).copy()
     if merged.empty:
-        return pd.DataFrame(columns=["entry_date", "label", "session_index", "session_label", "avg_rpe", "avg_rpe_std", "rpe_players"])
+        return pd.DataFrame(columns=output_columns)
 
     grouped = (
         merged.groupby(["entry_date", "session_index"], as_index=False)
         .agg(
             avg_rpe=("rpe", "mean"),
             avg_rpe_std=("rpe", "std"),
+            median_rpe=("rpe", "median"),
             rpe_players=("player_id", "nunique"),
         )
         .sort_values(["entry_date", "session_index"])
@@ -376,7 +385,7 @@ def build_rpe_session_day_summary(
     grouped["session_label"] = grouped["session_index"].apply(lambda value: f"Sessie {int(value)}")
     grouped["avg_rpe_std"] = pd.to_numeric(grouped["avg_rpe_std"], errors="coerce").fillna(0.0)
     grouped["rpe_players"] = pd.to_numeric(grouped["rpe_players"], errors="coerce").fillna(0).astype(int)
-    return grouped[["entry_date", "label", "session_index", "session_label", "avg_rpe", "avg_rpe_std", "rpe_players"]]
+    return grouped[output_columns]
 
 
 def build_monitoring_player_summary(df: pd.DataFrame) -> pd.DataFrame:
