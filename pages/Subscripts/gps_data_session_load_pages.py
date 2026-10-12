@@ -681,7 +681,7 @@ def _plot_hr_zones(df_agg: pd.DataFrame, medians: dict[str, float]):
 
     # Grouping keeps every HR-zone median on the same honest baseline as its bars.
     fig.update_layout(barmode="group")
-    _style_fig(fig, title="HR-zones & HR Exertion", y_title="Tijd in zone (min)", secondary_y_title="HR Exertion")
+    _style_fig(fig, title="", y_title="Tijd in zone (min)", secondary_y_title="HR Exertion")
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "responsive": True})
 
 
