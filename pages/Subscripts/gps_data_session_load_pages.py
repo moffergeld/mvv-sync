@@ -510,7 +510,7 @@ def _plot_player_gps_load(df_agg: pd.DataFrame, medians: dict[str, float]) -> No
             row=2,
             col=1,
         )
-    player_axis = players.astype(str).tolist()
+    player_axis = players.tolist()
     _add_median_trace(fig, player_axis, medians.get(COL_TD), "TD", "#AFC4DF", row=1, col=1)
     _add_median_trace(fig, player_axis, medians.get(COL_HMLD), "HMLD", "#69D5CB", row=1, col=1, secondary_y=True)
     _add_median_trace(fig, player_axis, medians.get(COL_SPRINT), "Zone 5", "#FFD17A", row=2, col=1)
@@ -656,7 +656,7 @@ def _plot_hr_zones(df_agg: pd.DataFrame, medians: dict[str, float]):
             secondary_y=True,
         )
 
-    player_axis = players.astype(str).tolist()
+    player_axis = players
     for zone in have_hr:
         _add_median_trace(
             fig,
