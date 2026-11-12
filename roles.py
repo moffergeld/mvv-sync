@@ -37,7 +37,22 @@ import extra_streamlit_components as stx
 try:
     from supabase import create_client  # type: ignore
 except Exception:
-    create_client = None
+    try:
+        from supabase.httpx import create_client  # type: ignore
+    except Exception:
+        create_client = None
+
+try:
+    # supabase-py v2
+    from supabase.lib.client_options import ClientOptions  # type: ignore
+except Exception:
+    ClientOptions = None
+
+try:
+    # supabase-py v3
+    from supabase import AuthClientOptions  # type: ignore
+except Exception:
+    AuthClientOptions = None
 
 
 # Laat dit in productie op False
@@ -153,7 +168,18 @@ def clear_tokens_in_cookie() -> None:
     cm.set("sb_email", "", max_age=1, key="clear_sb_email")
 
 
+def _close_supabase_client() -> None:
+    sb = st.session_state.get("_sb_client")
+    close = getattr(sb, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
 def clear_auth_state(clear_cookies: bool = False) -> None:
+    _close_supabase_client()
     for key in (
         "access_token",
         "sb_session",
@@ -360,6 +386,35 @@ def _get_access_token_from_state() -> Optional[str]:
 # SUPABASE CLIENT  (FIX: per-session, geen global cache)
 # ============================================================
 
+
+def _create_streamlit_supabase_client(url: str, key: str):
+    """Create a per-session client without a background token refresher."""
+    if create_client is None:
+        return None
+
+    if ClientOptions is not None:
+        return create_client(
+            url,
+            key,
+            options=ClientOptions(
+                auto_refresh_token=False,
+                persist_session=False,
+            ),
+        )
+
+    if AuthClientOptions is not None:
+        return create_client(
+            url,
+            key,
+            auth=AuthClientOptions(
+                auto_refresh_token=False,
+                persist_session=False,
+            ),
+        )
+
+    raise RuntimeError("Supabase client ondersteunt geen veilige auth-configuratie")
+
+
 def get_sb():
     """
     Supabase client per Streamlit session.
@@ -379,7 +434,7 @@ def get_sb():
 
     # per-session client
     if "_sb_client" not in st.session_state or st.session_state.get("_sb_client") is None:
-        st.session_state["_sb_client"] = create_client(url, key)
+        st.session_state["_sb_client"] = _create_streamlit_supabase_client(url, key)
 
     sb = st.session_state["_sb_client"]
 
@@ -416,13 +471,10 @@ def try_restore_or_refresh_session(sb=None) -> bool:
     for _ in range(2):
         try:
             if access:
-                try:
-                    sb.auth.set_session(access, refresh)
-                except Exception:
-                    pass
-
-            refreshed = sb.auth.refresh_session(refresh)
-            sess = getattr(refreshed, "session", None)
+                restored = sb.auth.set_session(access, refresh)
+            else:
+                restored = sb.auth.refresh_session(refresh)
+            sess = getattr(restored, "session", None)
 
             if sess and getattr(sess, "access_token", None) and getattr(sess, "refresh_token", None):
                 st.session_state["access_token"] = sess.access_token
@@ -466,6 +518,7 @@ def ensure_valid_session(sb=None) -> bool:
             st.session_state["auth_err"] = str(exc)
         clear_auth_state(clear_cookies=False)
 
+    sb = get_sb()
     ok = try_restore_or_refresh_session(sb)
     return bool(ok and _get_access_token_from_state())
 

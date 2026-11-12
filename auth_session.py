@@ -67,5 +67,15 @@ def hard_logout(sb=None) -> None:
     except Exception:
         pass
 
-    clear_tokens_in_cookie()
+    clear_auth_state = getattr(roles_mod, "clear_auth_state", None)
+    if callable(clear_auth_state):
+        clear_auth_state(clear_cookies=True)
+    else:
+        close = getattr(sb, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+        clear_tokens_in_cookie()
     st.session_state.clear()
